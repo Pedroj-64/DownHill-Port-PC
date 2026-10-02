@@ -28,3 +28,6 @@ Engine (`FUN_0020effc` case `0x11` @`0x20f4e8`): reads `pose[ch]` for slots 1-3 
 
 ## Open
 Leg channels and the pelvis/root translation source; attachment of the rider to the bike (saddle, pedals, bars); Euler argument order (`vcallms 0x978`); which clip the game plays when (tricks, crash/ragdoll `xx_rag_loc`); the per-rider pose array in RAM (the `0x77bff0 + 0x680·rider` runs of 21 orthonormal 3×3 matrices look like per-rider joint rotations but did not decode as plain world/local rotations of this tree).
+
+## Where the 13 ALP2 models are (for milestone 6: rivals and ambience)
+Offsets in `LVL/ALP2.NGP` (type-25 node → payload group → selector → VIF chain; instances = one type-1/25 pair per slot, shared payload and skeleton). Racers: kind 4090 chain `0x9e2f90` (10 instances, first node `0x9e9410`), 4095 `0xa01060`, 4100 `0xa1f300`, 4105 `0xa3cf00`, 4110 `0xa5aac0` (10 instances each). Hikers: 4030 `0xa78130`, 4035 `0xa87e10`, 4040 `0xa97290`, 4045 `0xaa6b10`, 4050 `0xab6660` (4 instances each). Bystanders: 4120 `0x9ba0c0`, 4125 `0x9c63e0`, 4130 `0x9d63f0` (1 instance each; 4120 has a camera tripod). Skeleton root of 4090: node `0x9e2f40`. `tools/export_riders.py` lists them for any level (offsets differ per level).
