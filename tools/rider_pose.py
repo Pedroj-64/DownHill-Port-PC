@@ -4,7 +4,7 @@
 """Posa un modelo de piloto (docs/formats/rider.md) con un clip .NGA: piel de 3 huesos por vértice (VU1) + esqueleto de nodos tipo 35/17 (rider_skel.py).
 Uso: rider_pose.py modelo.mdl modelo.skin nivel.NGP raíz_hex anim.NGA clip_id tiempo salida.mdl
 Convenciones (HIPÓTESIS salvo lo citado): vector fila; local = Euler(-e) [* rotación de referencia si flags & 0x20000] | loc (FUN_0020effc caso 0x11 @0x20f4e8, FUN_00227da8 construye la matriz, FUN_00227698 = A*B);
-mundo = local * mundo_padre; piel = inv_bind * mundo; v' = suma w_i * v * piel[hueso_i]. Canales de Euler de cada hueso = chan[1..3] de su tabla; canales 3-5 de la raíz sin usar aquí."""
+mundo = local * mundo_padre; piel = inv_bind * mundo; v' = suma w_i * v * piel[hueso_i]. Canales de Euler de cada hueso = chan[1..3] de su tabla. Euler x,y,z -> alfa,beta,gamma CONFIRMADO leyendo el VU0 (vcallms 0x12f = FUN_00227da8: vf14 = sin y vf15 = cos por carril x,y,z). Canales chan[4..6] = traslación que SUSTITUYE a loc sólo si flags & 1 (FUN_0021ad00 @0x21ad2c..0x21ad88); en el piloto flags&1 = 0 (archivo 0x1f00, RAM 0x3f00) -> no se aplican."""
 import sys, os, struct, math
 sys.path.insert(0, os.path.dirname(__file__))
 import numpy as np
@@ -32,7 +32,10 @@ def skin_matrices(J, order, pose):
         L = euler_matrix(-e[0], -e[1], -e[2])
         if j.flags & 0x20000:                              # marco espejado (cadena izquierda): L = Euler * rotación de referencia (tabla + 0x80)
             R = np.eye(4); R[:3, :3] = np.array(j.bind_rot); L = L @ R
-        L[3, :3] = j.loc                                   # fila de traslación = loc (el motor suma loc a una fila 3 nula)
+        loc = j.loc
+        if j.flags & 1 and all(c is not None for c in j.chan[4:7]):    # FUN_0021ad00: (flags & 1) -> table+0x30..0x38 = pose[chan[4..6]] (sustituye a loc)
+            loc = [float(pose.get(c, 0.0)) for c in j.chan[4:7]]
+        L[3, :3] = loc                                     # fila de traslación = loc (el motor suma loc a una fila 3 nula)
         World[n] = L if n not in parent else L @ World[parent[n]]
     return [np.array(J[n].inv_bind).reshape(4, 4) @ World[n] for n in order]
 

@@ -34,4 +34,11 @@ class T(unittest.TestCase):
         p = np.array([1, 0, 2.0, 1]) @ S[1]                                       # vértice del hijo en su pivote
         self.assertAlmostEqual(float(np.linalg.norm(p[:3] - [0, 0, 2.0])), 1.0, places=6)   # sigue a 1 del pivote de la raíz
         self.assertGreater(float(np.linalg.norm(p[:3] - [1, 0, 2.0])), 1.0)                # y se ha movido
+    def test_translation_channels_only_with_flag_bit0(self):          # FUN_0021ad00: slots 4-6 sustituyen a loc sólo si flags & 1
+        def build(flags):
+            blob = bytearray(0x500); joint(blob, 0x100, 0x1a0, 0, (0, 0, 2.0), (0, 0, 2.0), [0, 1, 2, 3, 4, 5])
+            struct.pack_into('<I', blob, 0x1a0 + 0xc0, flags); J = rider_skel.load(bytes(blob), 0x100)
+            return rider_pose.skin_matrices(J, rider_skel.preorder(J, 0x100), {3: 0.5, 4: 0.0, 5: 3.0})[0]
+        self.assertTrue(np.allclose(build(0x300), np.eye(4)))                       # flags&1 = 0: ignorados (caso del piloto)
+        self.assertTrue(np.allclose(build(0x301)[3, :3], [0.5, 0, 1.0]))            # inv_bind(-0,0,2) * traslación (0.5,0,3) = (0.5,0,1)
 if __name__ == '__main__': unittest.main()

@@ -26,7 +26,7 @@ inline Mat euler(float a, float b, float c) {
     return m;
 }
 
-struct Joint { int parent = -1; int chan[3] = {-1, -1, -1}; float loc[3] = {0, 0, 0}; Mat invBind = identity(); Mat bindRot = identity(); bool mirror = false; };
+struct Joint { int parent = -1; int chan[3] = {-1, -1, -1}; float loc[3] = {0, 0, 0}; Mat invBind = identity(); Mat bindRot = identity(); bool mirror = false; bool transFromPose = false; int tchan[3] = {-1, -1, -1}; };   // flags&1: loc = pose[tchan] (FUN_0021ad00; el piloto no lo usa)
 struct Skeleton {
     std::vector<Joint> j;                        // en orden de paleta = preorden del árbol (id de hueso del vértice / 4)
     // Lee el árbol desde el nodo raíz (offset en el NGP del nivel). Devuelve false ante cualquier puntero/recuento fuera de rango.
@@ -42,6 +42,7 @@ struct Skeleton {
             Mat l = euler(-e[0], -e[1], -e[2]);
             if (q.mirror) l = mul(l, q.bindRot);                  // marco espejado de la cadena izquierda (flags & 0x20000)
             l[12] = q.loc[0]; l[13] = q.loc[1]; l[14] = q.loc[2];
+            if (q.transFromPose) for (int k = 0; k < 3; k++) if (q.tchan[k] >= 0 && (size_t)q.tchan[k] < nPose) l[12 + k] = pose[q.tchan[k]];
             world[i] = q.parent < 0 ? l : mul(l, world[q.parent]);
             out[i] = mul(q.invBind, world[i]);
         }
@@ -53,9 +54,10 @@ private:
     bool rec(const std::vector<uint8_t>& d, size_t node, int parent, int depth) {
         uint32_t type, tp, nch, flags; if (depth > 16 || j.size() >= (size_t)kMaxJoints || !u32(d, node, type) || type != 0x23 || !u32(d, node + 0xc, tp) || tp < kBase) return false;
         size_t t = tp - kBase; if (t + 0xe0 > d.size() || !u32(d, t + 4, nch) || nch > 8 || !u32(d, t + 0xc0, flags)) return false;
-        Joint q; q.parent = parent; q.mirror = flags & 0x20000;
+        Joint q; q.parent = parent; q.mirror = flags & 0x20000; q.transFromPose = flags & 1;
         uint16_t ch[8]; if (t + 0x10 + 16 > d.size()) return false; std::memcpy(ch, d.data() + t + 0x10, 16);
         for (int k = 0; k < 3; k++) q.chan[k] = ch[1 + k] == 0xffff ? -1 : ch[1 + k];
+        for (int k = 0; k < 3; k++) q.tchan[k] = ch[4 + k] == 0xffff ? -1 : ch[4 + k];
         if (!rf(d, node + 0x10, q.invBind.data(), 16) || !rf(d, t + 0x30, q.loc, 3)) return false;
         for (int r = 0; r < 3; r++) if (!rf(d, t + 0x80 + 16*r, &q.bindRot[4*r], 3)) return false;
         int me = (int)j.size(); j.push_back(q);
