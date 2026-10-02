@@ -1,5 +1,7 @@
 # Research workflow
 
+🇪🇸 [Versión en español](../es/research.md)
+
 Copyright (C) 2026 Pedro Soto and the DownHill-Port-PC contributors. Licensed under GPL-3.0-or-later.
 
 This document explains how findings in `formats.md` were obtained, so anyone can reproduce and extend them.
@@ -55,7 +57,7 @@ DH_CAM="x y z yaw pitch" DH_SHOT=out.bmp ./build/dhview mesh.msh
 
 ## 6. Where to help next
 
-- Disassemble the VU1 microcode (`.vutext` @ `0x00269d90`, `0xA140` bytes) using the PCSX2 `DisVUmicro.h` tables as the encoding reference.
+- Write the VU1 interpreter (the microcode in `.vutext` @ `0x00269d90`, `0xA140` bytes, is already disassemblable with `tools/vudis.py`) plus the VIF unpacker and GIF parser to get exact geometry.
 - Walk the scene graph: node table at NGP offset `0xB66F00`, 0xC0-byte nodes with a 4x4 matrix.
 - Find the link between textures and palettes (CLUTs in `.RTX`).
 - Formats still untouched: `.PTS`, `.RST`, `.REP`, `.BNK`, `.SKX`, `.CTL`, `.APT`, `.BHS`.

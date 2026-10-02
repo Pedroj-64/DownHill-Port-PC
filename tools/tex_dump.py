@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: 2026 Pedro Soto
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Recorre la cadena de registros de un .TEX/.RTX ya descomprimido (ver docs/formats.md)."""
+"""Recorre la cadena de registros de un .TEX/.RTX ya descomprimido (ver docs/en/formats.md)."""
 import struct, sys, collections
 d = open(sys.argv[1], 'rb').read()
 nbins, first = struct.unpack_from('<II', d, 0)

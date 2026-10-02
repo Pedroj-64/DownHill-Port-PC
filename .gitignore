@@ -33,6 +33,11 @@ SYSTEM.CNF
 *.NGA
 *.SKX
 *.CTL
+# Derivados de los assets (modelos/mallas/nubes de puntos/capturas): contienen contenido del juego
+*.mdl
+*.msh
+*.pts
+*.bmp
 # Proyectos de Ghidra / análisis (contienen el binario)
 *.gpr
 *.rep/

@@ -8,7 +8,7 @@ staged=$(git diff --cached --name-only --diff-filter=ACM)
 [ -z "$staged" ] && exit 0
 
 # 1) extensiones/nombres del juego y de imágenes de disco
-bad=$(printf '%s\n' "$staged" | grep -iE '\.(iso|bin|cue|img|elf|irx|ngp|ptr|rtx|tex|pts|rst|bnk|vpk|vag|pss|orb|rep|nga|skx|ctl|ico|gpr|pem|key)$|(^|/)(SLES|SCES|SLUS)_|(^|/)(iso_extract|unpacked|decomp|ghidra_projects|assets)/|\.env$')
+bad=$(printf '%s\n' "$staged" | grep -iE '\.(iso|bin|cue|img|elf|irx|mdl|msh|pts|bmp|ngp|ptr|rtx|tex|pts|rst|bnk|vpk|vag|pss|orb|rep|nga|skx|ctl|ico|gpr|pem|key)$|(^|/)(SLES|SCES|SLUS)_|(^|/)(iso_extract|unpacked|decomp|ghidra_projects|assets)/|\.env$')
 [ -n "$bad" ] && { echo "BLOQUEADO: material del juego/secretos en el commit:"; echo "$bad"; fail=1; }
 
 # 2) archivos grandes (> 1 MiB)

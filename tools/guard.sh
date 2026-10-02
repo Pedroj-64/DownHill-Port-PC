@@ -5,7 +5,7 @@
 # Lo usa el CI (también protege PRs de quien no active el hook local).  Uso: tools/guard.sh
 fail=0
 files=$(git ls-files)
-bad=$(printf '%s\n' "$files" | grep -iE '\.(iso|bin|cue|img|elf|irx|ngp|ptr|rtx|tex|pts|rst|bnk|vpk|vag|pss|orb|rep|nga|skx|ctl|ico|gpr|pem|key)$|(^|/)(SLES|SCES|SLUS)_|(^|/)(iso_extract|unpacked|decomp|ghidra_projects|assets)/|\.env$')
+bad=$(printf '%s\n' "$files" | grep -iE '\.(iso|bin|cue|img|elf|irx|mdl|msh|pts|bmp|ngp|ptr|rtx|tex|pts|rst|bnk|vpk|vag|pss|orb|rep|nga|skx|ctl|ico|gpr|pem|key)$|(^|/)(SLES|SCES|SLUS)_|(^|/)(iso_extract|unpacked|decomp|ghidra_projects|assets)/|\.env$')
 [ -n "$bad" ] && { echo "Material del juego o secretos versionados:"; echo "$bad"; fail=1; }
 for f in $files; do
   [ -f "$f" ] || continue
