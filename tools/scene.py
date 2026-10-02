@@ -68,14 +68,18 @@ def walk_payloads(S, roots=None):
         if o is None or o in path or len(path) > 60: return
         h = S.u32(o); t = h & 0x3f
         if rk is None and path: rk = o
-        if t == 1: anc = (S.u32(o + 8) >> 16, h >> 18, S.f(o + 0x1c)[0])
+        if t == 1:
+            lay = S.u32(o + 8) >> 16; bd = anc[3] or lay == 2   # capa 2 (telón de fondo/cielo) se hereda hacia los nodos de carga útil descendientes
+            anc = (2 if bd else lay, h >> 18, S.f(o + 0x1c)[0], bd); ch = S.ptr(o + 0x20)
+            if kind_ok(anc[1]) and S.u16(o + 8) <= 1 and ch is not None and S.u32(ch) & 0x3f != 0:   # hoja clásica cuya cadena no es un nodo tipo 0 (p. ej. la cúpula de cielo)
+                yield dict(ptr=ch, m=m, sels=sels, layer=anc[0], kind=anc[1], rad=anc[2], root=rk)
         if t == 0 and kind_ok(anc[1]):
             yield dict(ptr=o, m=m, sels=sels, layer=anc[0], kind=anc[1], rad=anc[2], root=rk)
         l = local(S, o); m2 = mul(l, m) if l else m
         s2 = sels + ((*tp(m, S.f(o + 0x10, 3)), S.f(o + 0x1c)[0], S.f(o + 0x24)[0]),) if t == 2 else sels
         for c in S.children(o): yield from rec(c, m2, s2, path | {o}, rk, anc)
     for r in roots:
-        if S.u32(r) & 0x3f != 7: yield from rec(r, IDENT, (), frozenset(), None, (0, 0, 0.0))
+        if S.u32(r) & 0x3f != 7: yield from rec(r, IDENT, (), frozenset(), None, (0, 0, 0.0, False))
 
 def instances(S, roots=None):
     """(inicio de cadena, radio, matriz) por visita de cada carga útil (ver walk_payloads)."""
@@ -94,6 +98,20 @@ class Owners:
         self.inst = list(walk_payloads(S)); self.by_ptr = {}
         for k, d in enumerate(self.inst): self.by_ptr.setdefault(d['ptr'], []).append(k)
         self.mats = {k: d['m'] for k, d in enumerate(self.inst)}; self.info = {k: d for k, d in enumerate(self.inst)}; self.layer = {k: d['layer'] for k, d in enumerate(self.inst)}
+        # El cielo (capa 2) es una hoja clásica cuya cadena incluye varios nodos de carga útil: su rango va de su inicio hasta el inicio de la siguiente hoja clásica
+        classic = {}
+        def rec(o, path):
+            if o is None or o in path or len(path) > 60: return
+            h = S.u32(o)
+            if h & 0x3f == 1 and S.u16(o + 8) <= 1 and S.ptr(o + 0x20): classic[S.ptr(o + 0x20)] = S.u32(o + 8) >> 16
+            for c in S.children(o): rec(c, path | {o})
+        for r in [S.ptr(4 + 4*i) for i in range(S.u32(0))]:
+            if S.u32(r) & 0x3f != 7: rec(r, frozenset())
+        cs = sorted(classic)
+        for a_, nxt in zip(cs, cs[1:] + [1 << 62]):
+            if classic[a_] == 2:
+                for k, d in enumerate(self.inst):
+                    if a_ <= d['ptr'] < nxt: self.layer[k] = 2
         self.starts = sorted(self.by_ptr)
         roots = fine_roots(S) if sub == 'fine' else None if sub in (None, 'all') else sub
         self.allowed = None if roots is None else {p for r in roots for p, _, _ in instances(S, [r])}

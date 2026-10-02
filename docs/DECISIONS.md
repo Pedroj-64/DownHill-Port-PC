@@ -16,3 +16,4 @@
 - 2026-10-02: NGA fully decoded for the 4 (type,mode) combos present (25348 tracks, exact sizes); other combos implemented from decompiled code, untested / NGA decodificado; combinaciones ausentes sin test.
 - 2026-10-02: units 1 u = 1 ft (savestate speed vs HUD); demo params changed; winding sign confirmed by engine hit records; savestates are ALPINEMX not ALP2 / escala 1 u = 1 pie; los savestates son ALPINEMX.
 - 2026-10-02: instancing by visit of every type-0 payload node (props were exported unplaced); verified by rendering from the game's own camera next to its screenshot / instanciación por visita de nodos tipo 0.
+- 2026-10-02: layer 2 is waterfall/river, not sky; sky dome still unidentified (RAM-zeroing oracle at 0x12c8000 was invalid: frame motion alone changes pixels) / la capa 2 es cascada/río, no cielo; domo sin identificar (oráculo inválido por movimiento del juego)
