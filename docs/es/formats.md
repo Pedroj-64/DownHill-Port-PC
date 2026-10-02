@@ -9,7 +9,13 @@ No contienen datos del juego ni código copiado.
 
 ## Contenedor `IE\x03\x04` (casi todos los .NGP/.PTR/.RTX/.TEX)
 Cabecera de 20 B, luego u32 con la longitud del nombre, nombre ASCII y deflate crudo (`zlib -15`). Ver `tools/unpack_ie.py`.
-Pendiente: variante con `0x0a` en el byte 4 y contenedores anidados (R/TDI.NGP, R/XDI.*).
+La variante con `0x0a` en el byte 4 es una envoltura sin compresión que puede contener otra capa IE; `tools/unpack_ie.py` la desenvuelve hasta obtener los datos finales (verificado en R/TDI.NGP y R/XDI.*).
+
+## GIFtag (cabecera de transferencia al GS)
+- Es una cabecera de 128 bits: `NLOOP` ocupa bits 0-14, `EOP` el bit 15, `PRE` el bit 46, `PRIM` los bits 47-57, `FLG` los bits 58-59 y `NREG` los bits 60-63.
+- `NREG = 0` representa 16 registros; los descriptores de 4 bits se leen en `REGS`, desde el bit 64.
+- En `PACKED`, el payload ocupa `NLOOP * NREG` qwords; en `REGLIST`, `NLOOP * ceil(NREG / 2)` qwords; en `IMAGE`, `NLOOP` qwords.
+- `tools/gif.py` valida la cabecera, los modos y el tamaño declarado sin interpretar aún los registros GS ni el bit ADC.
 
 ## `.TEX` / `.RTX` (texturas) — descomprimido
 - `u32 nbins, u32 first` (`first*16` = offset del primer registro), luego `nbins` pares `(cantidad, bytes_por_textura)`.
