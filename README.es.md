@@ -6,7 +6,7 @@ Un esfuerzo comunitario para llevar **Downhill Domination** (Incognito Entertain
 
 Este es un proyecto **de la comunidad y para la comunidad**. No está afiliado, respaldado ni conectado con los desarrolladores o distribuidores originales.
 
-> **Estado: ingeniería inversa temprana.** Todavía no hay un juego jugable. Hoy existen notas de formatos, herramientas de extracción y un pequeño visor 3D. Ver la [Hoja de ruta](#hoja-de-ruta).
+> **Estado: reconstrucción del motor, prototipo de física jugable.** Los 54 niveles cargan con terreno, props, cielo y colisión, y en el visor se puede recorrer ALP2 en bici de salida a meta. **Todavía no hay un juego completo**: faltan el piloto, los menús, el audio, la IA y el flujo de juego. Ver [Progreso](#progreso) y [Hoja de ruta](#hoja-de-ruta).
 
 ## Objetivo
 
@@ -14,39 +14,61 @@ Una reimplementación nativa del motor (no un envoltorio de emulador) que carga 
 
 ## Aviso legal
 
-- **Este repositorio no contiene datos del juego, ni código del juego, ni resultados de desensamblado o decompilación.** No se incluye ni se incluirá ninguna ISO, ejecutable, textura, modelo, audio ni video.
+- **Este repositorio no contiene datos del juego, ni código del juego, ni resultados de desensamblado o decompilación.** No se incluye ni se incluirá ninguna ISO, ejecutable, textura, modelo, audio ni video. La documentación puede citar direcciones de funciones como referencia de investigación, pero nunca contiene código del juego.
 - Debes aportar **tu propia copia** del juego. Las herramientas leen tu imagen de forma local y no se sube nada a ningún sitio.
-- El `.gitignore` está configurado para mantener fuera del control de versiones las imágenes de disco, los assets extraídos, el ejecutable del juego, los proyectos de Ghidra y la salida del decompilador. **Por favor, respétalo en tus pull requests.**
+- El `.gitignore` y `tools/guard.sh` (que también corre en CI) mantienen fuera del control de versiones las imágenes de disco, los assets extraídos, el ejecutable del juego, los proyectos de Ghidra, los savestates y la salida del decompilador. **Por favor, respétalo en tus pull requests.**
 - La documentación describe *formatos de archivo y estructuras* descubiertos mediante investigación de interoperabilidad. Si eres titular de derechos y tienes dudas, abre un issue.
 
-## Qué funciona hasta ahora
+## Progreso
 
-| Área | Estado |
-|------|--------|
-| Extracción de la ISO | Hecho (cualquier herramienta de ISO; sirve `7z x`) |
-| Contenedor `IE` de assets (`.NGP/.PTR/.RTX/.TEX`) | Descompresor funcionando (`tools/unpack_ie.py`); faltan algunas variantes anidadas |
-| Texturas `.TEX` | Decodificadas a imágenes indexadas de 8 bits (swizzle del GS deshecho), exportadas en gris |
-| Paletas `.RTX` | Decodificadas; el enlace textura–paleta está resuelto mediante la tabla de materiales del `.PTR` |
-| Tabla de relocalización `.PTR` | Entendida (base `0xA00000`) |
-| Geometría `.NGP` y grafo de escena | Resuelto para la geometría estática del nivel: recorrido de nodos, transformaciones, subárbol de detalle fino, tiras con la regla ADC, UV, color de vértice y alfa |
-| Microcódigo VU1 | Localizado y desensamblado (`tools/vudis.py`); por ahora no hace falta intérprete para la geometría estática |
-| Modelos y niveles con textura | Los 54 niveles se extraen; ALP2 se exporta como **todo el grafo de escena** con rangos de visibilidad por hoja (`DHM3`). Todos los formatos de subida de textura decodificados (CT32 con swizzle, T8/T4 lineal, T8H). 78 pantallas de carga se ven con su arte original. Las piezas de bici (`BIKE/`) y los segmentos de ciclista (`R/`) se ven; ensamblarlos exige el esqueleto y las animaciones |
-| Visor (`dhview`) | Visor SDL3 + OpenGL de puntos, triángulos y modelos con textura (`.mdl`): cámara libre, capas con alfa, modo caminar con colisión de terreno |
-| Línea del recorrido | `.PTS` decodificado como grafo de puntos (línea de carrera de ~55 000 u en ALP2); faltan salida/meta/puntos de control y los archivos hermanos |
-| Bici / física | Prototipo de punto material (`R` en el visor); aún no se han hallado los datos de colisión reales, así que no recorre un circuito entero |
-| IA, audio, menús | Sin empezar |
+Leyenda: 🟩 hecho · ⬜ pendiente. Los porcentajes son una estimación aproximada de los mantenedores, no una medición; cuando una cifra es exacta, se indica.
 
-Las notas de formatos están en [`docs/es/formats.md`](docs/es/formats.md); la configuración de Ghidra y el flujo de investigación, en [`docs/es/research.md`](docs/es/research.md). La arquitectura y la decisión de lenguaje están en [`docs/es/architecture.md`](docs/es/architecture.md). Todos también existen en inglés en [`docs/en/`](docs/en/).
+### Ingeniería inversa (decodificar los datos del juego)
+
+| Área | Progreso | Notas |
+|------|----------|-------|
+| Disco y contenedores `IE` (`.NGP/.PTR/.RTX/.TEX`) | 🟩🟩🟩🟩🟩🟩🟩🟩🟩⬜ 90 % | El descompresor funciona; faltan algunas variantes anidadas |
+| Texturas y paletas | 🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩 100 % | Swizzle del GS, todos los formatos de subida (CT32, T8, T4, T8H) y el enlace de materiales del `.PTR` resueltos |
+| Grafo de escena y geometría estática | 🟩🟩🟩🟩🟩🟩🟩🟩🟩⬜ 95 % | Grafo completo con rangos de visibilidad por hoja; tiras, UV, color de vértice y alfa |
+| Props y objetos instanciados | 🟩🟩🟩🟩🟩🟩🟩🟩🟩⬜ 90 % | Árboles, banderas, cabaña: una copia por instancia con su matriz |
+| Cielo / panorama del horizonte | 🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜ 85 % | **47 de 54 niveles** (cifra exacta). El resto no tiene raíz de panorama; algunos son recintos cerrados |
+| Niebla y tono de color | 🟩⬜⬜⬜⬜⬜⬜⬜⬜⬜ 10 % | Aún no se han hallado los parámetros; `DH_FOG` es una suposición opcional, apagada por defecto |
+| Datos de colisión | 🟩🟩🟩🟩🟩🟩🟩🟩🟩⬜ 95 % | Colocación de instancias decodificada; el cargador C++ es **idéntico bit a bit a la referencia en Python en los 54 niveles** (cifra exacta) |
+| Línea del recorrido, puertas, rejilla de salida | 🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜ 85 % | Línea de carrera `.PTS`, 28 puertas en ALP2, rejilla de 10 plazas; la regla de meta es una hipótesis |
+| Modelo de la bici | 🟩🟩🟩🟩🟩🟩🟩⬜⬜⬜ 75 % | Piezas ensambladas en una bici completa; faltan los datos de anclaje del esqueleto |
+| Animaciones (`.NGA`) | 🟩🟩🟩🟩🟩🟩🟩⬜⬜⬜ 70 % | Todos los tipos de pista presentes decodificados; falta el mapeo canal–hueso |
+| Malla del cuerpo del piloto | 🟩⬜⬜⬜⬜⬜⬜⬜⬜⬜ 10 % | Aún no se encuentra (`R/` solo tiene brazos en primera persona) |
+| Integrador del cuerpo rígido | 🟩🟩🟩🟩🟩🟩🟩⬜⬜⬜ 70 % | Trazado desde el desensamblado (`FUN_00238818` y auxiliares); **sin validar** aún contra savestates consecutivos |
+
+### Motor y juego
+
+| Área | Progreso | Notas |
+|------|----------|-------|
+| Visor (`dhview`) | 🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜ 80 % | Cámara libre, modo caminar, cielo centrado en la cámara, modo de juego |
+| Física de la bici (aproximación jugable) | 🟩🟩🟩🟩🟩🟩⬜⬜⬜⬜ 60 % | Cuerpo rígido sobre el barrido de colisión y la respuesta de contacto portados; varios parámetros están marcados como hipótesis |
+| ALP2 de salida a meta | 🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩 hecho | El autopiloto de pruebas cruza 28/28 puertas; se puede conducir con el teclado |
+| Cargador nativo en C++ | 🟩🟩⬜⬜⬜⬜⬜⬜⬜⬜ 25 % | La colisión está hecha; el resto aún pasa por las herramientas Python |
+| Menús y pantallas de carga | 🟩⬜⬜⬜⬜⬜⬜⬜⬜⬜ 15 % | Las 78 pantallas de carga se renderizan; no hay lógica de menús |
+| Audio | ⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜ 5 % | Archivos VAG localizados, nada decodificado en el motor |
+| IA y rivales | ⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜ 0 % | Sin empezar |
+| Modos de juego y flujo | ⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜ 0 % | Cuenta atrás, tiempos, resultados, datos de guardado |
+| Empaquetado (`.deb`, Windows) | 🟩⬜⬜⬜⬜⬜⬜⬜⬜⬜ 10 % | Solo el andamiaje de CPack |
+
+**En conjunto: alrededor del 35 %** (estimación aproximada, ponderada hacia el trabajo de motor que aún falta).
+
+Las notas de formatos están en [`docs/es/formats.md`](docs/es/formats.md) y [`docs/formats/`](docs/formats/) (colisión, instanciación de escena, física de la bici, integrador, animaciones, marcadores y más). La configuración de Ghidra y el flujo de investigación están en [`docs/es/research.md`](docs/es/research.md); la arquitectura y la decisión de lenguaje, en [`docs/es/architecture.md`](docs/es/architecture.md); las decisiones de diseño se registran en [`docs/DECISIONS.md`](docs/DECISIONS.md). Todo existe también en inglés en [`docs/en/`](docs/en/).
 
 ## Hoja de ruta
 
-1. ✅ Recorrer el grafo de escena y renderizar la geometría del nivel limpia y con textura (terreno estático hecho).
-2. ✅ Telón de fondo/cielo separado. Siguiente: decodificar `PTS/` (línea del recorrido ya hallada, faltan salida/meta), props y objetos de juego, LOD en ejecución opcional.
-3. Decidir el lenguaje y la arquitectura del motor y escribir los parsers nativos ([`docs/es/architecture.md`](docs/es/architecture.md)); las herramientas Python pasan a ser el oráculo de referencia.
-4. Datos de colisión, modelo de la bici, animación, cámara y física de conducción (existe un prototipo de punto material).
-   (Un intérprete VU1 sólo se hará si la geometría animada lo necesita.)
-5. Audio (VAG/BNK), video (PSS), menús y modos de juego, datos de guardado.
-6. Empaquetado: compilaciones `.deb` y de Windows. El paquete **no** incluirá datos del juego; la aplicación extraerá los assets de tu imagen en el primer arranque.
+| # | Hito | Estado |
+|---|------|--------|
+| 1 | **Mapa fiel**: niveles con textura, props, cielo, comparados con la cámara del propio juego | ✅ Hecho |
+| 2 | **Colisión completa**: transformaciones de instancia, respuesta de contacto | ✅ Hecho |
+| 3 | **Bici jugable**: física, control por teclado, ALP2 de salida a meta | ✅ Prototipo (parámetros en parte hipótesis; integrador fiel pendiente de validar) |
+| 4 | **Piloto animado**: malla del cuerpo y mapeo canal–hueso | ⬜ Siguiente |
+| 5 | **Motor nativo**: cargadores C++ en lugar del paso Python; decisión de lenguaje (C++ o Rust) | ⬜ |
+| 6 | **Flujo de juego**: menús, carga, cuenta atrás, meta, tiempos, rivales | ⬜ |
+| 7 | **Empaquetado**: compilaciones `.deb` y de Windows. El paquete **no** incluirá datos del juego; la aplicación extraerá los assets de tu imagen en el primer arranque | ⬜ |
 
 ## Compilación
 
@@ -55,40 +77,53 @@ Requisitos: compilador C++20, CMake ≥ 3.20, Ninja y los archivos de desarrollo
 ```sh
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
-./build/dhview ruta/a/malla.msh      # WASD + ratón, Shift = rápido, Esc = salir
-./build/dhview nivel.mdl             # igual, y además F = volar/caminar (gravedad + colisión de terreno), R = prototipo de bici, Espacio = saltar
+cd build && ctest                    # pruebas unitarias de suelo, contacto, bici e integrador
+./build/dhview nivel.mdl             # WASD + ratón, Shift = rápido, F = volar/caminar, Esc = salir
 ```
+
+Probar el prototipo en un nivel que hayas exportado (ver el flujo más abajo):
+
+```sh
+DH_PLAY=1 DH_BIKE=out/play/bike1.mdl ./build/dhview out/maps/ALP2.mdl
+# W acelerar · S frenar · A/D girar · Q/E inclinar · Espacio saltar · Enter reiniciar en el último punto bueno · T volver a la salida
+```
+
+Variables de entorno útiles: `DH_COLDRAW=1` dibuja la malla de colisión, `DH_NOSKY=1` oculta el cielo, `DH_FOG="r g b inicio fin"` activa la niebla experimental.
 
 Empaquetado (sin datos del juego): `cd build && cpack -G DEB`.
 
 ## Herramientas
 
-Python 3 con Pillow basta para todo lo que hay en `tools/`. Python se usa sólo para investigación y conversión offline; el motor de ejecución es C++ (la discusión de lenguaje, incluido un posible paso a Rust, está en [`docs/es/architecture.md`](docs/es/architecture.md)).
+Python 3 con Pillow y NumPy basta para todo lo que hay en `tools/`. Python se usa sólo para investigación y conversión offline; el motor de ejecución es C++ (la discusión de lenguaje, incluido un posible paso a Rust, está en [`docs/es/architecture.md`](docs/es/architecture.md)).
 
 | Herramienta | Para qué sirve |
 |-------------|----------------|
 | `tools/unpack_ie.py` | Descomprime los contenedores `IE` de una carpeta de disco extraída |
 | `tools/tex_dump.py`, `tools/tex_export.py` | Inspeccionan y exportan texturas (`gs.py` tiene las tablas de swizzle del GS) |
-| `tools/vif.py` | Decodificador mínimo de paquetes VIF |
-| `tools/scene.py` | Recorredor del grafo de escena de archivos `.NGP`; `instances()` / `Owners` dan las transformaciones por hoja y el filtro de detalle fino |
-| `tools/extract_model.py` | Genera un `.mdl` con textura (malla + materiales + paletas + color/alfa de vértice) de un grupo de modelo o de nivel |
-| `tools/batch_models.py` | Ejecuta `extract_model.py` sobre todos los grupos completos de una carpeta (p. ej. todos los niveles) |
-| `tools/pts_path.py` | Lee un `.PTS` de nivel (grafo de puntos del recorrido) y exporta sus puntos / la línea de carrera principal |
-| `tools/contact_sheet.py` | Renderiza con `dhview` todos los `.mdl` de una carpeta en una única hoja de contacto etiquetada |
-| `tools/assemble_bike.py` | Ensambla una bici a partir de piezas `.mdl` de cuadro + manillar/horquilla + rueda (bujes medidos, horquilla inclinada) |
-| `tools/vudis.py` | Desensamblador del microcódigo VU1 |
-| `tools/extract_mesh.py`, `tools/extract_points.py` | Extraen vértices/triángulos de archivos `.NGP` |
-| `tools/preview_msh.py` | Vista previa 2D rápida de una malla extraída |
-| `tools/ghidra/` | Scripts de Ghidra en modo headless (xrefs de cadenas, decompilación de funciones) |
+| `tools/vif.py`, `tools/vudis.py` | Decodificador de paquetes VIF; desensamblador del microcódigo VU1 |
+| `tools/scene.py` | Recorredor del grafo de escena de `.NGP`; `walk_payloads` / `Owners` dan las transformaciones por visita y el filtro de detalle fino |
+| `tools/scene_html.py` | Vuelca el grafo de escena de un nivel como árbol HTML plegable (solo estructura, sin datos del juego) |
+| `tools/extract_model.py` | Genera un `.mdl` con textura (malla, materiales, paletas, color de vértice) y el panorama de cielo/horizonte `.dome.mdl` de un nivel |
+| `tools/export_all.sh` | Exporta todos los niveles (modelo, colisión con instancias, puertas, rejilla de salida) a `out/maps/` |
+| `tools/collision.py` | Malla de colisión (nodos `0x2A`/`0x0A`) con colocación de instancias; `--instances` es la exportación correcta |
+| `tools/markers.py`, `tools/pts_path.py`, `tools/ptsext.py` | Puertas, rejilla de salida, línea de carrera `.PTS` y sus datos hermanos |
+| `tools/nga.py` | Decodificador de pistas de animación (`.NGA`) |
+| `tools/assemble_bike.py` | Ensambla una bici a partir de piezas `.mdl` de cuadro, horquilla y rueda |
+| `tools/contact_sheet.py`, `tools/compare_view.py` | Hojas de contacto de muchos modelos; render lado a lado contra la captura de un savestate de PCSX2 con la cámara del propio juego |
+| `tools/p2s.py`, `tools/p2s_check.py`, `tools/pcsx2/` | Lector de savestates de PCSX2, comparación con los datos del propio motor, scripts de captura en vivo por PINE |
+| `tools/integrator_check.py` | Compara la reimplementación del integrador de cuerpo rígido con savestates |
+| `tools/guard.sh` | Falla si hay datos del juego, archivos grandes, rutas personales o secretos versionados (corre en CI) |
+| `tools/ghidra/` | Scripts de Ghidra en modo headless (xrefs de cadenas, decompilación, listados de instrucciones) |
 
-La ingeniería inversa usa [Ghidra](https://ghidra-sre.org/) con la extensión comunitaria [ghidra-emotionengine-reloaded](https://github.com/chaoticgd/ghidra-emotionengine-reloaded) (lenguaje `r5900:LE:32:default`).
+La ingeniería inversa usa [Ghidra](https://ghidra-sre.org/) con la extensión comunitaria [ghidra-emotionengine-reloaded](https://github.com/chaoticgd/ghidra-emotionengine-reloaded) (lenguaje `r5900:LE:32:default`) y savestates de [PCSX2](https://pcsx2.net/) como referencia de verdad.
 
 Flujo típico:
 
 ```sh
 7z x "Downhill Domination.iso" -oiso_extract
 python3 tools/unpack_ie.py iso_extract unpacked
-python3 tools/tex_export.py unpacked/SHELL/BIKESHOP.TEX out_textures
+sh tools/export_all.sh               # todos los niveles en out/maps/
+./build/dhview out/maps/ALP2.mdl
 ```
 
 ## Contribuir
@@ -97,15 +132,16 @@ Lee primero [`CONTRIBUTING.md`](CONTRIBUTING.md) y [`SECURITY.md`](SECURITY.md) 
 
 Las contribuciones son muy bienvenidas, en especial:
 
-- Ingeniería inversa: formatos (`.PTS`, `.RST`, `.REP`, `.BNK`, `.SKX`, ...), microcódigo VU1, lógica del juego.
+- Ingeniería inversa: la malla del cuerpo del piloto, el mapeo canal–hueso de `.NGA`, los parámetros de niebla, formatos (`.RST`, `.REP`, `.BNK`, `.SKX`, ...), lógica del juego.
+- Validar el integrador de cuerpo rígido: pares de savestates con unos pocos fotogramas de diferencia y la bici en el aire (ver [`docs/formats/integrator.md`](docs/formats/integrator.md)).
 - Renderizado y trabajo de motor en C++.
 - Pruebas con otras versiones PAL/NTSC del juego (hasta ahora sólo se ha examinado la compilación PAL `SLES_522.02`).
 - Documentación de todo lo que descubras.
 
 Reglas básicas:
 
-1. Nunca subas datos del juego, ejecutables, assets extraídos ni salida del decompilador.
-2. Documenta los hallazgos en `docs/en/formats.md` y `docs/es/formats.md` (en ambos idiomas, si puedes) con tus propias palabras (estructuras y significado de los campos, no código copiado).
+1. Nunca subas datos del juego, ejecutables, assets extraídos, savestates ni salida del decompilador.
+2. Documenta los hallazgos en `docs/en/` y `docs/es/` (o `docs/formats/`) con tus propias palabras (estructuras y significado de los campos, no código copiado). Cita la dirección de la función o márcalo como hipótesis.
 3. Mantén las herramientas pequeñas y ejecutables; una comprobación corta vale más que una explicación larga.
 
 ## Agradecimientos
