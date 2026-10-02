@@ -4,3 +4,4 @@
 - 2026-10-02: HDT/MOAB left partially decoded after timebox; documented as unknown / HDT parcial, documentado.
 - 2026-10-02: NGP root nodes 15/45 identified from ELF consumers as object grid / light probes, not collision; collision hunt stopped at timebox, continue later via ground-height callers of the PTS / el hallazgo descarta 15/45 como colisión.
 - 2026-10-02: NGA decoding stopped at the clip container (curve payload needs the ELF interpreter, >timebox) / NGA: solo contenedor, curvas bloqueadas.
+- 2026-10-02: nodes 25/11/42 documented from engine code only, no parser (kind→object mapping needs the callback decompile) / nodos 25/11/42 solo documentados.
