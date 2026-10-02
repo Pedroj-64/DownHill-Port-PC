@@ -25,8 +25,8 @@
          "note": {"en": "Parts assembled into a full bike; skeleton attachment data pending.", "es": "Piezas ensambladas en una bici completa; faltan los datos de anclaje del esqueleto."}},
         {"name": {"en": "Animations (NGA)", "es": "Animaciones (NGA)"}, "done": 70, "wip": 0, "total": 100, "exact": false,
          "note": {"en": "All present track types decoded; channel-to-bone mapping pending.", "es": "Todos los tipos de pista presentes decodificados; falta el mapeo canal-hueso."}},
-        {"name": {"en": "Rider body mesh", "es": "Malla del cuerpo del piloto"}, "done": 0, "wip": 0, "total": 100, "exact": false,
-         "note": {"en": "Not found yet (R/ only has first-person arms).", "es": "Aún sin encontrar (R/ solo tiene brazos en primera persona)."}},
+        {"name": {"en": "Rider body mesh", "es": "Malla del cuerpo del piloto"}, "done": 0, "wip": 85, "total": 100, "exact": false,
+         "note": {"en": "Found in each level NGP (kinds 4030-4130, 13 models in ALP2); skinning decoded from the VU1 code and posed with BANIM clips; not yet compared with the game.", "es": "Encontrada en el NGP de cada nivel (kinds 4030-4130, 13 modelos en ALP2); piel decodificada del código VU1 y posada con clips BANIM; aún sin comparar con el juego."}},
         {"name": {"en": "Rigid-body integrator (functions)", "es": "Integrador de cuerpo rígido (funciones)"}, "done": 0, "wip": 10, "total": 10, "exact": true, "unit": {"en": "functions", "es": "funciones"},
          "note": {"en": "FUN_00238818 and 9 helpers traced from the disassembly; not validated against consecutive savestates.", "es": "FUN_00238818 y 9 auxiliares trazadas desde el desensamblado; sin validar contra savestates consecutivos."}}
       ]

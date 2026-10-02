@@ -22,7 +22,7 @@ A native engine reimplementation (not an emulator wrapper) that loads the game's
 ## Progress
 
 <!-- progress:start -->
-**Downhill Domination: 42.9% verified, 51.7% implemented**
+**Downhill Domination: 42.9% verified, 55.8% implemented**
 
 Average of all rows. Verified = checked against evidence from the game (savestates, the game's own camera, bit-identical reference). Implemented = works but unverified or based on hypotheses. Counted rows show real units; the rest are rough maintainer estimates.
 
@@ -46,7 +46,7 @@ Average of all rows. Verified = checked against evidence from the game (savestat
 | Course line, gates, start grid | PTS racing line, 28 gates in ALP2, 10-slot grid; the finish rule is a hypothesis. |
 | Bike model | Parts assembled into a full bike; skeleton attachment data pending. |
 | Animations (NGA) | All present track types decoded; channel-to-bone mapping pending. |
-| Rider body mesh | Not found yet (R/ only has first-person arms). |
+| Rider body mesh | Found in each level NGP (kinds 4030-4130, 13 models in ALP2); skinning decoded from the VU1 code and posed with BANIM clips; not yet compared with the game. |
 | Rigid-body integrator (functions) | FUN_00238818 and 9 helpers traced from the disassembly; not validated against consecutive savestates. |
 | Viewer (dhview) | Free camera, walk mode, camera-centred sky, play mode. |
 | Bike physics | Rigid body on the ported sweep and contact response (verified part); many parameters are labelled hypothesis. |
@@ -72,8 +72,8 @@ Format notes live in [`docs/en/formats.md`](docs/en/formats.md) and [`docs/forma
 | 1 | **Faithful map**: textured levels, props, sky, compared against the game's own camera | Done |
 | 2 | **Complete collision**: instance transforms, contact response | Done |
 | 3 | **Playable bike**: physics, keyboard control, ALP2 start to finish | Prototype (parameters partly hypothesis; faithful integrator pending validation) |
-| 4 | **Animated rider**: body mesh and channel-to-bone mapping | Next |
-| 5 | **Native runtime**: C++ loaders replace the Python step; language decision (C++ or Rust) | Pending |
+| 4 | **Animated rider**: body mesh and channel-to-bone mapping | In progress: mesh, skeleton, skinning and upper-body pose decoded (offline tools); legs, bike attachment and viewer integration pending |
+| 5 | **Native runtime**: C++ loaders replace the Python step (language decided: C++20) | Pending |
 | 6 | **Game flow**: menus, loading, countdown, finish, times, rivals | Pending |
 | 7 | **Packaging**: `.deb` and Windows builds. The package will **not** ship game data; the app will extract assets from your image on first run | Pending |
 
@@ -116,7 +116,7 @@ Packaging (no game data included): `cd build && cpack -G DEB`.
 
 ## Tools
 
-Python 3 with Pillow and NumPy is enough for everything in `tools/`. Python is used only for research and offline conversion; the runtime is C++ (see [`docs/en/architecture.md`](docs/en/architecture.md) for the language discussion, including a possible move to Rust).
+Python 3 with Pillow and NumPy is enough for everything in `tools/`. Python is used only for research and offline conversion; the runtime is C++ (see [`docs/en/architecture.md`](docs/en/architecture.md) for the language discussion, where Rust was considered and dropped).
 
 | Tool | Purpose |
 |------|---------|

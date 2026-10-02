@@ -92,7 +92,7 @@ Con archivos `.mdl` añade `DH_WALK=1` para empezar en modo caminar (colisión c
 - LOD en ejecución por distancia (los nodos tipo 2 llevan la distancia² máxima de dibujo); es una optimización, no un problema de corrección.
 - Objetos de juego: nodos tipo 25/11 y payloads > `0x3E8` (props, disparadores, salida/meta).
 - **Primero los datos de colisión:** encontrar los datos propios de colisión/superficie del juego (ver el límite de arriba) antes de afinar la física de conducción.
-- Ciclista: encontrar la malla del cuerpo completo (no está en `BIKE/`/`R/`/`SKAT/`; mirar `SHELL`, `REP`, `RST`) y decodificar las curvas `.NGA`; bici: leer las transformaciones de unión reales de `BIKESKEL` + `BANIM.NGA` en vez de las medidas. Empezar leyendo cómo mueve el juego la cámara/el ciclista por el recorrido.
+- Ciclista: la malla del cuerpo completo YA está localizada (NGP de cada nivel, nodos tipo 25 kinds 4030-4130, `docs/formats/rider.md`); falta esqueleto/pesos y asignar canales `.NGA` a huesos; bici: leer las transformaciones de unión reales de `BIKESKEL` + `BANIM.NGA` en vez de las medidas. Empezar leyendo cómo mueve el juego la cámara/el ciclista por el recorrido.
 - Texturas PSMT8H (`0x1b`); qué tanda usa qué material (`--variant`).
 - Intérprete VU1 / VIF / GIF en tiempo de ejecución, sólo si la geometría animada lo exige.
 - Formatos aún sin tocar: `.PTS`, `.RST`, `.REP`, `.BNK`, `.SKX`, `.CTL`, `.APT`, `.BHS`.

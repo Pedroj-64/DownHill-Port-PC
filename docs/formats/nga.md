@@ -40,7 +40,7 @@ Evidence: **25 348 tracks decode with no unknown (type,mode), all key times mono
 Animated nodes are looked up by `(kind, index)` in `DAT_004FAE48[scene]` (`FUN_00208F68`, `FUN_00208E60`, `FUN_00208D28`); a node's `+0x10` is an array of 0x3C-byte items, `+0x20` the channel/mask info (`u16 @+2` = channel count). Playback instances (0x58 B, types 0x21 clip / 0x22 blend) are built by `FUN_002085D0/00208978/00208B78`; `FUN_0020A4A0` dispatches: type 0x21 → `FUN_0020A258` (clip → pose floats + mask), type 0x22 → blenders `FUN_0020A6F8…` (cross-fade `1−(t/dur)` with ease modes `DAT_002C7B8C`, per-channel angle wrap when the channel's angle bit is set).
 
 ## Open
-* Channel → node parameter mapping (which pose slot is x/y/z/rotation of which joint): needs `BIKESKEL` and the per-node channel info (`node+0x20`).
+* Channel → joint mapping **solved for the rider rig** (40 Euler channels, `rider.md`; BANIM's 27 channels = pelvis…arms). Still open for the bike rig (BIKESKEL has no type-35 joints; whether BANIM channels also move bike parts is unknown).
 * Time unit of the keys (duration 24–150): `FUN_00209F30` converts instance time to track time (not decoded).
 * The 4 RANIM clips with a non-zero f32 at `+4`.
-* Rider body mesh: none found (R/ holds first-person arms; see git history for the search of SHELL/REP/RST).
+* Rider body mesh: found in the level NGPs (type-25 nodes, kinds 4030-4130), see `rider.md`. Joint hierarchy and channel → joint still open.

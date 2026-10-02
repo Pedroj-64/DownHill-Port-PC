@@ -22,7 +22,7 @@ Una reimplementación nativa del motor (no un envoltorio de emulador) que carga 
 ## Progreso
 
 <!-- progress:start -->
-**Downhill Domination: 42.9% verificado, 51.7% implementado**
+**Downhill Domination: 42.9% verificado, 55.8% implementado**
 
 Promedio de todas las filas. Verificado = comprobado con evidencia del juego (savestates, la cámara del propio juego, referencia idéntica bit a bit). Implementado = funciona pero sin verificar o basado en hipótesis. Las filas con unidades muestran cifras reales; el resto son estimaciones aproximadas de los mantenedores.
 
@@ -46,7 +46,7 @@ Promedio de todas las filas. Verificado = comprobado con evidencia del juego (sa
 | Línea del recorrido, puertas, rejilla de salida | Línea de carrera PTS, 28 puertas en ALP2, rejilla de 10 plazas; la regla de meta es una hipótesis. |
 | Modelo de la bici | Piezas ensambladas en una bici completa; faltan los datos de anclaje del esqueleto. |
 | Animaciones (NGA) | Todos los tipos de pista presentes decodificados; falta el mapeo canal-hueso. |
-| Malla del cuerpo del piloto | Aún sin encontrar (R/ solo tiene brazos en primera persona). |
+| Malla del cuerpo del piloto | Encontrada en el NGP de cada nivel (kinds 4030-4130, 13 modelos en ALP2); piel decodificada del código VU1 y posada con clips BANIM; aún sin comparar con el juego. |
 | Integrador de cuerpo rígido (funciones) | FUN_00238818 y 9 auxiliares trazadas desde el desensamblado; sin validar contra savestates consecutivos. |
 | Visor (dhview) | Cámara libre, modo caminar, cielo centrado en la cámara, modo de juego. |
 | Física de la bici | Cuerpo rígido sobre el barrido y la respuesta de contacto portados (parte verificada); muchos parámetros están marcados como hipótesis. |
@@ -72,8 +72,8 @@ Las notas de formatos están en [`docs/es/formats.md`](docs/es/formats.md) y [`d
 | 1 | **Mapa fiel**: niveles con textura, props, cielo, comparados con la cámara del propio juego | Hecho |
 | 2 | **Colisión completa**: transformaciones de instancia, respuesta de contacto | Hecho |
 | 3 | **Bici jugable**: física, control por teclado, ALP2 de salida a meta | Prototipo (parámetros en parte hipótesis; integrador fiel pendiente de validar) |
-| 4 | **Piloto animado**: malla del cuerpo y mapeo canal–hueso | Siguiente |
-| 5 | **Motor nativo**: cargadores C++ en lugar del paso Python; decisión de lenguaje (C++ o Rust) | Pending |
+| 4 | **Piloto animado**: malla del cuerpo y mapeo canal–hueso | En curso: malla, esqueleto, piel y pose del torso decodificados (herramientas offline); faltan piernas, unión a la bici e integración en el visor |
+| 5 | **Motor nativo**: cargadores C++ en lugar del paso Python (lenguaje decidido: C++20) | Pending |
 | 6 | **Flujo de juego**: menús, carga, cuenta atrás, meta, tiempos, rivales | Pending |
 | 7 | **Empaquetado**: compilaciones `.deb` y de Windows. El paquete **no** incluirá datos del juego; la aplicación extraerá los assets de tu imagen en el primer arranque | Pending |
 
@@ -116,7 +116,7 @@ Empaquetado (sin datos del juego): `cd build && cpack -G DEB`.
 
 ## Herramientas
 
-Python 3 con Pillow y NumPy basta para todo lo que hay en `tools/`. Python se usa sólo para investigación y conversión offline; el motor de ejecución es C++ (la discusión de lenguaje, incluido un posible paso a Rust, está en [`docs/es/architecture.md`](docs/es/architecture.md)).
+Python 3 con Pillow y NumPy basta para todo lo que hay en `tools/`. Python se usa sólo para investigación y conversión offline; el motor de ejecución es C++ (la discusión de lenguaje, donde Rust se consideró y se descartó, está en [`docs/es/architecture.md`](docs/es/architecture.md)).
 
 | Herramienta | Para qué sirve |
 |-------------|----------------|
