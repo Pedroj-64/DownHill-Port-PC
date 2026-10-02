@@ -77,6 +77,21 @@ Las notas de formatos están en [`docs/es/formats.md`](docs/es/formats.md) y [`d
 | 6 | **Flujo de juego**: menús, carga, cuenta atrás, meta, tiempos, rivales | Pending |
 | 7 | **Empaquetado**: compilaciones `.deb` y de Windows. El paquete **no** incluirá datos del juego; la aplicación extraerá los assets de tu imagen en el primer arranque | Pending |
 
+## Probarlo
+
+Necesitas **tu propia imagen de disco obtenida legalmente** de la versión PAL (`SLES_522.02`). Nada del juego se incluye en este repositorio ni se sube a ningún sitio.
+
+```sh
+python3 tools/dh.py doctor                                   # comprueba dependencias y estado
+python3 tools/dh.py setup "Downhill Domination.iso"          # extrae, descomprime, exporta ALP2 + ALPINEMX y compila el visor
+python3 tools/dh.py play                                     # conduce en ALP2 (o: play ALPINEMX)
+python3 tools/dh.py setup "Downhill Domination.iso" --all    # opcional: los 54 niveles (unos 4 GB, varios minutos)
+```
+
+`setup` necesita Python 3 con Pillow y NumPy, 7-Zip (`7z`, `7zz` o `7za`) o `bsdtar`, CMake, un compilador C++20 y los archivos de desarrollo de SDL3 y OpenGL. Escribe solo en `iso_extract/`, `unpacked/`, `out/` y `build/`, todas ignoradas por git, y se puede repetir sin riesgo: los pasos terminados se saltan. Controles: `W` acelerar, `S` frenar, `A`/`D` girar, `Q`/`E` inclinar, `Espacio` saltar, `Enter` reaparecer en el último punto bueno, `T` volver a la salida, `Esc` salir.
+
+Es un prototipo de física: todavía no hay piloto, menús, audio ni rivales, y varios parámetros de la física son hipótesis (ver [Progreso](#progreso)). Probado en Linux; en Windows debería funcionar igual, pero aún no se ha probado.
+
 ## Compilación
 
 Requisitos: compilador C++20, CMake ≥ 3.20, Ninja y los archivos de desarrollo de SDL3 y OpenGL.
@@ -105,6 +120,7 @@ Python 3 con Pillow y NumPy basta para todo lo que hay en `tools/`. Python se us
 
 | Herramienta | Para qué sirve |
 |-------------|----------------|
+| `tools/dh.py` | Script único: `doctor`, `setup` (de la ISO a niveles jugables y visor) y `play` |
 | `tools/unpack_ie.py` | Descomprime los contenedores `IE` de una carpeta de disco extraída |
 | `tools/tex_dump.py`, `tools/tex_export.py` | Inspeccionan y exportan texturas (`gs.py` tiene las tablas de swizzle del GS) |
 | `tools/vif.py`, `tools/vudis.py` | Decodificador de paquetes VIF; desensamblador del microcódigo VU1 |

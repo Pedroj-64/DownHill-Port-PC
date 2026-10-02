@@ -77,6 +77,21 @@ Format notes live in [`docs/en/formats.md`](docs/en/formats.md) and [`docs/forma
 | 6 | **Game flow**: menus, loading, countdown, finish, times, rivals | Pending |
 | 7 | **Packaging**: `.deb` and Windows builds. The package will **not** ship game data; the app will extract assets from your image on first run | Pending |
 
+## Try it
+
+You need **your own legally obtained disc image** of the PAL release (`SLES_522.02`). Nothing from the game is ever included in this repository or uploaded anywhere.
+
+```sh
+python3 tools/dh.py doctor                                   # checks dependencies and state
+python3 tools/dh.py setup "Downhill Domination.iso"          # extract, unpack, export ALP2 + ALPINEMX, build the viewer
+python3 tools/dh.py play                                     # ride ALP2 (or: play ALPINEMX)
+python3 tools/dh.py setup "Downhill Domination.iso" --all    # optional: all 54 levels (about 4 GB, several minutes)
+```
+
+`setup` needs Python 3 with Pillow and NumPy, 7-Zip (`7z`, `7zz` or `7za`) or `bsdtar`, CMake, a C++20 compiler and the SDL3 and OpenGL development files. It writes only to `iso_extract/`, `unpacked/`, `out/` and `build/`, all ignored by git, and can be re-run safely: finished steps are skipped. Controls: `W` accelerate, `S` brake, `A`/`D` steer, `Q`/`E` lean, `Space` jump, `Enter` respawn at the last good point, `T` back to the start, `Esc` quit.
+
+This is a physics prototype: no rider, menus, audio or opponents yet, and several physics parameters are hypotheses (see [Progress](#progress)). Tested on Linux; Windows should work the same way but has not been tried yet.
+
 ## Building
 
 Requirements: a C++20 compiler, CMake ≥ 3.20, Ninja, SDL3 and OpenGL development files.
@@ -105,6 +120,7 @@ Python 3 with Pillow and NumPy is enough for everything in `tools/`. Python is u
 
 | Tool | Purpose |
 |------|---------|
+| `tools/dh.py` | One-stop script: `doctor`, `setup` (ISO to playable levels and viewer) and `play` |
 | `tools/unpack_ie.py` | Inflate the `IE` containers from an extracted disc folder |
 | `tools/tex_dump.py`, `tools/tex_export.py` | Inspect and export textures (`gs.py` has the GS swizzle tables) |
 | `tools/vif.py`, `tools/vudis.py` | VIF packet decoder; VU1 microcode disassembler |
