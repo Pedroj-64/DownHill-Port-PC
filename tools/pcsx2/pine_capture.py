@@ -19,7 +19,7 @@ def enable_pine():
     if 'EnablePINE = true' in s: return False
     shutil.copy(INI, INI + '.bak'); open(INI, 'w').write(s.replace('EnablePINE = false', 'EnablePINE = true')); return True
 
-def running(): return subprocess.run(['pgrep', '-f', 'pcsx2-qt'], capture_output=True).returncode == 0
+def running(): return subprocess.run(['pgrep', '-x', 'pcsx2-qt'], capture_output=True).returncode == 0
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--iso'); ap.add_argument('--slot', type=int, default=1); ap.add_argument('--seconds', type=float, default=30); ap.add_argument('--out', required=True)

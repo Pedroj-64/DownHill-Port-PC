@@ -98,7 +98,8 @@ int main(int argc, char** argv) {
         col[i*3] = 0.3f + 0.7f * t; col[i*3+1] = 0.9f - 0.5f * t; col[i*3+2] = 0.4f + 0.4f * (1 - t);
     }
     if (!SDL_Init(SDL_INIT_VIDEO)) return 1;
-    SDL_Window* w = SDL_CreateWindow("dhview", 1280, 720, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
+    int winW = 1280, winH = 720; if (const char* ws = std::getenv("DH_SIZE")) std::sscanf(ws, "%d %d", &winW, &winH);   // DH_SIZE="640 480": ventana para comparar con capturas 4:3 del juego
+    SDL_Window* w = SDL_CreateWindow("dhview", winW, winH, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
     SDL_GLContext gl = SDL_GL_CreateContext(w);
     SDL_GL_SetSwapInterval(1);
     for (Model* m : {&M, &sky, &bike}) for (auto& t : m->texs) {
@@ -274,7 +275,7 @@ int main(int argc, char** argv) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);   // DH_BG="r g b": color de fondo (p. ej. magenta para ver huecos) glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glEnable(GL_DEPTH_TEST); glDepthFunc(GL_LEQUAL);   // LEQUAL: las capas superpuestas del juego comparten posición con el suelo
         glMatrixMode(GL_PROJECTION); glLoadIdentity();
-        float asp = (float)ww / hh, nr = mdl ? ((ride || walk) ? std::fmax(0.3f, 0.03f * U) : std::fmax(0.05f, 0.002f * scale)) : 5, fr = 60000, t = nr * std::tan(0.5f * 1.1f);
+        float asp = (float)ww / hh, nr = mdl ? ((ride || walk) ? std::fmax(0.3f, 0.03f * U) : std::fmax(0.05f, 0.002f * scale)) : 5, fr = 60000, t = nr * std::tan(0.5f * (std::getenv("DH_FOV") ? (float)std::atof(std::getenv("DH_FOV")) : 1.1f));   // DH_FOV: ángulo vertical en rad
         glFrustum(-t*asp, t*asp, -t, t, nr, fr);
         glMatrixMode(GL_MODELVIEW); glLoadIdentity();
         glRotatef(-pitch * 57.2958f, 1, 0, 0); glRotatef(yaw * 57.2958f, 0, 1, 0); glTranslatef(-px, -py, -pz);
@@ -332,7 +333,7 @@ int main(int argc, char** argv) {
             glColor3f(0.4f, 0.f, 0.f); glVertex3f(-b, 0, l); glVertex3f(0, 0, -l); glVertex3f(b, 0, l);
             glEnd(); glPopMatrix();
         }
-        if (!colLines.empty()) { glEnableClientState(GL_VERTEX_ARRAY); glColor3f(0.1f, 1.f, 0.3f); glVertexPointer(3, GL_FLOAT, 0, colLines.data()); glDrawArrays(GL_LINES, 0, (GLsizei)(colLines.size() / 3)); }
+        if (!colLines.empty() && !std::getenv("DH_NOCOLDRAW")) { glEnableClientState(GL_VERTEX_ARRAY); glColor3f(0.1f, 1.f, 0.3f); glVertexPointer(3, GL_FLOAT, 0, colLines.data()); glDrawArrays(GL_LINES, 0, (GLsizei)(colLines.size() / 3)); }
         if (!overlay.empty()) {
             glDisable(GL_DEPTH_TEST); glEnableClientState(GL_VERTEX_ARRAY); glColor3f(1, 0.2f, 0.9f); glPointSize(5);
             glVertexPointer(3, GL_FLOAT, 0, overlay.data()); glDrawArrays(GL_POINTS, 0, (GLsizei)(overlay.size() / 3)); glEnable(GL_DEPTH_TEST);

@@ -41,6 +41,15 @@ if __name__ == '__main__':
             if h >> 18: kinds[(h & 0x3f, h >> 18)] += 1
     print('node types', dict(types)); print('payload kinds (type,kind):count', dict(kinds.most_common(25)))
 
+import os as _os
+def _parse_kinds(v):
+    out = []
+    for part in (v or '0').split(','):
+        a, _, b = part.partition('-'); out.append((int(a), int(b or a)))
+    return out
+KINDS = _parse_kinds(_os.environ.get('DH_KINDS'))   # DH_KINDS="0,4000-4499": 'kinds' (hdr>>18) de las hojas de malla a incluir; por defecto sólo 0 (terreno/escenario). Los 4000-4499 son partes de los pilotos (FUN_00195b80)
+def kind_ok(k): return any(a <= k <= b for a, b in KINDS)
+
 def mul(a, b):   # 4x4 fila-por-vector (a luego b), listas de 16 floats
     return [sum(a[4*r + k] * b[4*k + c] for k in range(4)) for r in range(4) for c in range(4)]
 IDENT = [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]
@@ -49,50 +58,57 @@ def local(S, o):
     t = S.u32(o) & 0x3f
     if t == 3: x, y, z = S.f(o + 0x10, 3); return [1,0,0,0, 0,1,0,0, 0,0,1,0, x,y,z,1]
     if t == 4: m = list(S.f(o + 0x10, 16)); m[3], m[7], m[11], m[15] = 0, 0, 0, 1; return m
-def instances(S, roots=None):
-    """Hojas de malla (grupo con payload 0, <=1 hijo, cadena en +0x20) con su matriz acumulada. Sin dedupe global: una hoja compartida sale una vez por instancia."""
+def walk_payloads(S, roots=None):
+    """Recorre el grafo SIN deduplicar y rinde una entrada por VISITA de cada nodo de carga útil (tipo 0; también los tipo 1 sin hijos, que son su propia carga).
+    Los modelos repetidos (árboles, banderas…) salen una vez por instancia, con su matriz acumulada. La capa, el kind y el radio vienen del tipo 1 ancestro más cercano.
+    dict: ptr (offset del nodo, inicio de su cadena VIF), m, sels=[(cx,cy,cz,rad,d2_max)], layer, kind, rad, root."""
     roots = roots or [S.ptr(4 + 4*i) for i in range(S.u32(0))]
-    def rec(o, m, path):
-        if o is None or o in path or len(path) > 40: return
+    def tp(m, c): return tuple(c[0]*m[0+k] + c[1]*m[4+k] + c[2]*m[8+k] + m[12+k] for k in range(3))
+    def rec(o, m, sels, path, rk, anc):
+        if o is None or o in path or len(path) > 60: return
         h = S.u32(o); t = h & 0x3f
-        if t == 1 and h >> 18 == 0 and S.u16(o + 8) <= 1 and S.ptr(o + 0x20): yield S.ptr(o + 0x20), S.f(o + 0x10, 4)[3], m
+        if rk is None and path: rk = o
+        if t == 1: anc = (S.u32(o + 8) >> 16, h >> 18, S.f(o + 0x1c)[0])
+        if t == 0 and kind_ok(anc[1]):
+            yield dict(ptr=o, m=m, sels=sels, layer=anc[0], kind=anc[1], rad=anc[2], root=rk)
         l = local(S, o); m2 = mul(l, m) if l else m
-        for c in S.children(o): yield from rec(c, m2, path | {o})
+        s2 = sels + ((*tp(m, S.f(o + 0x10, 3)), S.f(o + 0x1c)[0], S.f(o + 0x24)[0]),) if t == 2 else sels
+        for c in S.children(o): yield from rec(c, m2, s2, path | {o}, rk, anc)
     for r in roots:
-        if S.u32(r) & 0x3f != 7: yield from rec(r, IDENT, frozenset())
+        if S.u32(r) & 0x3f != 7: yield from rec(r, IDENT, (), frozenset(), None, (0, 0, 0.0))
+
+def instances(S, roots=None):
+    """(inicio de cadena, radio, matriz) por visita de cada carga útil (ver walk_payloads)."""
+    for d in walk_payloads(S, roots): yield d['ptr'], d['rad'], d['m']
 
 def fine_roots(S):
     """Hijos de la raíz estática con payload 1 = detalle fino del nivel (payload 2 = LOD lejano, el resto = objetos de juego)."""
     r = S.ptr(4)
     return [c for c in S.children(r) if c is not None and S.u32(c) >> 18 == 1]
 class Owners:
-    """Asigna cada offset del NGP a la hoja de malla que lo contiene (mayor inicio de cadena <= offset) y da su matriz.
-    sub=None o 'all' -> todo el grafo (reconstrucción fiel); sub='fine' -> sólo el detalle fino (fine_roots); sub=lista de nodos -> esos subárboles."""
+    """Asigna cada offset del NGP al nodo de carga útil que lo contiene (mayor inicio <= offset) y da TODAS sus instancias (una por visita del grafo).
+    sub=None o 'all' -> todo el grafo (reconstrucción fiel); sub='fine' -> sólo el detalle fino (fine_roots); sub=lista de nodos -> esos subárboles.
+    inst[id] = dict(ptr, m, sels, layer, ...); by_ptr[ptr] = [ids]; mats/info/layer se indexan por ID de instancia."""
     def __init__(self, S, sub=None):
         import bisect; self._b = bisect
-        self.mats = {}; self.info = {}
-        for li in leaf_info(S): self.mats[li['ptr']] = li['m']; self.info[li['ptr']] = li
-        self.starts = sorted(self.mats)
+        self.inst = list(walk_payloads(S)); self.by_ptr = {}
+        for k, d in enumerate(self.inst): self.by_ptr.setdefault(d['ptr'], []).append(k)
+        self.mats = {k: d['m'] for k, d in enumerate(self.inst)}; self.info = {k: d for k, d in enumerate(self.inst)}; self.layer = {k: d['layer'] for k, d in enumerate(self.inst)}
+        self.starts = sorted(self.by_ptr)
         roots = fine_roots(S) if sub == 'fine' else None if sub in (None, 'all') else sub
         self.allowed = None if roots is None else {p for r in roots for p, _, _ in instances(S, [r])}
-        import os   # depuración: DH_ONLY / DH_SKIP = inicios de cadena (hojas) a conservar / excluir
+        import os   # depuración: DH_ONLY / DH_SKIP = inicios de cadena (nodos de carga útil) a conservar / excluir
         if os.environ.get('DH_ONLY'): self.allowed = {int(x, 0) for x in os.environ['DH_ONLY'].split(',')}
-        if os.environ.get('DH_SKIP'): self.allowed = (self.allowed if self.allowed is not None else set(self.mats)) - {int(x, 0) for x in os.environ['DH_SKIP'].split(',')}
-        self.layer = {}   # inicio de cadena -> capa de dibujo (u16 alto de la palabra +8 de la hoja): 3 = celdas de terreno, 5 = otro, 2 = telón de fondo/cielo (una por nivel)
-        def rec(o, path):
-            if o is None or o in path or len(path) > 40: return
-            h = S.u32(o)
-            if h & 0x3f == 1 and h >> 18 == 0 and S.u16(o + 8) <= 1 and S.ptr(o + 0x20): self.layer[S.ptr(o + 0x20)] = S.u32(o + 8) >> 16
-            for c in S.children(o): rec(c, path | {o})
-        for r in roots if roots is not None else fine_roots(S): rec(r, frozenset())
+        if os.environ.get('DH_SKIP'): self.allowed = (self.allowed if self.allowed is not None else set(self.by_ptr)) - {int(x, 0) for x in os.environ['DH_SKIP'].split(',')}
     BACKDROP = 2
-    def backdrop(self, i): return self.layer.get(self.owner(i)) == self.BACKDROP
     def owner(self, i):
         k = self._b.bisect_right(self.starts, i) - 1
         return self.starts[k] if k >= 0 else None
     def ok(self, i): return self.allowed is None or self.owner(i) in self.allowed
-    def apply(self, i, pos):
-        o = self.owner(i); m = self.mats.get(o)
+    def ids(self, i): return self.by_ptr.get(self.owner(i), ())
+    def backdrop(self, k): return self.layer.get(k) == self.BACKDROP
+    def apply(self, k, pos):
+        m = self.mats.get(k)
         if m is None or m == IDENT: return list(pos)
         out = []
         for j in range(0, len(pos), 3):
@@ -101,19 +117,5 @@ class Owners:
         return out
 
 def leaf_info(S, roots=None):
-    """Hojas de malla con su matriz acumulada y los selectores de distancia (nodos tipo 2) de sus ancestros.
-    Rinde dicts: ptr, rad, m, sels=[(cx,cy,cz,rad,d2_max)] en espacio de mundo, layer (u16 alto de +8), root (hijo de la raíz que la contiene).
-    Una hoja visitada por varios padres sale una vez por camino."""
-    roots = roots or [S.ptr(4 + 4*i) for i in range(S.u32(0))]
-    def tp(m, c): return tuple(c[0]*m[0+k] + c[1]*m[4+k] + c[2]*m[8+k] + m[12+k] for k in range(3))
-    def rec(o, m, sels, path, rk):
-        if o is None or o in path or len(path) > 40: return
-        h = S.u32(o); t = h & 0x3f
-        if rk is None and path: rk = o
-        if t == 1 and h >> 18 == 0 and S.u16(o + 8) <= 1 and S.ptr(o + 0x20):
-            yield dict(ptr=S.ptr(o + 0x20), rad=S.f(o + 0x1c)[0], m=m, sels=sels, layer=S.u32(o + 8) >> 16, root=rk)
-        l = local(S, o); m2 = mul(l, m) if l else m
-        s2 = sels + ((*tp(m, S.f(o + 0x10, 3)), S.f(o + 0x1c)[0], S.f(o + 0x24)[0]),) if t == 2 else sels
-        for c in S.children(o): yield from rec(c, m2, s2, path | {o}, rk)
-    for r in roots:
-        if S.u32(r) & 0x3f != 7: yield from rec(r, IDENT, (), frozenset(), None)
+    """Compatibilidad: una entrada por visita de carga útil (ver walk_payloads): ptr, rad, m, sels, layer, root."""
+    return walk_payloads(S, roots)

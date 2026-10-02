@@ -87,7 +87,9 @@ while i < L - 16:
             group = [m for m in mats if prev_end <= m[0] < i]
             slot = min(variant, max(len(group) - 1, 0)); tid = get_tex(group[slot]) if group else last_tid   # sin material propio: hereda el estado GS anterior
             idx = hdr = None; flag = set(); uvs = cols = None
-            end = i + 4 + 12 * num; wpos = OW.apply(i, pos) if OW else pos; own = OW.owner(i) if OW else None
+            end = i + 4 + 12 * num
+            insts = [(k, OW.apply(k, pos)) for k in OW.ids(i)] if OW else []   # una copia por instancia del grafo (árboles, banderas…); sin dueño: tal cual
+            if not insts: insts = [(None, pos)]
             for off, nm, imm, n2, sz in iter_vif(ngp, end, min(L, end + 0x4000)):
                 if nm.startswith('?') or nm == 'UNPACK V3-32': break
                 if nm == 'UNPACK V4-32':
@@ -112,9 +114,10 @@ while i < L - 16:
                         order = [j-2, j-1, j]
                         if j & 1: order = [j-2, j, j-1]
                         if len({idx[o] for o in order}) < 3: continue
-                        for o in order:
-                            u, v = (uvs[o][0] / 4096.0, uvs[o][1] / 4096.0) if uvs else (0, 0)
-                            V.extend((*wpos[3*idx[o]:3*idx[o]+3], u, 1.0 - v, *(cols[o] if cols else (1, 1, 1, 1)), tid)); I.append(len(I)); VO.append(own)
+                        for k_inst, wpos in insts:
+                            for o in order:
+                                u, v = (uvs[o][0] / 4096.0, uvs[o][1] / 4096.0) if uvs else (0, 0)
+                                V.extend((*wpos[3*idx[o]:3*idx[o]+3], u, 1.0 - v, *(cols[o] if cols else (1, 1, 1, 1)), tid)); I.append(len(I)); VO.append(k_inst)
                     idx = hdr = None; flag = set(); uvs = cols = None
                 end = off + 4 + sz
             prev_end = end; last_tid = tid; i += 4 + 12 * num; continue
