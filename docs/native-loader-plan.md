@@ -10,7 +10,7 @@ Language note: the runtime stays C++20 for now (Rust remains an open spike, `doc
 | `LVL/<N>.TEX` | 9–10 MB | texture records (16 B headers, GS-swizzled data: CT32 upload of T8/T4/8H, linear T8/T4 variants) | `extract_model.py` + `gs.py` |
 | `LVL/<N>.RTX` | 0.5 MB | CLUT records | `extract_model.py` |
 | `PTS/<N>.PTS` + siblings | 64 KB + small | racing line (`0x09212001`, 2048 × 32 B), trackside point lists (`0x10182001`) | `pts_path.py`, `ptsext.py` |
-| ISO | 4.3 GB | ISO9660 volume (`SLES_522.02`, dirs LVL, PTS, R, BIKE, SHELL, LOADBAR …) | external extraction |
+| ISO | 2.77 GB | ISO9660 volume (primary descriptor `CD001` at sector 16, system id `PLAYSTATION`; `SLES_522.02`, dirs LVL, PTS, R, BIKE, SHELL, LOADBAR …) | external extraction |
 
 ## Structures the loader needs (all documented in `docs/formats/`)
 1. **Root table & node walker** — node header `type = hdr & 0x3F`, instance `(hdr>>7)&0x7FF`, kind `hdr>>18` (markers.md); children by type: 1 (`+0x20 + 4i`, count `u16 @+8`), 2 (`+0x28 + 8i`, count `@+4`), 3 (`+0x1C + 4i`, count `@+8`), 4 (`+0x50 + 4i`, count `@+8`), 6 (`+0xC + 4i`, count byte `@+0xB`), 8 (`+4`); 7 = node table (175 × 0xC0 B, 4×4 matrix), 15/45 = object grid / probes (`ngpgrid.py`), 25 draw entry, 11 callback hook, 0x2A collision. (`scene.py`)
@@ -25,7 +25,7 @@ Language note: the runtime stays C++20 for now (Rust remains an open spike, `doc
 `iso extraction → extract_model.py → .mdl`, `collision.py → .col`, `markers.py → .gates/.pts`, `pts_path.py → chain0.pts`, `tools/play_level.sh`. Remaining offline-only: `ghidra` scripts, `contact_sheet.py`, `loadbar_export.py`, research tools.
 
 ## Implementation order (each step ends with a byte/number-exact check against the Python oracle on all 54 levels)
-0. **ISO9660 reader** (list + extract a file; plain ISO9660 level 1 names with `;1` suffix) — small, unblocks "no manual extraction"; needs the ISO only, no game data in the repo.
+0. **ISO9660 reader** (list + extract a file; sector size 2048 — the `;1` version suffix and name level were not checked) — small, unblocks "no manual extraction"; needs the ISO only, no game data in the repo.
 1. ✔ `ngp::Reader` + **0x2A collision** (done: 54/54 identical).
 2. Root table + node walker + `Owners`/layers (compare node counts per type with `scene.py`).
 3. Markers/gates/start grid + PTS chain (compare with `markers.py`, `pts_path.py`).
