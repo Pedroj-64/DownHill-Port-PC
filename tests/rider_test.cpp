@@ -60,6 +60,35 @@ int main() {
         ApproxResult unoptimized = approxPose(real, 0.f, {0.f, 0.f, 0.f}, 5.5f, false);
         ApproxResult approx = approxPose(real, 0.f, {0.f, 0.f, 0.f}, 5.5f, true);
         constexpr float qualityThreshold = 0.05f;
+        const std::array<float, 3> footOffset = {0.f, -0.62f, 0.37f}; // HIPÓTESIS medida: tobillo (-0.11, +0.37) respecto a bola (+0.51).
+        const CycleResult cycleCenter = approxCycle(real, {0.f, 0.f, 0.f}, 5.5f);
+        const CycleResult cycleFoot = approxCycle(real, {0.f, 0.f, 0.f}, 5.5f, footOffset);
+        const char* cycleNames[4] = {"wrist+X", "wrist-X", "ankle+X", "ankle-X"};
+        const auto assertCycleBound = [](const char* label, float value, float low, float high, const char* cause) {
+            if (value < low || value > high) {
+                std::printf("FAIL cycle bound %s=%.6f expected [%.6f, %.6f], cause: %s\n", label, value, low, high, cause);
+                std::exit(1);
+            }
+        };
+        for (const auto& cycle : {cycleCenter, cycleFoot}) {
+            std::printf("ALP2 cycle offset=(%.3f,%.3f,%.3f) pelvis=(%.6f,%.6f,%.6f) rotation=(%.6f,%.6f,%.6f) evaluations=%zu\n",
+                        cycle.footOffset[0], cycle.footOffset[1], cycle.footOffset[2],
+                        cycle.pelvis[0], cycle.pelvis[1], cycle.pelvis[2],
+                        cycle.pelvisRotation[0], cycle.pelvisRotation[1], cycle.pelvisRotation[2],
+                        cycle.evaluations);
+            for (int phaseIndex = 0; phaseIndex < 8; phaseIndex++) {
+                std::printf("ALP2 cycle phase %d", phaseIndex);
+                for (int i = 0; i < 4; i++) std::printf(" %s=%.6f", cycleNames[i], cycle.errors[phaseIndex][i]);
+                std::puts("");
+            }
+            for (int i = 0; i < 4; i++) std::printf("ALP2 cycle worst %s=%.6f\n", cycleNames[i], cycle.maxError[i]);
+        }
+        assertCycleBound("center wrist+X", cycleCenter.maxError[0], 0.70f, 0.90f, "shared pelvis conflict");
+        assertCycleBound("center ankle+X", cycleCenter.maxError[2], 0.48f, 0.62f, "shared pelvis conflict");
+        assertCycleBound("center ankle-X", cycleCenter.maxError[3], 0.46f, 0.58f, "shared pelvis conflict");
+        assertCycleBound("foot wrist+X", cycleFoot.maxError[0], 0.42f, 0.54f, "foot offset plus shared pelvis conflict");
+        assertCycleBound("foot ankle+X", cycleFoot.maxError[2], 0.66f, 0.81f, "foot offset plus shared pelvis conflict");
+        assertCycleBound("foot ankle-X", cycleFoot.maxError[3], 0.65f, 0.80f, "foot offset plus shared pelvis conflict");
         std::printf("ALP2 phase0 unoptimized %.6f %.6f %.6f %.6f; optimized %.6f %.6f %.6f %.6f pelvis %.6f %.6f %.6f evaluations %zu\n",
                     unoptimized.errors[0], unoptimized.errors[1], unoptimized.errors[2], unoptimized.errors[3],
                     approx.errors[0], approx.errors[1], approx.errors[2], approx.errors[3],
@@ -104,9 +133,13 @@ int main() {
             const std::array<int, 4> effectors = {5, 8, 14, 11};
             for (int i = 0; i < 4; i++) if (frame.errors[i] >= qualityThreshold) {
                 const auto isolated = isolatedTargetSearch(real, effectors[i], channels[i], frame.hingeRanges[i], targets[i]);
+                const auto pelvisSearch = isolatedPelvisSearch(real, effectors[i], channels[i], frame.hingeRanges[i],
+                                                               i < 2 ? (i == 0 ? std::array<float, 3>{1.035f, 0.791f, 0.978f} : std::array<float, 3>{-1.024f, 0.790f, 0.978f})
+                                                                     : (i == 2 ? std::array<float, 3>{0.488f, -0.28f, -1.025f} : std::array<float, 3>{-0.488f, -0.28f, -1.025f}),
+                                                               root, {0.f, 0.f, 0.f});
                 std::printf("ALP2 diagnosis phase %.6f %s isolated-best %.6f samples %zu cause %s\n",
                             phase, names[i], isolated.bestError, isolated.samples,
-                            isolated.belowQuality ? "shared pelvis/torso" : "infeasible at fixed pelvis/torso");
+                            pelvisSearch.belowQuality ? "shared pelvis/torso conflict" : "infeasible over pelvis/torso range");
             }
             if (!quality) std::printf("ALP2 quality: FAIL at this phase, threshold %.3f u; residual is not an anchoring-distance failure and approximation is not game pose\n", qualityThreshold);
             if (!frame.refinementConverged || frame.refinementChange >= 1e-4f) {

@@ -71,9 +71,50 @@ For each residual case the test performs a 5^4 isolated sample over the four
 measured limb channels (625 samples). Examples from the current ALP2 run:
 ankle +X at `pi/4` has isolated best `0.466244 u`, wrist -X at `pi/2` has
 `0.208819 u`, and ankle +X at `pi` has `0.391449 u`; these are classified as
-infeasible at the fixed pelvis/torso candidate, rather than as silent solver
-successes. The isolated search is a coarse diagnostic; the remaining
-shared-pelvis classification is explicitly approximate.
+shared-pelvis conflicts because a pelvis/torso search for the single limb finds
+an error below `0.05 u`. “Infeasible” is reserved for a failure of that pelvis/
+torso search. The isolated search is still a coarse diagnostic.
+
+### Shared-cycle result and foot offset
+
+The principal result uses one pelvis, pelvis rotation, and torso for all eight
+crank phases. With the ankle at the pedal center (`footOffset=(0,0,0)`), the
+selected shared pelvis is `(0,0,0)`, rotation `(0.6,0,0)`, and the search made
+`27008` evaluations:
+
+| phase | wrist +X | wrist -X | ankle +X | ankle -X |
+|---:|---:|---:|---:|---:|
+| 0 | 0.787831 | 0.000000 | 0.464693 | 0.000000 |
+| pi/4 | 0.787831 | 0.000000 | 0.000000 | 0.000001 |
+| pi/2 | 0.787831 | 0.000000 | 0.000000 | 0.450510 |
+| 3pi/4 | 0.787831 | 0.000000 | 0.315484 | 0.436111 |
+| pi | 0.787831 | 0.000000 | 0.137437 | 0.118624 |
+| 5pi/4 | 0.787831 | 0.000000 | 0.542184 | 0.512697 |
+| 3pi/2 | 0.787831 | 0.000000 | 0.126010 | 0.000000 |
+| 7pi/4 | 0.787831 | 0.000000 | 0.300865 | 0.000000 |
+| worst | 0.787831 | 0.000000 | 0.542184 | 0.512697 |
+
+The measured pose-zero foot geometry gives a ball-to-ankle offset of
+`(0,-0.62,+0.37) u`: ball at `y=+0.51`, ankle at `y=-0.11`, and ankle height
+`+0.37`. With this offset applied to the ankle target, the shared result uses
+pelvis `(0,0,0)`, rotation `(0,0.6,0)`, and `27008` evaluations:
+
+| phase | wrist +X | wrist -X | ankle +X | ankle -X |
+|---:|---:|---:|---:|---:|
+| 0 | 0.478516 | 0.115489 | 0.734388 | 0.000000 |
+| pi/4 | 0.478516 | 0.115489 | 0.000000 | 0.000000 |
+| pi/2 | 0.478516 | 0.115489 | 0.000000 | 0.726747 |
+| 3pi/4 | 0.478516 | 0.115489 | 0.000000 | 0.510542 |
+| pi | 0.478516 | 0.115489 | 0.000000 | 0.000000 |
+| 5pi/4 | 0.478516 | 0.115489 | 0.000000 | 0.348466 |
+| 3pi/2 | 0.478516 | 0.115489 | 0.000000 | 0.531294 |
+| 7pi/4 | 0.478516 | 0.115489 | 0.658207 | 0.472865 |
+| worst | 0.478516 | 0.115489 | 0.734388 | 0.726747 |
+
+The offset changes the shared-cycle worst errors to `0.478516`, `0.115489`,
+`0.734388`, and `0.726747 u`. These remaining failures are measured shared
+pelvis/torso conflicts; the single-limb pelvis search finds feasible solutions.
+This remains an approximation, not the game's pose.
 
 The previously observed unconstrained diagnostic point `(1,0,0)` is rejected:
 the left-hand anchor is `2.382679 u` from the pelvis, exceeding the 1.824-u arm

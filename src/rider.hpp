@@ -214,9 +214,35 @@ inline IsolatedIKResult isolatedTargetSearch(const Skeleton& sk, int effector,
     return result;
 }
 
+inline IsolatedIKResult isolatedPelvisSearch(const Skeleton& sk, int effector,
+                                             const std::array<int, 4>& channels,
+                                             const HingeRange& hinge,
+                                             const std::array<float, 3>& anchor,
+                                             const std::array<float, 3>& rootModel,
+                                             const std::array<float, 3>& origin) {
+    IsolatedIKResult result{1e30f, 0, false};
+    const std::array<float, 4> low = {-3.1415927f, -3.1415927f, -3.1415927f, hinge.lower};
+    const std::array<float, 4> high = {3.1415927f, 3.1415927f, 3.1415927f, hinge.upper};
+    for (int px = -2; px <= 2; px++) for (int py = -2; py <= 2; py++) for (int pz = -2; pz <= 2; pz++)
+        for (int tx = -1; tx <= 1; tx++) for (int ty = -1; ty <= 1; ty++) for (int tz = -1; tz <= 1; tz++) {
+            std::array<float, 40> pose{};
+            pose[0] = 0.6f * tx; pose[1] = 0.6f * ty; pose[2] = 0.6f * tz;
+            const std::array<float, 3> pelvis = {origin[0] + (float)px, origin[1] + (float)py, origin[2] + (float)pz};
+            const std::array<float, 3> target = {rootModel[0] + anchor[0] - pelvis[0],
+                                                 rootModel[1] + anchor[1] - pelvis[1],
+                                                 rootModel[2] + anchor[2] - pelvis[2]};
+            const auto solved = solveTarget(sk, pose, effector, target, channels, low, high, 80);
+            result.samples += solved.iterations;
+            result.bestError = std::min(result.bestError, solved.error);
+        }
+    result.belowQuality = result.bestError < 0.05f;
+    return result;
+}
+
 inline ApproxResult approxPose(const Skeleton& sk, float phase, const std::array<float, 3>& pelvisBike,
                                float cadence = 5.5f, bool optimizePelvis = true,
-                               const std::array<float, 3>& pelvisRotation = {}) {
+                               const std::array<float, 3>& pelvisRotation = {},
+                               const std::array<float, 3>& footOffset = {}) {
     ApproxResult result; result.pelvis = pelvisBike;
     result.pelvisRotation = pelvisRotation;
     const auto bind = sk.worldPositions(result.pose.data(), result.pose.size());
@@ -259,13 +285,15 @@ inline ApproxResult approxPose(const Skeleton& sk, float phase, const std::array
         };
         solve(0, bikeToModel(hands[0], pelvis, rootModel), armPositive);
         solve(1, bikeToModel(hands[1], pelvis, rootModel), armNegative);
-        solve(2, bikeToModel(feet[0], pelvis, rootModel), legPositive);
-        solve(3, bikeToModel(feet[1], pelvis, rootModel), legNegative);
+        const auto footTargetR = std::array<float, 3>{feet[0][0] + footOffset[0], feet[0][1] + footOffset[1], feet[0][2] + footOffset[2]};
+        const auto footTargetL = std::array<float, 3>{feet[1][0] + footOffset[0], feet[1][1] + footOffset[1], feet[1][2] + footOffset[2]};
+        solve(2, bikeToModel(footTargetR, pelvis, rootModel), legPositive);
+        solve(3, bikeToModel(footTargetL, pelvis, rootModel), legNegative);
         const auto pos = sk.worldPositions(pose.data(), pose.size());
         const std::array<float, 4> errors = {distance3(pos[armPositive.effector], bikeToModel(hands[0], pelvis, rootModel)),
                                              distance3(pos[armNegative.effector], bikeToModel(hands[1], pelvis, rootModel)),
-                                             distance3(pos[legPositive.effector], bikeToModel(feet[0], pelvis, rootModel)),
-                                             distance3(pos[legNegative.effector], bikeToModel(feet[1], pelvis, rootModel))};
+                                             distance3(pos[legPositive.effector], bikeToModel(footTargetR, pelvis, rootModel)),
+                                             distance3(pos[legNegative.effector], bikeToModel(footTargetL, pelvis, rootModel))};
         float total = 0; for (float e : errors) total += e;
         return std::tuple<std::array<float, 4>, float, std::array<IKResult, 4>>{errors, total, ik};
     };
@@ -374,17 +402,20 @@ struct CycleResult {
     std::array<std::array<float, 4>, 8> errors{};
     std::array<float, 4> maxError{};
     size_t evaluations = 0;
+    std::array<float, 3> footOffset{};
 };
 
 // Shared-cycle approximation: one pelvis/torso/rotation is selected for all
 // crank phases; each frame may still solve its four limb channels.
 inline CycleResult approxCycle(const Skeleton& sk, const std::array<float, 3>& origin,
-                               float cadence = 5.5f) {
+                               float cadence = 5.5f,
+                               const std::array<float, 3>& footOffset = {}) {
     CycleResult result; result.pelvis = origin; result.torso = {-0.18f, -0.10f, 0.f};
+    result.footOffset = footOffset;
     auto evaluate = [&](const std::array<float, 3>& pelvis, const std::array<float, 3>& rotation) {
         std::array<float, 4> worst{};
         for (int phaseIndex = 0; phaseIndex < 8; phaseIndex++) {
-            const auto frame = approxPose(sk, 0.7853981634f * phaseIndex, pelvis, cadence, false, rotation);
+            const auto frame = approxPose(sk, 0.7853981634f * phaseIndex, pelvis, cadence, false, rotation, footOffset);
             result.evaluations++;
             for (int i = 0; i < 4; i++) worst[i] = std::max(worst[i], frame.errors[i]);
         }
@@ -407,7 +438,7 @@ inline CycleResult approxCycle(const Skeleton& sk, const std::array<float, 3>& o
                         }
     result.maxError = best;
     for (int phaseIndex = 0; phaseIndex < 8; phaseIndex++)
-        result.errors[phaseIndex] = approxPose(sk, 0.7853981634f * phaseIndex, result.pelvis, cadence, false, result.pelvisRotation).errors;
+        result.errors[phaseIndex] = approxPose(sk, 0.7853981634f * phaseIndex, result.pelvis, cadence, false, result.pelvisRotation, footOffset).errors;
     return result;
 }
 
