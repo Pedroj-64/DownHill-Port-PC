@@ -1,25 +1,46 @@
-# .NGA animation container / contenedor de animaciones (`BIKE/BANIM`, `R/RANIM`, `SHELL/SH*ANIM`)
-Parser: `tools/nga.py` · Test: `tests/test_nga.py` (synthetic). Checked on all 6 files of the ISO (197 + 204 + 4 + 4 + 4 + 4 clips).
+# .NGA animation files / archivos de animación (`BIKE/BANIM`, `R/RANIM`, `SHELL/SH*ANIM`)
+Parser + evaluator: `tools/nga.py` · Tests: `tests/test_nga.py` (synthetic tracks + invariants over all 6 files when the game data is present). Citations are Ghidra addresses; uncited = hypothesis.
 
-## Clip table
-`u32 magic` (≠ constant: 0xC61798 BANIM, 0xCE4E88 RANIM; probably a load address/base, unconfirmed) then `(u32 id, u32 offset)` pairs: ids are consecutive and **global across files** (BANIM 1–197, SH?BANIM 198–201, RANIM 1–204, SH?RANIM 205–208). Offsets ascending; a clip runs to the next offset (last: EOF). The table is followed by padding to the first clip (BANIM 0x700, RANIM 0xAD0).
+## File header and clip table (`FUN_0020CEE0`)
+`u16 @0` (unknown: 6040 BANIM, 20104 RANIM) · `u16 @2 = count` · then `count × { u16 id, u16 pad, u32 offset }` from +4. `offset` points to the clip **header**; the loader does `item[id].clip = base + offset` (`*(id*0x3C + node[0x10] + 4)`) and `FUN_0020BE90` stamps the id into the clip at `+0x10`. Ids are **not consecutive** (BANIM ends …196, 197, 202; RANIM …204, 210, 211) and are global across files (SH?BANIM 199–201, SH?RANIM 206–208). BANIM 198 clips, RANIM 206, the four SH* files 4 each (earlier docs said 197/204: the old parser assumed consecutive ids).
 
-## Clip header (0x12 bytes + counts)
+## Clip header (at `offset`)
 | off | type | meaning |
 |----:|------|---------|
-| 0 | u16 | 12 always (header size / version) |
-| 2 | u16 | clip id in game tables (12, 24, 28, 76, 80, 84… 988; unique per file) — mapping to names unknown |
-| 4 | u32 | 0 (in 4 RANIM clips an f32, e.g. 10.0 — unknown) |
-| 8 | f32 | duration (24, 40, 60, 120, 150 → frames or ticks; unit unconfirmed) |
-| 12 | u32 | number of tracks (bike clips 2–27; rider clips up to 109) |
-| 0x12 | u16 × tracks | per-track small count (2…11; probably key count or channel descriptor) |
-| … | | track payload — **NOT decoded** |
-Payload evidence: per track descriptors like `1410 1a00 0300…` and f32 triples (e.g. 0.157, −0.706, 0.0055) interleaved with packed bytes/halves → a custom compressed curve format. The ELF function that reads it (rider anim handle lookup: `FUN_001affa8` → `FUN_00208f68`/`FUN_00208e60`) is the next thing to decompile.
+| 0 | u16 | 12 |
+| 2 | u16 | clip id (game table; unique per file) |
+| 4 | u32 | 0 (4 RANIM clips: an f32, unknown) |
+| 8 | f32 | duration (24, 40, 60, 120, 150 …) — time unit unverified |
+| 0xC | u16 | number of tracks `K` (`lhu 0xC` in `FUN_0020A258`) |
+| 0x10 | u16 | runtime slot (file: 0) |
+| 0x12 | u16 × K | `counts[k]`: **distance in 4-byte units** to track *k* (not a key count — earlier doc was wrong) |
 
-Rider: R/ meshes (e.g. `CAM`…`XSW`, 4 outfits' arms + handlebar) are first-person arms; no full-body rider mesh found (searched SHELL, REP (`.ORB/.REP`: replay files, `.ORB` has an ASCII rider name e.g. "KonradB"), RST (`.RST` per level and `.RRS` per rider: sparse 16 KB parameter tables with magic `0x4E9692A5` and f32 values like 0.55/1.01 — likely rider/level tuning, not meshes; 2358 of 16384 bytes non-zero in ALP2.RST), BIKE (`<RIDER>.RRS`, 32 KB, same family)).
+## Track placement (`FUN_0020A258`, asm `0x0020A308–0x0020A36C`)
+Tracks lie **before** the header, contiguously: `pos₀ = header`, `pos_k = pos_{k−1} − 4·counts[k]`, track *k* starts at `pos_k`. Verified on all 25 348 tracks: regions fill the file exactly (gap to the previous clip header 0/2/8/16 = alignment). `counts[k]·4` = `pad4(record size)` **plus 16 when track k−1 (in processing order) carries a quantisation header**, which sits 16 bytes before that track's record and therefore inside region *k*; region 0 may also contain ≤ 12 B of padding up to the header.
+For each track the engine reads `u16 flags`, `u16 channel` (pose slot: `pose[channel] = value(t)`, mask bit set), then calls `FUN_0020C5E8`, which dispatches through the table `0x4FAFB8` filled by `FUN_0020CDD0`: index `(flags&7)·12 + ((flags>>3)&7)·4`. Types 2 and 3 additionally advance the per-track hint pointer (`(flags&7)−2 < 2`).
 
-## Engine side (partial, Ghidra) — what is known about how clips are bound
-- Animated nodes are looked up by `(kind, index)` = `(hdr>>18, (hdr>>7)&0x7FF)` in the loaded-scene table `DAT_004FAE48[scene]` (`+4` node count, `+8` node pointers): `FUN_00208F68` (find node), `FUN_00208E60` / `FUN_00208D28` (find node **and** the animation item). The node's `+0x10` points to an array of **0x3C-byte animation items**; `FUN_00208CD8` maps an id to an item index by scanning the node's `+0x20` list (u16 count, then `(ptr, …)` pairs whose target header `>>18` equals the id). So clip ids ↔ node kinds.
-- `FUN_001AFFA8` (rider setup) calls these for rider handles 1..0xFD and logs `"can't find anim handle for rider - %d"` (`0x2A99F8`) when the first lookup fails.
-- Instances: `FUN_002085D0` / `FUN_00208978` / `FUN_00208B78` allocate 0x58-byte animation instances (type 0x22 / 0x21 blend chain, time `DAT_002C8388`, item pointer at `+0x1C`).
-- **Not found:** the function that decodes the per-track curve payload (probably sampled in VU code or deeper in the pool functions `FUN_00209xxx`). Decoder stays blocked; `tools/nga.py` only exposes the container.
+## Track record and evaluators
+`u16 flags (type = &7, mode = >>3 &7) · u16 channel · u16 n · data`. Quantised tracks use the header `{f32 t0, dt, v0, dv}` at `record−0x10` (value = `q·dv+v0`, time = `q·dt+t0`). Tangent word (16 bit): `|x| < 16384 → x/16384`; top bits `01 → 16384/(32768−x)`; `10 → 16384/(−32768−x)`.
+
+| (type,mode) | evaluator | record layout | tracks in the 6 files |
+|-------------|-----------|---------------|----------------------:|
+| (3,0) | stub `0x0020C5E0` (`lwc1 f0,4(a0)`) | `f32 value @+4` (the u16 `n` is its high half) | 12 374 |
+| (2,2) | `FUN_00268968` | `u8 samples @+6`, uniform step `dt` from `t0`, linear interpolation, clamped | 5 626 |
+| (4,2) | `FUN_00268A68` | `n × {u8 t, u8 v, u16 tan} @+6` (one tangent per key), Hermite with slope `tan` | 7 035 |
+| (1,2) | `FUN_002691A8` | `n × {u8 t, u8 v, u16 tanA, u16 tanB} @+6`, Hermite in `u` with `m0=tanA_k`, `m1=tanB_k` | 313 |
+| (1,1) | `FUN_00268EF8` | as (1,2) with `u16 t, u16 v` (stride 8) | 0 (not in data) |
+| (1,0) | `FUN_00268DE8` | `n × {f32 t, v, tanA, tanB} @+8` | 0 |
+| (0,0) | `FUN_00268D10` | `n × {f32 t, v, c3, c2, c1} @+8`, `v + x(c1 + x(c2 + x·c3))`, `x=t−t_k` | 0 |
+| (2,0) / (2,1) | `FUN_00269438` / `FUN_002694E8` | f32 / u16 uniform samples | 0 |
+| (4,0) | `FUN_00269600` | `n × {f32 t, v, tan} @+8` | 0 |
+| (4,1) | `FUN_00269740` | not implemented | 0 |
+Evidence: **25 348 tracks decode with no unknown (type,mode), all key times monotonic, all values finite, record sizes exact** (`tests/test_nga.py::RealData`). Combinations absent from the data are implemented from the decompiled code only (untested).
+
+## Engine side
+Animated nodes are looked up by `(kind, index)` in `DAT_004FAE48[scene]` (`FUN_00208F68`, `FUN_00208E60`, `FUN_00208D28`); a node's `+0x10` is an array of 0x3C-byte items, `+0x20` the channel/mask info (`u16 @+2` = channel count). Playback instances (0x58 B, types 0x21 clip / 0x22 blend) are built by `FUN_002085D0/00208978/00208B78`; `FUN_0020A4A0` dispatches: type 0x21 → `FUN_0020A258` (clip → pose floats + mask), type 0x22 → blenders `FUN_0020A6F8…` (cross-fade `1−(t/dur)` with ease modes `DAT_002C7B8C`, per-channel angle wrap when the channel's angle bit is set).
+
+## Open
+* Channel → node parameter mapping (which pose slot is x/y/z/rotation of which joint): needs `BIKESKEL` and the per-node channel info (`node+0x20`).
+* Time unit of the keys (duration 24–150): `FUN_00209F30` converts instance time to track time (not decoded).
+* The 4 RANIM clips with a non-zero f32 at `+4`.
+* Rider body mesh: none found (R/ holds first-person arms; see git history for the search of SHELL/REP/RST).

@@ -14,6 +14,7 @@ public class DecompFn extends GhidraScript {
         PrintWriter w = new PrintWriter(new FileWriter(args[0]));
         for (int i = 1; i < args.length; i++) { String a = args[i];
             Function f = getFunctionAt(toAddr(Long.parseLong(a, 16)));
+            if (f == null) { disassemble(toAddr(Long.parseLong(a, 16))); f = createFunction(toAddr(Long.parseLong(a, 16)), null); }   // si no hay función (p. ej. destino de puntero), la crea
             if (f == null) { w.println("// no function at " + a); continue; }
             DecompileResults r = di.decompileFunction(f, 120, monitor);
             w.println("// ==== " + f.getName() + " @ " + f.getEntryPoint());
