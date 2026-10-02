@@ -1,0 +1,60 @@
+# Material con copyright del juego: NUNCA al repo
+*.iso
+*.bin
+*.cue
+*.img
+*.IMG
+iso_extract/
+unpacked/
+assets/
+extracted/
+dump/
+out/
+# Binarios/formatos del juego por si se copian sueltos
+SLES_*
+SCES_*
+SLUS_*
+SYSTEM.CNF
+*.elf
+*.irx
+*.IRX
+*.NGP
+*.PTR
+*.RTX
+*.TEX
+*.PTS
+*.RST
+*.BNK
+*.VPK
+*.VAG
+*.PSS
+*.ORB
+*.REP
+*.NGA
+*.SKX
+*.CTL
+# Proyectos de Ghidra / análisis (contienen el binario)
+*.gpr
+*.rep/
+*.lock
+*.lock~
+ghidra_projects/
+# Build y editor
+build/
+cmake-build-*/
+.cache/
+compile_commands.json
+__pycache__/
+*.pyc
+.vscode/
+.idea/
+# Claude / entorno local
+.claude/
+graphify-out/
+# Secretos
+.env
+*.key
+*.pem
+
+# Salida de decompilación (derivada del binario)
+decomp/

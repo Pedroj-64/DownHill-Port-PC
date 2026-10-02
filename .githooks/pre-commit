@@ -1,0 +1,25 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: 2026 Pedro Soto
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Bloquea commits con material del juego, archivos grandes, rutas personales o secretos.
+# Activar una vez por clon:  git config core.hooksPath .githooks
+fail=0
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+[ -z "$staged" ] && exit 0
+
+# 1) extensiones/nombres del juego y de imágenes de disco
+bad=$(printf '%s\n' "$staged" | grep -iE '\.(iso|bin|cue|img|elf|irx|ngp|ptr|rtx|tex|pts|rst|bnk|vpk|vag|pss|orb|rep|nga|skx|ctl|ico|gpr|pem|key)$|(^|/)(SLES|SCES|SLUS)_|(^|/)(iso_extract|unpacked|decomp|ghidra_projects|assets)/|\.env$')
+[ -n "$bad" ] && { echo "BLOQUEADO: material del juego/secretos en el commit:"; echo "$bad"; fail=1; }
+
+# 2) archivos grandes (> 1 MiB)
+for f in $staged; do
+  sz=$(git cat-file -s ":$f" 2>/dev/null || echo 0)
+  [ "$sz" -gt 1048576 ] && { echo "BLOQUEADO: $f pesa más de 1 MiB"; fail=1; }
+done
+
+# 3) rutas personales y secretos en el contenido
+hits=$(git diff --cached -U0 -- . ':(exclude)LICENSE' | grep -E '^\+' | grep -E '/home/[a-z0-9_-]+/|/Users/[A-Za-z0-9_-]+/|BEGIN (RSA|OPENSSH|EC|PRIVATE)|(api[_-]?key|secret|token|passwd|password)[[:space:]]*[:=]' )
+[ -n "$hits" ] && { echo "BLOQUEADO: posible ruta personal o secreto:"; echo "$hits" | head -5; fail=1; }
+
+[ $fail -ne 0 ] && { echo "Commit abortado. Revisa .gitignore o quita lo anterior."; exit 1; }
+exit 0
