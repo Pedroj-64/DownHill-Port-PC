@@ -59,7 +59,7 @@ at-least-±2 grid and the refinement reports its own evaluations and convergence
 (`change < 1e-4`). This is a measured approximation diagnostic, not validation
 of the game's pose.
 
-Pelvis rotation channels 0..2 are also searched within `[-0.6, 0.6]` rad and
+Pelvis rotation channels 0..2 are also searched within `[-1.0, 1.0]` rad and
 reported per phase. The current ALP2 per-phase results include rotations such
 as `(0.6,0,0.6)` at phase 0 and `(0.35,0,0)` at phase `pi/4`; these are
 approximation parameters, not recovered game data. `approxCycle()` provides the
@@ -77,44 +77,49 @@ torso search. The isolated search is still a coarse diagnostic.
 
 ### Shared-cycle result and foot offset
 
-The principal result uses one pelvis, pelvis rotation, and torso for all eight
-crank phases. With the ankle at the pedal center (`footOffset=(0,0,0)`), the
-selected shared pelvis is `(0,0,0)`, rotation `(0.6,0,0)`, and the search made
-`27008` evaluations:
+The principal result is an experimental approximation, enabled only by
+`DH_RIDER_POSE=approx`; it is not the game's pose. It uses one pelvis, pelvis
+rotation, and torso for all eight crank phases. With the ankle at the pedal
+center (`footOffset=(0,0,0)`), the selected shared pelvis is
+`(0,1,0)`, rotation `(0.5,0.5,1.0)`, and the search made `125008`
+evaluations. The rotation Z component is still on the expanded `+1.0` edge;
+this is recorded as a range-bound experimental optimum, not a physical pose
+claim:
 
 | phase | wrist +X | wrist -X | ankle +X | ankle -X |
 |---:|---:|---:|---:|---:|
-| 0 | 0.787831 | 0.000000 | 0.464693 | 0.000000 |
-| pi/4 | 0.787831 | 0.000000 | 0.000000 | 0.000001 |
-| pi/2 | 0.787831 | 0.000000 | 0.000000 | 0.450510 |
-| 3pi/4 | 0.787831 | 0.000000 | 0.315484 | 0.436111 |
-| pi | 0.787831 | 0.000000 | 0.137437 | 0.118624 |
-| 5pi/4 | 0.787831 | 0.000000 | 0.542184 | 0.512697 |
-| 3pi/2 | 0.787831 | 0.000000 | 0.126010 | 0.000000 |
-| 7pi/4 | 0.787831 | 0.000000 | 0.300865 | 0.000000 |
-| worst | 0.787831 | 0.000000 | 0.542184 | 0.512697 |
+| 0 | 0.727810 | 0.382811 | 0.353089 | 0.000000 |
+| pi/4 | 0.727810 | 0.382811 | 0.513187 | 0.149539 |
+| pi/2 | 0.727810 | 0.382811 | 0.000000 | 0.469974 |
+| 3pi/4 | 0.727810 | 0.382811 | 0.348024 | 0.000000 |
+| pi | 0.727810 | 0.382811 | 0.000000 | 0.000020 |
+| 5pi/4 | 0.727810 | 0.382811 | 0.000000 | 0.520402 |
+| 3pi/2 | 0.727810 | 0.382811 | 0.000000 | 0.000000 |
+| 7pi/4 | 0.727810 | 0.382811 | 0.000000 | 0.000000 |
+| worst | 0.727810 | 0.382811 | 0.513187 | 0.520402 |
 
 The measured pose-zero foot geometry gives a ball-to-ankle offset of
 `(0,-0.62,+0.37) u`: ball at `y=+0.51`, ankle at `y=-0.11`, and ankle height
 `+0.37`. With this offset applied to the ankle target, the shared result uses
-pelvis `(0,0,0)`, rotation `(0,0.6,0)`, and `27008` evaluations:
+pelvis `(0,0,0)`, rotation `(0,0.5,0.5)`, and `125008` evaluations:
 
 | phase | wrist +X | wrist -X | ankle +X | ankle -X |
 |---:|---:|---:|---:|---:|
-| 0 | 0.478516 | 0.115489 | 0.734388 | 0.000000 |
-| pi/4 | 0.478516 | 0.115489 | 0.000000 | 0.000000 |
-| pi/2 | 0.478516 | 0.115489 | 0.000000 | 0.726747 |
-| 3pi/4 | 0.478516 | 0.115489 | 0.000000 | 0.510542 |
-| pi | 0.478516 | 0.115489 | 0.000000 | 0.000000 |
-| 5pi/4 | 0.478516 | 0.115489 | 0.000000 | 0.348466 |
-| 3pi/2 | 0.478516 | 0.115489 | 0.000000 | 0.531294 |
-| 7pi/4 | 0.478516 | 0.115489 | 0.658207 | 0.472865 |
-| worst | 0.478516 | 0.115489 | 0.734388 | 0.726747 |
+| 0 | 0.160114 | 0.656302 | 0.000000 | 0.179826 |
+| pi/4 | 0.160114 | 0.656302 | 0.000000 | 0.000000 |
+| pi/2 | 0.160114 | 0.656302 | 0.000001 | 0.735068 |
+| 3pi/4 | 0.160114 | 0.656302 | 0.042353 | 0.337294 |
+| pi | 0.160114 | 0.656302 | 0.189364 | 0.028711 |
+| 5pi/4 | 0.160114 | 0.656302 | 0.337027 | 0.648340 |
+| 3pi/2 | 0.160114 | 0.656302 | 0.000000 | 0.456194 |
+| 7pi/4 | 0.160114 | 0.656302 | 0.276158 | 0.000000 |
+| worst | 0.160114 | 0.656302 | 0.337027 | 0.735068 |
 
-The offset changes the shared-cycle worst errors to `0.478516`, `0.115489`,
-`0.734388`, and `0.726747 u`. These remaining failures are measured shared
+The offset changes the shared-cycle worst errors to `0.160114`, `0.656302`,
+`0.337027`, and `0.735068 u`. These remaining failures are measured shared
 pelvis/torso conflicts; the single-limb pelvis search finds feasible solutions.
-This remains an approximation, not the game's pose.
+This remains an experimental approximation, opt-in via `DH_RIDER_POSE=approx`,
+not the game's pose.
 
 The previously observed unconstrained diagnostic point `(1,0,0)` is rejected:
 the left-hand anchor is `2.382679 u` from the pelvis, exceeding the 1.824-u arm

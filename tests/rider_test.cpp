@@ -61,6 +61,7 @@ int main() {
         ApproxResult approx = approxPose(real, 0.f, {0.f, 0.f, 0.f}, 5.5f, true);
         constexpr float qualityThreshold = 0.05f;
         const std::array<float, 3> footOffset = {0.f, -0.62f, 0.37f}; // HIPÓTESIS medida: tobillo (-0.11, +0.37) respecto a bola (+0.51).
+        std::puts("ALP2 H4 experimental approximation (opt-in DH_RIDER_POSE=approx), not the game pose");
         const CycleResult cycleCenter = approxCycle(real, {0.f, 0.f, 0.f}, 5.5f);
         const CycleResult cycleFoot = approxCycle(real, {0.f, 0.f, 0.f}, 5.5f, footOffset);
         const char* cycleNames[4] = {"wrist+X", "wrist-X", "ankle+X", "ankle-X"};
@@ -83,11 +84,13 @@ int main() {
             }
             for (int i = 0; i < 4; i++) std::printf("ALP2 cycle worst %s=%.6f\n", cycleNames[i], cycle.maxError[i]);
         }
-        assertCycleBound("center wrist+X", cycleCenter.maxError[0], 0.70f, 0.90f, "shared pelvis conflict");
-        assertCycleBound("center ankle+X", cycleCenter.maxError[2], 0.48f, 0.62f, "shared pelvis conflict");
-        assertCycleBound("center ankle-X", cycleCenter.maxError[3], 0.46f, 0.58f, "shared pelvis conflict");
-        assertCycleBound("foot wrist+X", cycleFoot.maxError[0], 0.42f, 0.54f, "foot offset plus shared pelvis conflict");
-        assertCycleBound("foot ankle+X", cycleFoot.maxError[2], 0.66f, 0.81f, "foot offset plus shared pelvis conflict");
+        assertCycleBound("center wrist+X", cycleCenter.maxError[0], 0.65f, 0.80f, "shared pelvis conflict");
+        assertCycleBound("center wrist-X", cycleCenter.maxError[1], 0.34f, 0.43f, "shared pelvis conflict");
+        assertCycleBound("center ankle+X", cycleCenter.maxError[2], 0.45f, 0.58f, "shared pelvis conflict");
+        assertCycleBound("center ankle-X", cycleCenter.maxError[3], 0.45f, 0.58f, "shared pelvis conflict");
+        assertCycleBound("foot wrist+X", cycleFoot.maxError[0], 0.12f, 0.20f, "foot offset plus shared pelvis conflict");
+        assertCycleBound("foot wrist-X", cycleFoot.maxError[1], 0.58f, 0.72f, "foot offset plus shared pelvis conflict");
+        assertCycleBound("foot ankle+X", cycleFoot.maxError[2], 0.28f, 0.40f, "foot offset plus shared pelvis conflict");
         assertCycleBound("foot ankle-X", cycleFoot.maxError[3], 0.65f, 0.80f, "foot offset plus shared pelvis conflict");
         std::printf("ALP2 phase0 unoptimized %.6f %.6f %.6f %.6f; optimized %.6f %.6f %.6f %.6f pelvis %.6f %.6f %.6f evaluations %zu\n",
                     unoptimized.errors[0], unoptimized.errors[1], unoptimized.errors[2], unoptimized.errors[3],

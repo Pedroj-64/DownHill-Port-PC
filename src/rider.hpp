@@ -226,7 +226,7 @@ inline IsolatedIKResult isolatedPelvisSearch(const Skeleton& sk, int effector,
     for (int px = -2; px <= 2; px++) for (int py = -2; py <= 2; py++) for (int pz = -2; pz <= 2; pz++)
         for (int tx = -1; tx <= 1; tx++) for (int ty = -1; ty <= 1; ty++) for (int tz = -1; tz <= 1; tz++) {
             std::array<float, 40> pose{};
-            pose[0] = 0.6f * tx; pose[1] = 0.6f * ty; pose[2] = 0.6f * tz;
+            pose[0] = 1.0f * tx; pose[1] = 1.0f * ty; pose[2] = 1.0f * tz;
             const std::array<float, 3> pelvis = {origin[0] + (float)px, origin[1] + (float)py, origin[2] + (float)pz};
             const std::array<float, 3> target = {rootModel[0] + anchor[0] - pelvis[0],
                                                  rootModel[1] + anchor[1] - pelvis[1],
@@ -363,9 +363,9 @@ inline ApproxResult approxPose(const Skeleton& sk, float phase, const std::array
             }
         }
         result.pelvis = bestPelvis;
-        for (float rx = -0.6f; rx <= 0.6001f; rx += 0.3f)
-            for (float ry = -0.6f; ry <= 0.6001f; ry += 0.3f)
-                for (float rz = -0.6f; rz <= 0.6001f; rz += 0.3f) {
+        for (float rx = -1.0f; rx <= 1.0001f; rx += 0.5f)
+            for (float ry = -1.0f; ry <= 1.0001f; ry += 0.5f)
+                for (float rz = -1.0f; rz <= 1.0001f; rz += 0.5f) {
                     const std::array<float, 3> rotation = {rx, ry, rz};
                     auto tested = evaluate(bestPelvis, bestTorso, rotation);
                     if (std::get<2>(tested) < std::get<2>(score)) { bestRotation = rotation; score = std::move(tested); }
@@ -377,7 +377,7 @@ inline ApproxResult approxPose(const Skeleton& sk, float phase, const std::array
                 float largestChange = 0;
                 for (int axis = 0; axis < 3; axis++) for (float delta : {-step, step}) {
                     auto candidateRotation = bestRotation; candidateRotation[axis] += delta;
-                    candidateRotation[axis] = std::clamp(candidateRotation[axis], -0.6f, 0.6f);
+                    candidateRotation[axis] = std::clamp(candidateRotation[axis], -1.0f, 1.0f);
                     auto tested = evaluate(bestPelvis, bestTorso, candidateRotation);
                     if (std::get<2>(tested) < std::get<2>(score)) { bestRotation = candidateRotation; score = std::move(tested); changed = true; largestChange = std::max(largestChange, std::fabs(delta)); }
                 }
@@ -405,8 +405,8 @@ struct CycleResult {
     std::array<float, 3> footOffset{};
 };
 
-// Shared-cycle approximation: one pelvis/torso/rotation is selected for all
-// crank phases; each frame may still solve its four limb channels.
+// Experimental opt-in approximation (DH_RIDER_POSE=approx), not the game's
+// native pose. One pelvis/torso/rotation is selected for all crank phases.
 inline CycleResult approxCycle(const Skeleton& sk, const std::array<float, 3>& origin,
                                float cadence = 5.5f,
                                const std::array<float, 3>& footOffset = {}) {
@@ -425,9 +425,9 @@ inline CycleResult approxCycle(const Skeleton& sk, const std::array<float, 3>& o
     for (float x = -2.f; x <= 2.001f; x += 1.f)
         for (float y = -2.f; y <= 2.001f; y += 1.f)
             for (float z = -2.f; z <= 2.001f; z += 1.f)
-                for (float rx = -0.6f; rx <= 0.6001f; rx += 0.6f)
-                    for (float ry = -0.6f; ry <= 0.6001f; ry += 0.6f)
-                        for (float rz = -0.6f; rz <= 0.6001f; rz += 0.6f) {
+                for (float rx = -1.0f; rx <= 1.0001f; rx += 0.5f)
+                    for (float ry = -1.0f; ry <= 1.0001f; ry += 0.5f)
+                        for (float rz = -1.0f; rz <= 1.0001f; rz += 0.5f) {
                             const std::array<float, 3> p = {origin[0] + x, origin[1] + y, origin[2] + z};
                             const std::array<float, 3> r = {rx, ry, rz};
                             const auto tested = evaluate(p, r);
