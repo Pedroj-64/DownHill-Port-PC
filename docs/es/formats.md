@@ -9,7 +9,7 @@ No contienen datos del juego ni código copiado.
 
 ## Contenedor `IE\x03\x04` (casi todos los .NGP/.PTR/.RTX/.TEX)
 Cabecera de 20 B, luego u32 con la longitud del nombre, nombre ASCII y deflate crudo (`zlib -15`). Ver `tools/unpack_ie.py`.
-Pendiente: variante con `0x0a` en el byte 4 y contenedores anidados (R/TDI.NGP, R/XDI.*).
+La variante con `0x0a` en el byte 4 es una envoltura sin compresión que puede contener otra capa IE; `tools/unpack_ie.py` la desenvuelve hasta obtener los datos finales (verificado en R/TDI.NGP y R/XDI.*).
 
 ## `.TEX` / `.RTX` (texturas) — descomprimido
 - `u32 nbins, u32 first` (`first*16` = offset del primer registro), luego `nbins` pares `(cantidad, bytes_por_textura)`.

@@ -9,7 +9,7 @@ They contain no game data and no copied code.
 
 ## `IE\x03\x04` container (almost every .NGP/.PTR/.RTX/.TEX)
 20-byte header, then a u32 name length, the ASCII name and raw deflate (`zlib -15`). See `tools/unpack_ie.py`.
-Pending: a variant with `0x0a` at byte 4 and nested containers (R/TDI.NGP, R/XDI.*).
+The variant with `0x0a` at byte 4 is an uncompressed wrapper that can contain another IE layer; `tools/unpack_ie.py` unwraps it until it reaches the final data (verified on R/TDI.NGP and R/XDI.*).
 
 ## `.TEX` / `.RTX` (textures) — decompressed
 - `u32 nbins, u32 first` (`first*16` = offset of the first record), then `nbins` pairs `(count, bytes_per_texture)`.
