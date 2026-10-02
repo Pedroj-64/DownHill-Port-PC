@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 #include <bits/basic_string.h>
+#include "ground.hpp"
 
 int main(int argc, char** argv) {
     if (argc < 2) { std::fprintf(stderr, "uso: dhview archivo.pts|.msh|.mdl  (mdl: F = volar/caminar, R = bici, Espacio = saltar)\n"); return 1; }
@@ -132,7 +133,10 @@ int main(int argc, char** argv) {
         }
     }
     // altura del suelo en (x,z): triángulo más alto con y <= ymax (así el techo/cúpula no cuenta); NAN si no hay
+    Ground gcol; std::vector<float> colLines;   // DH_COL=nivel.col: colisión real del juego (tools/collision.py); sustituye a la malla visual en groundY y se dibuja en verde
+    if (const char* cp = std::getenv("DH_COL")) { std::vector<uint8_t> craw; if (readFile(cp, craw) && gcol.load(craw)) { for (const auto& t : gcol.tris()) for (int e = 0; e < 3; e++) { colLines.insert(colLines.end(), t.v + 3*e, t.v + 3*e + 3); colLines.insert(colLines.end(), t.v + 3*((e+1)%3), t.v + 3*((e+1)%3) + 3); } std::printf("colisión: %zu triángulos\n", gcol.tris().size()); } else std::fprintf(stderr, "aviso: DH_COL=%s no válido\n", cp); }
     auto groundY = [&](float x, float z, float ymax) {
+        if (!colLines.empty()) { GroundHit h = gcol.query(x, ymax, z, 0.f); return h.hit ? h.height : (float)NAN; }
         float best = NAN; int cx = (int)((x - gx0) / cell), cz = (int)((z - gz0) / cell);
         if (cx < 0 || cz < 0 || cx >= gnx || cz >= gnz) return best;
         for (uint32_t t : grid[(size_t)cz * gnx + cx]) {
@@ -299,6 +303,7 @@ int main(int argc, char** argv) {
             glColor3f(0.4f, 0.f, 0.f); glVertex3f(-b, 0, l); glVertex3f(0, 0, -l); glVertex3f(b, 0, l);
             glEnd(); glPopMatrix();
         }
+        if (!colLines.empty()) { glEnableClientState(GL_VERTEX_ARRAY); glColor3f(0.1f, 1.f, 0.3f); glVertexPointer(3, GL_FLOAT, 0, colLines.data()); glDrawArrays(GL_LINES, 0, (GLsizei)(colLines.size() / 3)); }
         if (!overlay.empty()) {
             glDisable(GL_DEPTH_TEST); glEnableClientState(GL_VERTEX_ARRAY); glColor3f(1, 0.2f, 0.9f); glPointSize(5);
             glVertexPointer(3, GL_FLOAT, 0, overlay.data()); glDrawArrays(GL_POINTS, 0, (GLsizei)(overlay.size() / 3)); glEnable(GL_DEPTH_TEST);

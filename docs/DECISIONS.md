@@ -5,3 +5,4 @@
 - 2026-10-02: NGP root nodes 15/45 identified from ELF consumers as object grid / light probes, not collision; collision hunt stopped at timebox, continue later via ground-height callers of the PTS / el hallazgo descarta 15/45 como colisión.
 - 2026-10-02: NGA decoding stopped at the clip container (curve payload needs the ELF interpreter, >timebox) / NGA: solo contenedor, curvas bloqueadas.
 - 2026-10-02: nodes 25/11/42 documented from engine code only, no parser (kind→object mapping needs the callback decompile) / nodos 25/11/42 solo documentados.
+- 2026-10-02: collision = node 0x2A parts (FUN_00216780/FUN_00219970); ground_query uses highest triangle <= y+30 u as static equivalent of the earliest-hit sweep; margin 30 chosen from PTS test (calibration knob) / colisión = nodos 0x2A; margen 30 u calibrado con la línea PTS.

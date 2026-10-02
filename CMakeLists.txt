@@ -18,3 +18,8 @@ set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Community native PC port of Downhill Domi
 set(CPACK_DEBIAN_PACKAGE_MAINTAINER "dev")
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 include(CPack)
+
+enable_testing()
+add_executable(ground_test tests/ground_test.cpp)
+add_test(NAME ground_test COMMAND ground_test)
+add_executable(ground_pts_check tests/ground_pts_check.cpp)
