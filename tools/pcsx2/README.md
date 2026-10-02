@@ -36,3 +36,12 @@ It runs `Ground::sweep` for every `SEG`, takes the best hit per call (as `FUN_00
 * **frac differs by ~0.01/|D|**: the 0.01 skin (`tb = t − 0.01/(dist0−dist1)`) — check the `dist` formulas.
 * **normal flipped / surface differs**: triangle winding sign or the surface table mapping (collision.md).
 * **game hit on a thing we do not have** (props, type-0x0A convex nodes): not ported by design.
+
+## Automated alternative (no manual play, no debugger) / Alternativa automática
+`pine_capture.py` launches PCSX2, enables PINE, loads a savestate and samples the game RAM every physics step; `analyze_capture.py` compares the samples with the collision mesh (engine hit records, contact clearance).
+```
+# 1) close PCSX2 completely, 2) then:
+python3 tools/pcsx2/pine_capture.py --iso "Downhill Domination.iso" --slot 1 --seconds 30 --out /tmp/dhcap/alpmx.cap
+python3 tools/pcsx2/analyze_capture.py /tmp/dhcap/alpmx.cap out/ALPINEMX.col --sweep-cli build/sweep_cli
+```
+The savestate must be a race in progress (slot 1 of the game: `~/.var/app/net.pcsx2.PCSX2/config/PCSX2/sstates`). The capture and the savestates stay outside the repo.

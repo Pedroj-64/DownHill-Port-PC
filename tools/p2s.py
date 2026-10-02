@@ -13,6 +13,12 @@ class State:
     def __init__(self, path):
         z = zipfile.ZipFile(path); self.names = [(i.filename, i.file_size) for i in z.infolist()]
         self.ee = z.read('eeMemory.bin'); self.version = z.read('PCSX2 Savestate Version.id')[:16]
+    @classmethod
+    def from_windows(cls, windows, datas, size=0x800000):
+        """Estado parcial a partir de ventanas de RAM [(dirección, longitud)] + bytes (capturas PINE): el resto de la RAM queda a cero."""
+        s = cls.__new__(cls); s.names = []; s.version = b''; ee = bytearray(size)
+        for (a, n), d in zip(windows, datas): ee[a:a + n] = d
+        s.ee = bytes(ee); return s
     def u32(self, a): return struct.unpack_from('<I', self.ee, a)[0]
     def f32(self, a, n=1): return struct.unpack_from(f'<{n}f', self.ee, a)
     def ok(self, a): return 0x100000 <= a < 0x2000000
