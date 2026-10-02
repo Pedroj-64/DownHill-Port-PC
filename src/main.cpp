@@ -63,7 +63,7 @@ int main(int argc, char** argv) {
     const bool rawAxes = std::getenv("DH_RAW") != nullptr;
     auto toYUp = [&](Model& m) { if (rawAxes) return; for (size_t k = 0; k + 9 < m.mv.size(); k += 10) { float y = m.mv[k+1], z = m.mv[k+2]; m.mv[k+1] = z; m.mv[k+2] = -y; }
         for (auto& c : m.chunks) for (auto& q : c.sels) { float y = q[1], z = q[2]; q[1] = z; q[2] = -y; } };
-    Model M, sky, bike;   // bike: DH_BIKE=bici_ensamblada.mdl (tools/assemble_bike.py), se dibuja en el modo bici
+    Model M, sky, dome, bike;   // bike: DH_BIKE=bici_ensamblada.mdl (tools/assemble_bike.py), se dibuja en el modo bici
     {
         std::vector<uint8_t> raw;
         if (!readFile(argv[1], raw)) { std::fprintf(stderr, "no se puede leer %s\n", argv[1]); return 1; }
@@ -73,6 +73,8 @@ int main(int argc, char** argv) {
             for (size_t k = 0; k + 9 < M.mv.size(); k += 10) v.insert(v.end(), M.mv.begin() + k, M.mv.begin() + k + 3);
             if (const char* bp = std::getenv("DH_BIKE")) { std::vector<uint8_t> braw; if (!readFile(bp, braw) || !parseMdl(braw, bike)) { std::fprintf(stderr, "aviso: DH_BIKE=%s no válido\n", bp); bike = Model(); } }
             std::vector<uint8_t> sraw; std::string sp = std::string(argv[1]); sp = sp.substr(0, sp.size() - 4) + ".sky.mdl";
+            { std::vector<uint8_t> draw; std::string dp = std::string(argv[1]); dp = dp.substr(0, dp.size() - 4) + ".dome.mdl";   // panorama del horizonte (cielo, montañas, nubes): se dibuja centrado en la cámara
+              if (readFile(dp, draw) && !parseMdl(draw, dome)) { std::fprintf(stderr, "aviso: %s inválido, se ignora\n", dp.c_str()); dome = Model(); } else toYUp(dome); }
             if (readFile(sp, sraw) && !parseMdl(sraw, sky)) { std::fprintf(stderr, "aviso: %s inválido, se ignora\n", sp.c_str()); sky = Model(); } else toYUp(sky);
         } else if (!tris) { v.resize(raw.size() / 4); std::memcpy(v.data(), raw.data(), v.size() * 4); }
         else {
@@ -102,7 +104,7 @@ int main(int argc, char** argv) {
     SDL_Window* w = SDL_CreateWindow("dhview", winW, winH, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
     SDL_GLContext gl = SDL_GL_CreateContext(w);
     SDL_GL_SetSwapInterval(1);
-    for (Model* m : {&M, &sky, &bike}) for (auto& t : m->texs) {
+    for (Model* m : {&M, &sky, &dome, &bike}) for (auto& t : m->texs) {
         glGenTextures(1, &t.id); glBindTexture(GL_TEXTURE_2D, t.id);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, t.w, t.h, 0, GL_RGBA, GL_UNSIGNED_BYTE, t.px.data());
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -271,7 +273,7 @@ int main(int argc, char** argv) {
         if (k[SDL_SCANCODE_A]) { px -= rx*sp; pz -= rz*sp; }
         }
         int ww, hh; SDL_GetWindowSizeInPixels(w, &ww, &hh);
-        glViewport(0, 0, ww, hh); { static float bg[3] = {0.05f, 0.06f, 0.09f}; static bool init = false; if (!init && !M.chunks.empty() && sky.mi.empty()) { bg[0] = 0.58f; bg[1] = 0.70f; bg[2] = 0.86f; } /* nivel sin cúpula de cielo: azul claro por defecto */ if (!init) { init = true; if (const char* b = std::getenv("DH_BG")) std::sscanf(b, "%f %f %f", &bg[0], &bg[1], &bg[2]); } glClearColor(bg[0], bg[1], bg[2], 1); }
+        glViewport(0, 0, ww, hh); { static float bg[3] = {0.05f, 0.06f, 0.09f}; static bool init = false; if (!init && !M.chunks.empty() && sky.mi.empty() && dome.mi.empty()) { bg[0] = 0.58f; bg[1] = 0.70f; bg[2] = 0.86f; } /* nivel sin cúpula de cielo: azul claro por defecto */ if (!init) { init = true; if (const char* b = std::getenv("DH_BG")) std::sscanf(b, "%f %f %f", &bg[0], &bg[1], &bg[2]); } glClearColor(bg[0], bg[1], bg[2], 1); }
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);   // DH_BG="r g b": color de fondo (p. ej. magenta para ver huecos) glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glEnable(GL_DEPTH_TEST); glDepthFunc(GL_LEQUAL);   // LEQUAL: las capas superpuestas del juego comparten posición con el suelo
         glMatrixMode(GL_PROJECTION); glLoadIdentity();
@@ -308,6 +310,10 @@ int main(int argc, char** argv) {
                 }
                 drawnChunks = shown;
             };
+            if (!dome.mi.empty() && !std::getenv("DH_NOSKY")) {   // sigue a la cámara; DH_DOMEDY desplaza el centro en vertical (afinado)
+                static const float dy = std::getenv("DH_DOMEDY") ? (float)std::atof(std::getenv("DH_DOMEDY")) : 0.f;
+                glDisable(GL_DEPTH_TEST); glPushMatrix(); glTranslatef(px, py + dy, pz); drawModel(dome); glPopMatrix(); glEnable(GL_DEPTH_TEST);
+            }
             if (!sky.mi.empty() && !std::getenv("DH_NOSKY")) { glDepthMask(GL_FALSE); drawModel(sky); glDepthMask(GL_TRUE); }   // telón de fondo/cielo: primero y sin escribir profundidad
             drawModel(M);
             if (ride && !bike.mi.empty()) {                 // la bici ensamblada: 1 unidad del modelo ~ 0.28 m; rueda más baja a ras de suelo
@@ -333,7 +339,7 @@ int main(int argc, char** argv) {
             glColor3f(0.4f, 0.f, 0.f); glVertex3f(-b, 0, l); glVertex3f(0, 0, -l); glVertex3f(b, 0, l);
             glEnd(); glPopMatrix();
         }
-        if (!colLines.empty() && !std::getenv("DH_NOCOLDRAW")) { glEnableClientState(GL_VERTEX_ARRAY); glColor3f(0.1f, 1.f, 0.3f); glVertexPointer(3, GL_FLOAT, 0, colLines.data()); glDrawArrays(GL_LINES, 0, (GLsizei)(colLines.size() / 3)); }
+        if (!colLines.empty() && std::getenv("DH_COLDRAW")) { glEnableClientState(GL_VERTEX_ARRAY); glColor3f(0.1f, 1.f, 0.3f); glVertexPointer(3, GL_FLOAT, 0, colLines.data()); glDrawArrays(GL_LINES, 0, (GLsizei)(colLines.size() / 3)); }
         if (!overlay.empty()) {
             glDisable(GL_DEPTH_TEST); glEnableClientState(GL_VERTEX_ARRAY); glColor3f(1, 0.2f, 0.9f); glPointSize(5);
             glVertexPointer(3, GL_FLOAT, 0, overlay.data()); glDrawArrays(GL_POINTS, 0, (GLsizei)(overlay.size() / 3)); glEnable(GL_DEPTH_TEST);

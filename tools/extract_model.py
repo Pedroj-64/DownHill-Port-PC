@@ -153,11 +153,25 @@ ntri = len(I) // 3; sky_path = out[:-4] + '.sky.mdl' if out.endswith('.mdl') els
 byown = {}
 for t in range(ntri): byown.setdefault(VO[3*t], []).append(t)
 sky_owners = {o for o in byown if o is not None and OW and OW.layer.get(o) == OW.BACKDROP} if not os.environ.get('DH_NOSKY') else set()   # telón de fondo/cielo: capa 2 del grafo
+# panorama del horizonte (degradado de cielo, anillo de montañas, nubes): hojas de capa 1 de la primera raíz del grafo cuando ésta es pequeña (<=12 dueños) y de radio grande; se dibuja centrado en la cámara
+dome_path = out[:-4] + '.dome.mdl' if out.endswith('.mdl') else out + '.dome'
+dome_owners = set()
+if OW and not os.environ.get('DH_NODOME') and OW.info:
+    roots = {}
+    for o in OW.info: roots.setdefault(OW.info[o]['root'], []).append(o)
+    for r, grp in roots.items():   # raíz pequeña, de radio enorme, sin celdas de terreno (capa 3) y con todas las hojas en el origen (traslación de la matriz ~0)
+        if len(grp) > 16 or max(OW.info[o]['rad'] for o in grp) <= 3000 or any(OW.layer.get(o) == 3 for o in grp): continue
+        if all(max(abs(x) for x in OW.info[o]['m'][12:15]) < 1500 for o in grp): dome_owners |= {o for o in grp if o in byown}
+if os.path.exists(dome_path): os.remove(dome_path)
+if dome_owners:
+    save(dome_path, [(None, sorted(t for o in sorted(dome_owners) for t in byown[o]))])
+    print(f'panorama: {len(dome_owners)} hojas, {sum(len(byown[o]) for o in dome_owners)} triángulos -> {os.path.basename(dome_path)}')
+sky_owners -= dome_owners
 if os.path.exists(sky_path): os.remove(sky_path)
 if sky_owners:
     save(sky_path, [(None, sorted(t for o in sky_owners for t in byown[o]))])
     print(f'cielo: hojas {[hex(o) for o in sorted(sky_owners)]}, {sum(len(byown[o]) for o in sky_owners)} triángulos -> {os.path.basename(sky_path)}')
-main = [(o, ts) for o, ts in byown.items() if o not in sky_owners]; ntri = sum(len(ts) for _, ts in main)
+main = [(o, ts) for o, ts in byown.items() if o not in sky_owners and o not in dome_owners]; ntri = sum(len(ts) for _, ts in main)
 save(out, main, chunks=bool(OW))
 print(f'{len(textures)} texturas, {ntri * 3} vértices, {ntri} triángulos, {len(main)} chunks')
 if BADTEX: print('texturas no decodificables (id, psm, w, h, (subida w,h,fmt)):', BADTEX[:8])
