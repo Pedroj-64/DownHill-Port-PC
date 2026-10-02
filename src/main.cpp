@@ -13,7 +13,9 @@
 #include <string>
 #include <vector>
 #include <bits/basic_string.h>
+#include "gates.hpp"
 #include "ground.hpp"
+#include "ride.hpp"
 
 int main(int argc, char** argv) {
     if (argc < 2) { std::fprintf(stderr, "uso: dhview archivo.pts|.msh|.mdl  (mdl: F = volar/caminar, R = bici, Espacio = saltar)\n"); return 1; }
@@ -57,16 +59,21 @@ int main(int argc, char** argv) {
         }
         return true;
     };
+    // El NGP (y por tanto el .mdl, el .PTS y la colisión) usa Z arriba (docs/formats/coordinates.md); dhview trabaja en Y arriba: (x,y,z) -> (x,z,-y). DH_RAW=1 desactiva la conversión.
+    const bool rawAxes = std::getenv("DH_RAW") != nullptr;
+    auto toYUp = [&](Model& m) { if (rawAxes) return; for (size_t k = 0; k + 9 < m.mv.size(); k += 10) { float y = m.mv[k+1], z = m.mv[k+2]; m.mv[k+1] = z; m.mv[k+2] = -y; }
+        for (auto& c : m.chunks) for (auto& q : c.sels) { float y = q[1], z = q[2]; q[1] = z; q[2] = -y; } };
     Model M, sky, bike;   // bike: DH_BIKE=bici_ensamblada.mdl (tools/assemble_bike.py), se dibuja en el modo bici
     {
         std::vector<uint8_t> raw;
         if (!readFile(argv[1], raw)) { std::fprintf(stderr, "no se puede leer %s\n", argv[1]); return 1; }
         if (mdl) {
             if (!parseMdl(raw, M)) { std::fprintf(stderr, "%s: .mdl inválido (¿DHM1 antiguo? vuelve a extraer)\n", argv[1]); return 1; }
+            toYUp(M);
             for (size_t k = 0; k + 9 < M.mv.size(); k += 10) v.insert(v.end(), M.mv.begin() + k, M.mv.begin() + k + 3);
             if (const char* bp = std::getenv("DH_BIKE")) { std::vector<uint8_t> braw; if (!readFile(bp, braw) || !parseMdl(braw, bike)) { std::fprintf(stderr, "aviso: DH_BIKE=%s no válido\n", bp); bike = Model(); } }
             std::vector<uint8_t> sraw; std::string sp = std::string(argv[1]); sp = sp.substr(0, sp.size() - 4) + ".sky.mdl";
-            if (readFile(sp, sraw) && !parseMdl(sraw, sky)) { std::fprintf(stderr, "aviso: %s inválido, se ignora\n", sp.c_str()); sky = Model(); }
+            if (readFile(sp, sraw) && !parseMdl(sraw, sky)) { std::fprintf(stderr, "aviso: %s inválido, se ignora\n", sp.c_str()); sky = Model(); } else toYUp(sky);
         } else if (!tris) { v.resize(raw.size() / 4); std::memcpy(v.data(), raw.data(), v.size() * 4); }
         else {
             uint32_t nv, ni; std::memcpy(&nv, raw.data(), 4); std::memcpy(&ni, raw.data() + 4, 4);
@@ -134,9 +141,11 @@ int main(int argc, char** argv) {
     }
     // altura del suelo en (x,z): triángulo más alto con y <= ymax (así el techo/cúpula no cuenta); NAN si no hay
     Ground gcol; std::vector<float> colLines;   // DH_COL=nivel.col: colisión real del juego (tools/collision.py); sustituye a la malla visual en groundY y se dibuja en verde
-    if (const char* cp = std::getenv("DH_COL")) { std::vector<uint8_t> craw; if (readFile(cp, craw) && gcol.load(craw)) { for (const auto& t : gcol.tris()) for (int e = 0; e < 3; e++) { colLines.insert(colLines.end(), t.v + 3*e, t.v + 3*e + 3); colLines.insert(colLines.end(), t.v + 3*((e+1)%3), t.v + 3*((e+1)%3) + 3); } std::printf("colisión: %zu triángulos\n", gcol.tris().size()); } else std::fprintf(stderr, "aviso: DH_COL=%s no válido\n", cp); }
+    std::string colPath = std::getenv("DH_COL") ? std::getenv("DH_COL") : (mdl ? std::string(argv[1]).substr(0, std::string(argv[1]).size() - 4) + ".col" : std::string());   // por defecto: <modelo>.col junto al .mdl
+    if (!colPath.empty()) { const char* cp = colPath.c_str(); std::vector<uint8_t> probe; if (!std::getenv("DH_COL") && !readFile(cp, probe)) cp = nullptr;
+      if (cp) { std::vector<uint8_t> craw; if (readFile(cp, craw) && gcol.load(craw)) { for (const auto& t : gcol.tris()) for (int e = 0; e < 3; e++) { colLines.insert(colLines.end(), t.v + 3*e, t.v + 3*e + 3); colLines.insert(colLines.end(), t.v + 3*((e+1)%3), t.v + 3*((e+1)%3) + 3); } std::printf("colisión: %zu triángulos (%s)\n", gcol.tris().size(), cp); } else std::fprintf(stderr, "aviso: colisión %s no válida\n", cp); } }
     auto groundY = [&](float x, float z, float ymax) {
-        if (!colLines.empty()) { GroundHit h = gcol.query(x, ymax, z, 0.f); return h.hit ? h.height : (float)NAN; }
+        if (!colLines.empty()) { auto g = gcol.groundQuery(x, ymax, z, 0.f, ymax - gcol.boundsMin().y + 1.f); return g.hit ? g.height : (float)NAN; }   // alcance = hasta el fondo de la malla (sin constantes)
         float best = NAN; int cx = (int)((x - gx0) / cell), cz = (int)((z - gz0) / cell);
         if (cx < 0 || cz < 0 || cx >= gnx || cz >= gnz) return best;
         for (uint32_t t : grid[(size_t)cz * gnx + cx]) {
@@ -153,12 +162,22 @@ int main(int argc, char** argv) {
     const float eye = 1.7f * U, grav = 9.8f * U; float vy = 0; bool walk = std::getenv("DH_WALK") != nullptr;
     if (walk) { float g = groundY(px, pz, py); if (!std::isnan(g)) py = g + eye; std::printf("walk: suelo en (%.0f, %.0f) = %.1f\n", px, pz, g); }
     std::vector<float> overlay;   // DH_PTS=archivo: floats x y z sueltos, se dibujan encima del modelo (rutas, puntos de control)
-    if (const char* op = std::getenv("DH_PTS")) { std::vector<uint8_t> r; if (readFile(op, r)) { overlay.resize(r.size() / 4); std::memcpy(overlay.data(), r.data(), overlay.size() * 4); } }
+    if (const char* op = std::getenv("DH_PTS")) { std::vector<uint8_t> r; if (readFile(op, r)) { overlay.resize(r.size() / 4); std::memcpy(overlay.data(), r.data(), overlay.size() * 4); if (!rawAxes) for (size_t i = 0; i + 2 < overlay.size(); i += 3) { float y = overlay[i+1], z = overlay[i+2]; overlay[i+1] = z; overlay[i+2] = -y; } } }
     // --- Modo bici (R): punto material que baja por el terreno. Unidades del juego sin confirmar: la separación de carriles de la línea PTS (~22 u) sugiere 10 u = 1 m (DH_UNIT cambia el valor) ---
     const float G = 9.8f * U;
     bool ride = false; float rx0 = 0, ry0 = 0, rz0 = 0, rh = 0, rs = 0, rvy = 0, lastSlope = 0, goodX = 0, goodY = 0, goodZ = 0, goodH = 0; bool air = false;
+    // --- Modo bici con la colisión del juego (DH_COL o <modelo>.col): esfera cinemática (src/ride.hpp) que sigue la línea .PTS (DH_PTS) con Ground::sweep y cuenta las puertas (<modelo>.gates / DH_GATES) ---
+    const bool useCol = !colLines.empty();
+    RideBody rb; RideParams rp; Gates gts; Gates::State gst; double rideT = 0;
+    { std::string gp = std::getenv("DH_GATES") ? std::getenv("DH_GATES") : (mdl ? std::string(argv[1]).substr(0, std::string(argv[1]).size() - 4) + ".gates" : std::string()); std::vector<uint8_t> graw; if (!gp.empty() && readFile(gp, graw) && !gts.load(graw)) std::fprintf(stderr, "aviso: %s no válido\n", gp.c_str()); }
     float worldMinY = 1e30f; for (size_t i = 1; i < v.size(); i += 3) worldMinY = std::fmin(worldMinY, v[i]);
     auto startRide = [&]() {
+        if (useCol && overlay.size() >= 6) {
+            size_t k = std::getenv("DH_RIDE_AT") ? (size_t)std::atoi(std::getenv("DH_RIDE_AT")) : 3;   // 3: pasada la verja de salida cerrada (ride_demo.cpp)
+            k = std::min(k, overlay.size() / 3 - 2); auto gi = gcol.groundQuery(overlay[3*k], overlay[3*k+1] + 30.f, overlay[3*k+2], rp.radius, 200.f);
+            rb = RideBody(); rb.pos = {overlay[3*k], (gi.hit ? gi.height : overlay[3*k+1]) + rp.radius + 10.f, overlay[3*k+2]}; gst = Gates::State(); rideT = 0;
+            rx0 = rb.pos.x; ry0 = rb.pos.y - rp.radius; rz0 = rb.pos.z; rh = std::atan2(overlay[3*k+3] - rx0, -(overlay[3*k+5] - rz0)); walk = false; return;
+        }
         if (overlay.size() >= 6) {                       // primer punto de la línea PTS con suelo debajo, mirando al siguiente (la plataforma de salida puede no estar en la malla)
             size_t n = overlay.size() / 3, k = std::getenv("DH_RIDE_AT") ? (size_t)std::atoi(std::getenv("DH_RIDE_AT")) : 0;   // DH_RIDE_AT: índice del punto de la línea donde empezar
             while (k + 1 < n && std::isnan(groundY(overlay[3*k], overlay[3*k+2], overlay[3*k+1] + 0.3f * U))) k++;   // la línea queda a ±12 u del suelo: 0.3 m basta para elegir la lámina correcta
@@ -186,7 +205,17 @@ int main(int argc, char** argv) {
         float sp = (mdl ? (k[SDL_SCANCODE_LSHIFT] ? 4.f : 1.f) * scale : (k[SDL_SCANCODE_LSHIFT] ? 4000.f : 800.f)) * dt;
         float fx = std::sin(yaw) * std::cos(pitch), fy = std::sin(pitch), fz = -std::cos(yaw) * std::cos(pitch);
         float rx = std::cos(yaw), rz = std::sin(yaw);
-        if (ride) {
+        if (ride && useCol && overlay.size() >= 6) {
+            float ddt = std::fmin(dt, 0.05f); size_t n = overlay.size() / 3, best = 0; float bd = 1e30f; static size_t lastIdx = 0; if (rideT == 0) lastIdx = 0;
+            for (size_t q = lastIdx > 30 ? lastIdx - 30 : 0; q < std::min(n, lastIdx + 60); q++) { float ex = overlay[3*q] - rb.pos.x, ez = overlay[3*q+2] - rb.pos.z, dd = ex*ex + ez*ez; if (dd < bd) { bd = dd; best = q; } }
+            lastIdx = best; size_t tq = std::min(n - 1, best + 5);
+            rb.step(gcol, rp, {overlay[3*tq], overlay[3*tq+1], overlay[3*tq+2]}, ddt); rideT += ddt;
+            int ev = gts.update(gst, rb.pos, (float)rideT); if (ev > 0) std::printf("puerta %zu/%zu cruzada a los %.1f s\n", gst.counter, gts.size(), rideT);
+            if (gst.finished && gst.finishTime == (float)rideT) std::printf("META a los %.1f s (%zu/%zu puertas)\n", rideT, gst.counter, gts.size());
+            rx0 = rb.pos.x; ry0 = rb.pos.y - rp.radius; rz0 = rb.pos.z; float sh = std::sqrt(rb.vel.x*rb.vel.x + rb.vel.z*rb.vel.z); if (sh > 5.f) rh = std::atan2(rb.vel.x, -rb.vel.z);
+            if (frame % 10 == 0) { char t[160]; std::snprintf(t, sizeof t, "dhview  puertas %zu/%zu%s  %.0f km/h  t=%.0f s  %s", gst.counter, gts.size(), gst.finished ? " META" : "", 0.36f * std::sqrt(dot(rb.vel, rb.vel)), rideT, rb.grounded ? "suelo" : "aire"); SDL_SetWindowTitle(w, t); }
+            px = rx0 - std::sin(rh) * 6.f * U; pz = rz0 + std::cos(rh) * 6.f * U; py = ry0 + 3.f * U; yaw = rh; pitch = -0.22f;
+        } else if (ride) {
             float ddt = std::fmin(dt, 0.05f), dx = std::sin(rh), dz = -std::cos(rh), step = 0.8f * U;   // escalón máximo 0.8 m
             float turn = (k[SDL_SCANCODE_D] ? 1.f : 0.f) - (k[SDL_SCANCODE_A] ? 1.f : 0.f);
             if (std::getenv("DH_AUTOSTEER") && overlay.size() >= 6) {     // piloto automático: apunta a un punto de la línea unos metros por delante del más cercano

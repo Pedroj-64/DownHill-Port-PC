@@ -9,3 +9,7 @@
 - 2026-10-02: kind 8050/8051 interpreted as gate planes only by data (hypothesis), start grid 8060-8068 decoded from FUN_001a3480; props (1603-1631) have no engine callback so no parser needed / planos de control = hipótesis; rejilla de salida decodificada.
 - 2026-10-02: NGA curve decoding left blocked after tracing only the binding layer (lookup/instances); sampler not located within ~25 min / NGA: curvas bloqueadas, solo capa de enlace trazada.
 - 2026-10-02: loadbar_export.py reuses extract_model.py through runpy (globals texs/mats/make_texture) instead of refactoring that script / reutiliza extract_model.py sin refactorizar.
+- 2026-10-02: world up axis = +Z (start grid spreads along Y, start normals +Z, course drops in Z); previous PTS-vs-height validation was axis-blind. dhview/Ground convert (x,y,z)->(x,z,-y) at load / eje vertical +Z; validación anterior ciega al eje.
+- 2026-10-02: faithful sweep ported (face/edge/vertex, min-fraction selection); 30-u margin removed; groundQuery takes r and reach from the caller / barrido fiel; sin constante de 30 u.
+- 2026-10-02: plane distance is n.p - d (FUN_002279E8, consumer FUN_001A2738), not +d; gates cross in increasing idx; kind 8052 = finish (hypothesis) / distancia al plano = n.p - d; 8052 = meta (hipótesis).
+- 2026-10-02: demo starts at line point 3 (start gate bar is closed in the static mesh) and uses an autopilot with air pull; reported as demo aids / la demo empieza en el punto 3 y usa piloto automático.
