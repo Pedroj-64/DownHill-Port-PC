@@ -53,3 +53,18 @@ Result: 728 consecutive steps (14.5 s of game time, 0 torn reads), **1 686 disti
 Contact-point clearance of the player's points that touch the ground (<1 u, 994 readings): mean −0.03 u, p5 −0.55, p95 +0.67, min −0.74, max +1.0 u (includes bounces after impacts).
 **Not explained (hypotheses):** (a) 310 records have a different `w` (plane constant) although surface/normal match — for edge/vertex hits `w` is not the face constant (FUN_002193C0 stores the face `w` only in the face branch); (b) records whose contact point is >0.05 u from my triangle probably belong to collision instances with a transform (FUN_00218268/00218310/002183F0, not ported) or to node type 0x0A; (c) 64 records with another surface are probably stale stack data or such instances. Fraction check: only 1 usable case (|Δfrac| 0.0007), too few to conclude.
 Automatically saved intermediate savestates: PINE `MsgSaveState` (slots 2–9) while the game runs from slot 1; the bike stops after ~15 s (slots 6+ show the same position).
+
+## Second set: a full ALP2 race (10 riders), slots 3–10 (tar supplied by the user, outside the repo)
+Slots 1–2 of that tar are not races (no riders); slots 3–10 are one ALP2 race (10 riders; collision `ALP2.col`) at 8 points along the course. Player (rider 0), 4 contact points, clearance = distance to the nearest front-facing triangle − 0.75 u:
+
+| slot | player position (x, y, z) | \|v\| u/s | contact clearance (u) | state | engine hit records vs mesh |
+|-----:|--------------------------|----------:|-----------------------|-------|----------------------------|
+| 03 | (−1919.6, −1133.8, 5593.3) | 18.9 | +46.7 … +47.8 | airborne | none (no contact) |
+| 04 | (−977.5, 532.0, 2845.3) | 18.9 | +9.0 … +12.2 | airborne | none |
+| **05** | (2605.2, 650.5, −3497.2) | 33.4 | **+0.328, +0.019**, +3.4, +2.8 | **on two wheels** | 3 records: surface 0x1003 = 0x1003, \|Δn\| 7e-8, d −2375.433 = −2375.432, point→tri 0.0100 u, tri 71120 |
+| 06 | (2975.7, 2618.4, −4920.3) | 33.4 | +62 … +71 | airborne | none |
+| 07 | (2802.1, 3692.6, −6190.1) | 33.4 | +36 … +40 | airborne | none |
+| 08 | (3265.7, 4113.9, −7468.7) | 56.7 | +13.8 … +14.6 | airborne | none |
+| 09 | (2087.5, 6632.8, −11111.8) | 85.7 | +68 … +73 | airborne (long drop) | none |
+| **10** | (1971.8, 7114.3, −11476.7) | 24.2 | **+0.093, −0.163**, +3.1, +2.6 | **on two wheels** | surface 0x0880 = 0x0880, \|Δn\| 8e-9, d equal (−11754.256 / −11754.257), point→tri 0.0107 u, tri 98187; a third record (frac 0.0000, \|Δn\| 2e-5) has d −12604.608 vs −12571.314 |
+Result: the two grounded states reproduce the earlier finding exactly (same triangle, normal, plane constant and surface id as the engine's own hit records, contact point 0.010 u from the triangle); the six airborne states are 9–72 u above the mesh with **no hit records**, i.e. the mesh puts the bike in the air where the engine does. New surface ids seen: 0x1003, 0x1262, 0x0880, 0x1800. The same 0.010 u point offset appears in all three records of slot 5 and in slot 10.
