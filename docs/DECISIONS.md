@@ -6,3 +6,4 @@
 - 2026-10-02: NGA decoding stopped at the clip container (curve payload needs the ELF interpreter, >timebox) / NGA: solo contenedor, curvas bloqueadas.
 - 2026-10-02: nodes 25/11/42 documented from engine code only, no parser (kind→object mapping needs the callback decompile) / nodos 25/11/42 solo documentados.
 - 2026-10-02: collision = node 0x2A parts (FUN_00216780/FUN_00219970); ground_query uses highest triangle <= y+30 u as static equivalent of the earliest-hit sweep; margin 30 chosen from PTS test (calibration knob) / colisión = nodos 0x2A; margen 30 u calibrado con la línea PTS.
+- 2026-10-02: kind 8050/8051 interpreted as gate planes only by data (hypothesis), start grid 8060-8068 decoded from FUN_001a3480; props (1603-1631) have no engine callback so no parser needed / planos de control = hipótesis; rejilla de salida decodificada.
