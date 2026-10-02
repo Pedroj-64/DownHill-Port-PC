@@ -3,17 +3,22 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Extrae un modelo con texturas de un grupo NGP/PTR/TEX/RTX ya descomprimido -> .mdl
 Uso: extract_model.py basepath(sin extensión) out.mdl [--variant N]
-.mdl: 'DHM1', u32 ntex, u32 nv, u32 ni; por textura: u32 w,h + RGBA8; nv * 9 f32 (x y z u v r g b tex); ni * u32 índices.
+.mdl: 'DHM2', u32 ntex, u32 nv, u32 ni; por textura: u32 w,h + RGBA8; nv * 10 f32 (x y z u v r g b a tex); ni * u32 índices.
 Enlaces verificados: PTR lista (texid u16, TEX0) en el mismo orden; TEX0.CBP == id (lo>>16) del registro de paleta del RTX;
 T8 (psm 0x13) = textura 2w x 2h ya con swizzle GS; la paleta CT32 de 256 entradas usa el intercambio de bits 3 y 4 (CSM1)."""
 import struct, sys, math, os
 sys.path.insert(0, os.path.dirname(__file__))
 from vif import iter_vif
-from gs import upload32, read8
+from gs import upload32, read8, read4, read8h
+from scene import Scene, Owners
 base, out = sys.argv[1], sys.argv[2]
 variant = int(sys.argv[sys.argv.index('--variant') + 1]) if '--variant' in sys.argv else 0
 ngp, ptr, tex, rtx = (open(base + e, 'rb').read() for e in ('.NGP', '.PTR', '.TEX', '.RTX'))
 u32 = lambda b, o: struct.unpack_from('<I', b, o)[0]
+# niveles (LVL/*): sólo detalle fino + matrices del grafo; modelos sueltos (BIKE...) sin grafo útil -> todo, sin transformar. DH_SUB como en extract_mesh.py
+_sub = os.environ.get('DH_SUB')
+try: OW = Owners(Scene(ngp), [int(x, 0) for x in _sub.split(',')] if _sub and _sub not in ('all', 'fine') else _sub) if '/LVL/' in os.path.abspath(base) or _sub else None
+except Exception: OW = None
 
 def records(b, first):
     off = first
@@ -22,10 +27,12 @@ def records(b, first):
         yield off, lo, hi
         if nxt == 0: break
         off += (nxt & ~3) * 4
-texs = {}
-for off, lo, hi in records(tex, u32(tex, 4) * 16):
-    w, h = 1 << (hi >> 8 & 15), 1 << (hi >> 12 & 15)
-    texs[lo & 0xffff] = (w, h, tex[off + 0x80: off + 0x80 + w * h * 4])
+texs = {}   # id -> (w, h, fmt de subida, bytes). fmt 0 = subida CT32 (datos con swizzle GS: T8 2w x 2h, T4, 8H); 19 = PSMT8 lineal w x h; 20 = PSMT4 lineal (2 píxeles/byte, bajo primero)
+_recs = list(records(tex, u32(tex, 4) * 16)) + [(len(tex), 0, 0)]
+for (off, lo, hi), (nxt_off, _, _) in zip(_recs, _recs[1:]):
+    w, h, fmt = 1 << (hi >> 8 & 15), 1 << (hi >> 12 & 15), hi & 0x3f
+    size = {19: w * h, 20: w * h // 2}.get(fmt, w * h * 4)
+    texs[lo & 0xffff] = (w, h, fmt, tex[off + 0x80: off + 0x80 + min(size, max(0, nxt_off - off - 0x80))])
 cluts = {}
 for off, lo, hi in records(rtx, 0):
     w, h = 1 << (hi >> 8 & 15), 1 << (hi >> 12 & 15)
@@ -37,16 +44,29 @@ for to, co in zip(texref, tex0o):
     v = struct.unpack_from('<Q', ngp, co)[0]
     mats.append((co, struct.unpack_from('<H', ngp, to)[0], v >> 20 & 63, 1 << (v >> 26 & 15), 1 << (v >> 30 & 15), v >> 37 & 0x3fff))
 
+BADTEX = []
 def make_texture(tid, psm, w, h, cbp):
-    if psm != 0x13 or tid not in texs or cbp not in cluts: return None
-    tw, th, data = texs[tid]
-    idx = read8(upload32(data, tw, th), tw * 2, th * 2)
-    pal = cluts[cbp]; sw = lambda i: (i & ~0x18) | ((i & 8) << 1) | ((i & 16) >> 1)
+    try: return _make_texture(tid, psm, w, h, cbp)
+    except IndexError:                              # datos más cortos que lo que declara el TEX0: se registra y la textura queda sin resolver
+        BADTEX.append((tid, hex(psm), w, h, texs[tid][:3])); return None
+
+def _make_texture(tid, psm, w, h, cbp):
+    """w,h = dimensiones reales de la textura (del TEX0). Paleta CLUT; el formato de los datos depende del fmt de subida del registro .TEX."""
+    if psm not in (0x13, 0x14, 0x1b) or tid not in texs or cbp not in cluts: return None
+    tw, th, fmt, data = texs[tid]; pal = cluts[cbp]; swap = lambda i: (i & ~0x18) | ((i & 8) << 1) | ((i & 16) >> 1)
+    if fmt == 19:                                   # PSMT8 lineal
+        w, h = tw, th; idx = data.ljust(w * h, b'\0'); sw = swap
+    elif fmt == 20:                                 # PSMT4 lineal
+        w, h = tw, th; idx = bytes(n for b in data.ljust(w * h // 2, b'\0') for n in (b & 15, b >> 4)); sw = lambda i: i
+    else:
+        mem = upload32(data.ljust(tw * th * 4, b'\0'), tw, th)
+        if psm == 0x1b: idx = read8h(mem, w, h); sw = swap
+        elif psm == 0x13: idx = read8(mem, w, h); sw = swap
+        else: idx = read4(mem, w, h); sw = lambda i: i
     rgba = bytearray()
     for p in idx:
         e = sw(p) * 4; r, g, b, a = pal[e:e + 4]; rgba += bytes((r, g, b, 255 if a >= 0x80 else a * 2))
-    # el GS guarda la imagen invertida respecto al espacio UV del juego; se deja tal cual y se ajusta v en la malla
-    return (tw * 2, th * 2, bytes(rgba))
+    return (w, h, bytes(rgba))
 
 textures = []; tindex = {}
 def get_tex(m):
@@ -57,41 +77,84 @@ def get_tex(m):
         if t: textures.append(t)
     return tindex[key]
 
-V, I = [], []; L = len(ngp); i = 0; prev_end = 0
+last_tid = -1; V, I, VO = [], [], []; L = len(ngp); i = 0; prev_end = 0
 while i < L - 16:
     w = u32(ngp, i); cmd, num = w >> 24, (w >> 16) & 0xff
     if cmd in (0x68, 0x78) and num >= 3 and i + 4 + 12 * num <= L:
         pos = struct.unpack_from(f'<{3*num}f', ngp, i + 4)
-        if all(math.isfinite(f) and abs(f) < 2e5 for f in pos):
+        if all(math.isfinite(f) and abs(f) < 2e5 for f in pos) :
+            if OW and not OW.ok(i): prev_end = i + 4 + 12 * num; i = prev_end; continue   # fuera del detalle fino: salta, pero consume sus materiales
             group = [m for m in mats if prev_end <= m[0] < i]
-            tid = get_tex(group[min(variant, len(group) - 1)]) if group else -1
-            idx = hdr = None; flag = set(); uvs = None
-            end = i + 4 + 12 * num
+            slot = min(variant, max(len(group) - 1, 0)); tid = get_tex(group[slot]) if group else last_tid   # sin material propio: hereda el estado GS anterior
+            idx = hdr = None; flag = set(); uvs = cols = None
+            end = i + 4 + 12 * num; wpos = OW.apply(i, pos) if OW else pos; own = OW.owner(i) if OW else None
             for off, nm, imm, n2, sz in iter_vif(ngp, end, min(L, end + 0x4000)):
                 if nm.startswith('?') or nm == 'UNPACK V3-32': break
-                if nm == 'UNPACK V4-32': hdr = imm & 0x3ff; idx = None; flag = set(); uvs = None
+                if nm == 'UNPACK V4-32':
+                    hdr = imm & 0x3ff; idx = None; flag = set(); uvs = cols = None
+                    sel = u32(ngp, off + 16)          # palabra 3 de la cabecera: bit 2k = pasar al material k (se mantiene hasta el próximo cambio)
+                    if sel and group:
+                        slot = min(((sel & -sel).bit_length() - 1) // 2, len(group) - 1); tid = get_tex(group[slot])
                 elif nm == 'UNPACK S-8' and n2 >= 3 and idx is None: idx = list(ngp[off + 4: off + 4 + n2])
                 elif nm == 'UNPACK S-8' and n2 <= 3 and idx is not None and hdr is not None:
                     v0 = ((imm & 0x3ff) - (hdr + 3)) // 3; flag.update(range(v0, v0 + n2))
+                elif nm == 'UNPACK V4-8' and idx is not None and n2 == len(idx):      # color RGBA8 por vértice; 0x80 = 1.0 (modulación PS2)
+                    cols = [tuple(c / 128.0 for c in ngp[off + 4 + 4 * j: off + 8 + 4 * j]) for j in range(n2)]   # (r, g, b, a)
+                elif nm == 'UNPACK V4-5' and idx is not None and n2 == len(idx):      # RGBA 5551: cada canal de 5 bits se expande <<3
+                    cols = []
+                    for j in range(n2):
+                        c = struct.unpack_from('<H', ngp, off + 4 + 2 * j)[0]; cols.append(((c & 31) * 8 / 128.0, (c >> 5 & 31) * 8 / 128.0, (c >> 10 & 31) * 8 / 128.0, 1.0))
                 elif nm == 'UNPACK V2-16' and idx is not None and n2 == len(idx):
                     uvs = [struct.unpack_from('<hh', ngp, off + 4 + 4 * j) for j in range(n2)]
                 elif nm.startswith('MS') and idx is not None and max(idx) < num:
-                    start = 0
-                    for j in range(len(idx)):
-                        if j in flag: start = j
-                        if j - start < 2: continue
+                    for j in range(2, len(idx)):
+                        if j in flag: continue          # ADC: el vértice j no dispara triángulo, la tira sigue (la paridad cuenta desde el inicio del lote)
                         order = [j-2, j-1, j]
-                        if (j - start) & 1: order = [j-2, j, j-1]
+                        if j & 1: order = [j-2, j, j-1]
                         if len({idx[o] for o in order}) < 3: continue
                         for o in order:
                             u, v = (uvs[o][0] / 4096.0, uvs[o][1] / 4096.0) if uvs else (0, 0)
-                            V.extend((*pos[3*idx[o]:3*idx[o]+3], u % 1.0, 1.0 - (v % 1.0), 1, 1, 1, tid)); I.append(len(I))
-                    idx = hdr = None; flag = set(); uvs = None
+                            V.extend((*wpos[3*idx[o]:3*idx[o]+3], u, 1.0 - v, *(cols[o] if cols else (1, 1, 1, 1)), tid)); I.append(len(I)); VO.append(own)
+                    idx = hdr = None; flag = set(); uvs = cols = None
                 end = off + 4 + sz
-            prev_end = end; i += 4 + 12 * num; continue
+            prev_end = end; last_tid = tid; i += 4 + 12 * num; continue
     i += 4
-with open(out, 'wb') as f:
-    f.write(b'DHM1' + struct.pack('<III', len(textures), len(V) // 9, len(I)))
-    for w, h, px in textures: f.write(struct.pack('<II', w, h) + px)
-    f.write(struct.pack(f'<{len(V)}f', *V)); f.write(struct.pack(f'<{len(I)}I', *I))
-print(f'{len(textures)} texturas, {len(V)//9} vértices, {len(I)//3} triángulos')
+def save(path, groups, chunks=False):
+    """Escribe un .mdl con `groups` = [(dueño, [triángulos])], en ese orden, recompactando texturas. Con chunks=True escribe DHM3: tras los índices,
+    u32 nchunks y por chunk: u32 primer_índice, u32 nº índices, u32 nsel, nsel * (cx, cy, cz, radio, dist2_max) f32 = rangos de visibilidad (nodos tipo 2 del grafo)."""
+    remap, tx, vs, tab = {}, [], [], []
+    for own, tris in groups:
+        first = len(vs) // 10
+        for t in tris:
+            for k in range(3):
+                row = list(V[(3*t+k)*10:(3*t+k)*10+10]); tid = int(row[9])
+                if tid >= 0:
+                    if tid not in remap: remap[tid] = len(tx); tx.append(textures[tid])
+                    row[9] = remap[tid]
+                vs += row
+        tab.append((own, first * 1, len(vs) // 10 - first))
+    nvv = len(vs) // 10
+    with open(path, 'wb') as f:
+        f.write((b'DHM3' if chunks else b'DHM2') + struct.pack('<III', len(tx), nvv, nvv))
+        for w, h, px in tx: f.write(struct.pack('<II', w, h) + px)
+        f.write(struct.pack(f'<{len(vs)}f', *vs)); f.write(struct.pack(f'<{nvv}I', *range(nvv)))
+        if chunks:
+            f.write(struct.pack('<I', len(tab)))
+            for own, first, n in tab:
+                sels = OW.info[own]['sels'] if OW and own in OW.info else ()
+                f.write(struct.pack('<III', first, n, len(sels)))
+                for sl in sels: f.write(struct.pack('<5f', *sl))
+    return len(tx), nvv // 3
+
+ntri = len(I) // 3; sky_path = out[:-4] + '.sky.mdl' if out.endswith('.mdl') else out + '.sky.mdl'
+byown = {}
+for t in range(ntri): byown.setdefault(VO[3*t], []).append(t)
+sky_owners = {o for o in byown if o is not None and OW and OW.layer.get(o) == OW.BACKDROP} if not os.environ.get('DH_NOSKY') else set()   # telón de fondo/cielo: capa 2 del grafo
+if os.path.exists(sky_path): os.remove(sky_path)
+if sky_owners:
+    save(sky_path, [(None, sorted(t for o in sky_owners for t in byown[o]))])
+    print(f'cielo: hojas {[hex(o) for o in sorted(sky_owners)]}, {sum(len(byown[o]) for o in sky_owners)} triángulos -> {os.path.basename(sky_path)}')
+main = [(o, ts) for o, ts in byown.items() if o not in sky_owners]; ntri = sum(len(ts) for _, ts in main)
+save(out, main, chunks=bool(OW))
+print(f'{len(textures)} texturas, {ntri * 3} vértices, {ntri} triángulos, {len(main)} chunks')
+if BADTEX: print('texturas no decodificables (id, psm, w, h, (subida w,h,fmt)):', BADTEX[:8])

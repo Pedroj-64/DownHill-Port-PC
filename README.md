@@ -26,22 +26,25 @@ A native engine reimplementation (not an emulator wrapper) that loads the game's
 | ISO extraction | Done (any ISO tool; `7z x` works) |
 | `IE` asset container (`.NGP/.PTR/.RTX/.TEX`) | Unpacker working (`tools/unpack_ie.py`); a few nested variants pending |
 | `.TEX` textures | Decoded to 8-bit indexed images (GS swizzle undone), exported as grayscale |
-| `.RTX` palettes | Located; texture-to-palette link still unknown |
+| `.RTX` palettes | Decoded; texture-to-palette link solved through the `.PTR` material table |
 | `.PTR` relocation table | Understood (base `0xA00000`) |
-| `.NGP` geometry | Vertex data and strip indices extracted; topology/LOD/instances unresolved |
-| VU1 microcode | Located and disassembled (`tools/vudis.py`); interpreter not written yet |
-| Textured models | First textured model rendered natively (`BOARBIKE`): materials, palettes and UVs decoded; PSMT4 textures pending |
-| Viewer (`dhview`) | SDL3 + OpenGL viewer for points, triangles and textured models (`.mdl`) with free camera |
-| Physics, bike, AI, audio, menus | Not started |
+| `.NGP` geometry and scene graph | Solved for static level geometry: node walk, transforms, fine-detail subtree, strips with ADC rule, UVs, vertex colour and alpha |
+| VU1 microcode | Located and disassembled (`tools/vudis.py`); interpreter not needed so far for static geometry |
+| Textured models and levels | All 54 levels extract; ALP2 is exported as the **whole scene graph** with per-leaf visibility ranges (`DHM3`). All texture upload formats decoded (swizzled CT32, linear T8/T4, T8H). 78 loading screens render with their original art. Bike parts (`BIKE/`) and rider segments (`R/`) render; assembling them needs the skeleton + animations |
+| Viewer (`dhview`) | SDL3 + OpenGL viewer for points, triangles and textured models (`.mdl`): free camera, alpha layers, walk mode with terrain collision |
+| Course line | `.PTS` decoded as a point graph (racing line of ~55,000 u in ALP2); start/finish/checkpoints and the sibling files pending |
+| Bike / physics | Point-mass prototype (`R` in the viewer); real collision data not found yet, so it cannot ride a full course |
+| AI, audio, menus | Not started |
 
-Format notes live in [`docs/en/formats.md`](docs/en/formats.md); the Ghidra setup and research workflow are in [`docs/en/research.md`](docs/en/research.md). Both are also available in Spanish under [`docs/es/`](docs/es/).
+Format notes live in [`docs/en/formats.md`](docs/en/formats.md); the Ghidra setup and research workflow are in [`docs/en/research.md`](docs/en/research.md); architecture and the language decision are in [`docs/en/architecture.md`](docs/en/architecture.md). All are also available in Spanish under [`docs/es/`](docs/es/).
 
 ## Roadmap
 
-1. Emulate the VU1 vertex path (VIF unpack + VU1 interpreter + GIF parser) to recover strip restarts, UVs and transforms exactly.
-2. Walk the scene graph (nodes, LODs, instances) and render a clean track.
-3. Textures with palettes and materials.
-4. Bike model, animation, camera and riding physics.
+1. ✅ Walk the scene graph and render clean, textured level geometry (static terrain done).
+2. ✅ Backdrop/sky split. Next: decode `PTS/` (course line found, start/finish pending), props and game objects, optional runtime LOD.
+3. Decide the runtime language and architecture, then write the native asset parsers ([`docs/en/architecture.md`](docs/en/architecture.md)); the Python tools become the reference oracle.
+4. Collision data, bike model, animation, camera and riding physics (point-mass prototype exists).
+   (A VU1 interpreter is only planned if animated geometry turns out to need it.)
 5. Audio (VAG/BNK), video (PSS), menus and game modes, save data.
 6. Packaging: `.deb` and Windows builds. The package will **not** ship game data; the app will extract assets from your image on first run.
 
@@ -53,21 +56,26 @@ Requirements: a C++20 compiler, CMake ≥ 3.20, Ninja, SDL3 and OpenGL developme
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ./build/dhview path/to/mesh.msh      # WASD + mouse, Shift = fast, Esc = quit
+./build/dhview level.mdl             # same, plus F = fly/walk (gravity + terrain collision), R = bike prototype, Space = jump
 ```
 
 Packaging (no game data included): `cd build && cpack -G DEB`.
 
 ## Tools
 
-Python 3 with Pillow is enough for everything in `tools/`.
+Python 3 with Pillow is enough for everything in `tools/`. Python is used only for research and offline conversion; the runtime is C++ (see [`docs/en/architecture.md`](docs/en/architecture.md) for the language discussion, including a possible move to Rust).
 
 | Tool | Purpose |
 |------|---------|
 | `tools/unpack_ie.py` | Inflate the `IE` containers from an extracted disc folder |
 | `tools/tex_dump.py`, `tools/tex_export.py` | Inspect and export textures (`gs.py` has the GS swizzle tables) |
 | `tools/vif.py` | Minimal VIF packet decoder |
-| `tools/scene.py` | Scene-graph walker for `.NGP` files |
-| `tools/extract_model.py` | Build a textured `.mdl` (mesh + materials + palettes) from a model group |
+| `tools/scene.py` | Scene-graph walker for `.NGP` files; `instances()` / `Owners` give per-leaf transforms and the fine-detail filter |
+| `tools/extract_model.py` | Build a textured `.mdl` (mesh + materials + palettes + vertex colour/alpha) from a model or level group |
+| `tools/batch_models.py` | Run `extract_model.py` over every complete group in a folder (e.g. all levels) |
+| `tools/pts_path.py` | Read a level `.PTS` (course point graph) and export its points / main racing line |
+| `tools/contact_sheet.py` | Render every `.mdl` of a folder with `dhview` into one labelled contact-sheet image |
+| `tools/assemble_bike.py` | Assemble a bike from frame + handlebar/fork + wheel `.mdl` parts (measured hub positions, tilted fork) |
 | `tools/vudis.py` | VU1 microcode disassembler |
 | `tools/extract_mesh.py`, `tools/extract_points.py` | Pull vertices/triangles out of `.NGP` files |
 | `tools/preview_msh.py` | Quick 2D preview of an extracted mesh |

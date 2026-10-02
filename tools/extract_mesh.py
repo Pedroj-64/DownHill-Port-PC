@@ -24,7 +24,11 @@ if RR:
     for k, (ptr, rad) in enumerate(leaves):
         if lo_r <= rad < hi_r: ALLOW.append((ptr, leaves[k+1][0] if k + 1 < len(leaves) else L))
 
-V, I = [], []; stats = dict(chunks=0, with_idx=0, no_idx=0, adc=0)
+from scene import Scene, Owners
+_sub = os.environ.get('DH_SUB')   # vacío o 'all' = todo el grafo; 'fine' = sólo detalle fino; "0x50,0xee0" = esos subárboles de la raíz
+OW = Owners(Scene(d), [int(x, 0) for x in _sub.split(',')] if _sub and _sub not in ('all', 'fine') else _sub)
+
+V, I, TO = [], [], []; stats = dict(chunks=0, with_idx=0, no_idx=0, adc=0)
 i = 0x1000
 while i < L - 16:
     w = struct.unpack_from('<I', d, i)[0]; cmd, num = w >> 24, (w >> 16) & 0xff
@@ -35,13 +39,11 @@ while i < L - 16:
             idx = None; hdr = None; flag = set(); nb = 0
             def emit():
                 global I
-                start = 0
-                for j in range(len(idx)):
-                    if j in flag: start = j          # reinicio: la nueva tira empieza en j
-                    if j - start < 2: continue
+                for j in range(2, len(idx)):
+                    if j in flag: continue           # ADC: el vértice j no dispara triángulo; la tira sigue y la paridad cuenta desde el inicio del lote
                     a, b, c = idx[j-2], idx[j-1], idx[j]
                     if a == b or b == c or a == c: continue
-                    I += (base+a, base+c, base+b) if (j - start) & 1 else (base+a, base+b, base+c)
+                    I += (base+a, base+c, base+b) if j & 1 else (base+a, base+b, base+c); TO.append(OW.owner(i) or 0)
             end = i + 4 + 12*num
             for off, nm, imm, n2, sz in iter_vif(d, end, min(L, end + 0x4000)):
                 if nm.startswith('?') or nm == 'UNPACK V3-32': break
@@ -51,14 +53,15 @@ while i < L - 16:
                     v = ((imm & 0x3ff) - (hdr + 3)) // 3      # parche en el slot UV (+3) del vértice v: ADC en v..v+n-1
                     flag.update(range(v, v + n2))
                 elif nm.startswith('MS') and idx is not None:
-                    if max(idx) < num and LO <= sc < HI and OFF0 <= i < OFF1 and (ALLOW is None or any(a <= i < b for a, b in ALLOW)): emit(); used = True; stats['adc'] += len(flag); nb += 1
+                    if max(idx) < num and LO <= sc < HI and OFF0 <= i < OFF1 and OW.ok(i) and (os.environ.get('DH_SKY') or not OW.backdrop(i)) and (ALLOW is None or any(a <= i < b for a, b in ALLOW)): emit(); used = True; stats['adc'] += len(flag); nb += 1
                     idx = None; hdr = None; flag = set()
                 end = off + 4 + sz
             stats['chunks'] += 1
-            if used: stats['with_idx'] += 1; V += pos
+            if used: stats['with_idx'] += 1; V += OW.apply(i, pos) if not os.environ.get('DH_NOXFORM') else pos
             else: stats['no_idx'] += 1
             stats['batches'] = stats.get('batches', 0) + nb
             i += 4 + 12*num; continue
     i += 4
+if os.environ.get('DH_OWNERS'): open(os.environ['DH_OWNERS'], 'wb').write(struct.pack(f'<{len(TO)}I', *TO))   # depuración: dueño (inicio de cadena de la hoja) de cada triángulo
 open(sys.argv[2], 'wb').write(struct.pack('<II', len(V)//3, len(I)) + struct.pack(f'<{len(V)}f', *V) + struct.pack(f'<{len(I)}I', *I))
 print(stats, len(V)//3, 'vértices', len(I)//3, 'triángulos')
