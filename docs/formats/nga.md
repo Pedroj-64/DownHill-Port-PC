@@ -16,4 +16,4 @@ Parser: `tools/nga.py` · Test: `tests/test_nga.py` (synthetic). Checked on all 
 | … | | track payload — **NOT decoded** |
 Payload evidence: per track descriptors like `1410 1a00 0300…` and f32 triples (e.g. 0.157, −0.706, 0.0055) interleaved with packed bytes/halves → a custom compressed curve format. The ELF function that reads it (rider anim handle lookup: `FUN_001affa8` → `FUN_00208f68`/`FUN_00208e60`) is the next thing to decompile.
 
-Rider: R/ meshes (e.g. `CAM`…`XSW`, 4 outfits' arms + handlebar) are first-person arms; no full-body rider mesh found (searched SHELL, REP (`.ORB/.REP` are replay data), RST (`.RST/.RRS` 16 KB fixed tables, not meshes), BIKE).
+Rider: R/ meshes (e.g. `CAM`…`XSW`, 4 outfits' arms + handlebar) are first-person arms; no full-body rider mesh found (searched SHELL, REP (`.ORB/.REP`: replay files, `.ORB` has an ASCII rider name e.g. "KonradB"), RST (`.RST` per level and `.RRS` per rider: sparse 16 KB parameter tables with magic `0x4E9692A5` and f32 values like 0.55/1.01 — likely rider/level tuning, not meshes; 2358 of 16384 bytes non-zero in ALP2.RST), BIKE (`<RIDER>.RRS`, 32 KB, same family)).
