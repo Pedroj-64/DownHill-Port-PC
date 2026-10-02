@@ -29,3 +29,5 @@ add_executable(ride_demo tests/ride_demo.cpp)
 add_executable(sweep_cli tests/sweep_cli.cpp)
 add_executable(ngp_col_check tests/ngp_col_check.cpp)
 
+add_executable(integrator_test tests/integrator_test.cpp)
+add_test(NAME integrator_test COMMAND integrator_test)
