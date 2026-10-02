@@ -29,5 +29,10 @@ class T(unittest.TestCase):
         why = [w for _, w in ct.compare(segs, res, ours)]
         self.assertTrue(any('frac' in w for w in why)); self.assertTrue(any('normal' in w for w in why)); self.assertTrue(any('surface' in w for w in why))
         self.assertTrue(any('juego=NOHIT' in w for w in why)); self.assertTrue(any('solape' in w or 'juego=HIT' in w for w in why))
+    def test_group_takes_best_of_call(self):
+        segs = [(1, [0, 0, 0, 0, 0, 1, 1]), (1, [0, 0, 0, 0, 0, 2, 1])]; game = {1: ('HIT', [0.2, 0, 0, 0, 0, 0, 1, 5])}
+        ours = [('HIT', [0.7, 0, 0, 0, 0, 0, 1, 5, 3]), ('HIT', [0.2, 0, 0, 0, 0, 0, 1, 5, 9])]    # el motor devuelve el de menor fracción
+        self.assertEqual(ct.compare(segs, game, ours), [])
+        self.assertEqual(ct.best(ours)[1][8], 9)
 
 if __name__ == '__main__': unittest.main()

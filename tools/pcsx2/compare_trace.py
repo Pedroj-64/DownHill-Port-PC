@@ -26,7 +26,7 @@ def run_sweeps(cli, col, segs):
     inp = ''.join(' '.join(repr(x) for x in s) + '\n' for _, s in segs)
     out = subprocess.run([cli, col], input=inp, capture_output=True, text=True, check=True).stdout.strip().splitlines()
     if len(out) != len(segs): raise SystemExit(f'sweep_cli devolvió {len(out)} líneas para {len(segs)} segmentos')
-    return [('NOHIT', None) if o.startswith('NOHIT') else ('HIT', [float(x) for x in o.split()[1:9]]) for o in out]
+    return [('NOHIT', None) if o.startswith('NOHIT') else ('HIT', [float(x) for x in o.split()[1:10]]) for o in out]
 
 def angle(a, b):
     d = sum(x * y for x, y in zip(a, b)); la = math.sqrt(sum(x * x for x in a)); lb = math.sqrt(sum(x * x for x in b))
@@ -35,7 +35,7 @@ def angle(a, b):
 def best(results):
     """FUN_00217450: de todos los impactos de la llamada, el de menor fracción."""
     hits = [r for r in results if r[0] == 'HIT']
-    return min(hits, key=lambda r: (r[1][0], r[1][8])) if hits else ('NOHIT', None)
+    return min(hits, key=lambda r: (r[1][0], r[1][8] if len(r[1]) > 8 else 0)) if hits else ('NOHIT', None)
 
 def compare(segs, game, ours, tol_frac=0.002, tol_pos=0.5, tol_angle=3.0):
     """-> lista de (n, motivo) con las discrepancias (una comparación por llamada n)."""
