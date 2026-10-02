@@ -19,6 +19,19 @@ u32 = lambda b, o: struct.unpack_from('<I', b, o)[0]
 _sub = os.environ.get('DH_SUB')
 try: OW = Owners(Scene(ngp), [int(x, 0) for x in _sub.split(',')] if _sub and _sub not in ('all', 'fine') else _sub) if '/LVL/' in os.path.abspath(base) or _sub else None
 except Exception: OW = None
+def split_type25(OW, S):
+    """Nodo tipo 25 (FUN_0020effc caso 0x19, docs/formats/ngp-nodes-25-11.md): contenedor con u32 n @+0x28 y n punteros a cadenas VIF @+0x2c. Esas cadenas pueden estar ANTES del nodo
+    (Glacier: cielo con n=4), y Owners.owner() las daría a la hoja anterior; cada una pasa a ser un inicio propio de las instancias del nodo. / each chain becomes its own start (hipótesis: layout de +0x28/+0x2c verificado sólo con los datos)."""
+    for k, d in enumerate(OW.inst):
+        p = d['ptr']
+        if S.u32(p) & 0x3f != 25: continue
+        for i in range(min(S.u32(p + 0x28), 16)):
+            q = S.ptr(p + 0x2c + 4*i)
+            if q is None or q == p: continue
+            if k not in OW.by_ptr.setdefault(q, []): OW.by_ptr[q].append(k)
+            if OW.allowed is not None and p in OW.allowed: OW.allowed.add(q)
+    OW.starts = sorted(OW.by_ptr)
+if OW: split_type25(OW, Scene(ngp))
 
 def records(b, first):
     off = first
