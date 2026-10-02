@@ -49,7 +49,8 @@ def main():
     windows = [(RIDER_COUNT_ADDR, 8)] + [(RIDER_BASE + i * RIDER_STRIDE + 0x7928, 8) for i in range(n)] + [(RIDER_BASE + i * RIDER_STRIDE + 0x7A58, 8) for i in range(n)] \
               + [(nd, 0x70) for nd in nodes] + [(RIDER_BASE + i * RIDER_STRIDE + PHYS_OFF, 0x1E0) for i in range(n)] + [HITS]
     out = open(a.out, 'wb'); out.write(MAGIC + struct.pack('<II', len(windows), 0)); [out.write(struct.pack('<II', w[0], w[1])) for w in windows]
-    cw = (RIDER_BASE + PHYS_OFF + 0x1D0, 8); last = None; frames = 0; t_end = time.time() + a.seconds; torn = 0
+    cw = (nodes[0] + 0x10, 16)                                                # sincronía: la posición del nodo del jugador cambia en cada paso de física
+    last = None; frames = 0; t_end = time.time() + a.seconds; torn = 0
     while time.time() < t_end:
         c1 = p.read_windows([cw])[0]
         if c1 == last: time.sleep(0.001); continue                         # esperar un nuevo paso de física

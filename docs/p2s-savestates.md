@@ -40,3 +40,16 @@ Both player wheels touch the ground within 0.12 u and the other two points are 2
 * **Fraction and segment**: the segment buffers (start/end/radius) are not left on the stack, and a single frame does not give the sub-step start position; `frac = 0.1855/0.1857` cannot be reproduced. Needed: **two savestates exactly one frame apart** (frame-advance) while rolling.
 * Airborne behaviour of a wheel, other surface classes (only 0x1844/0x184B/0x1819/0x1800/0x1859 seen), initial-overlap (`frac < 0`) and edge/vertex hits.
 * The engine has no persistent "ground height" field: its ground state lives in the transient hit records above (and `+0x1D0` frame counter), so there is no stored height to compare with `groundQuery`.
+
+## Live capture via PINE (no manual play) — ALPINEMX, slot 1, 30 s
+`tools/pcsx2/pine_capture.py` loads the savestate and samples the RAM at every physics step (position of the player's node changes each step); `tools/pcsx2/analyze_capture.py` compares with `ALPINEMX.col`. PINE socket seen from the host: `$XDG_RUNTIME_DIR/.flatpak/net.pcsx2.PCSX2/xdg-run/pcsx2.sock` (inside the Flatpak it is `$XDG_RUNTIME_DIR/pcsx2.sock`). The per-step counters at `physics+0x1D0/+0x1D4` do **not** advance; do not use them for sync.
+Result: 728 consecutive steps (14.5 s of game time, 0 torn reads), **1 686 distinct engine hit records near the player's contact points** (stack leftovers at `0x2DD600…`), surfaces seen `0x1, 0x1003, 0x1800, 0x180B, 0x1844, 0x1859, 0x18A4`:
+
+| Check against the mesh | Records | % |
+|---|---:|---:|
+| surface + normal (<1e-4) + plane constant d + contact point <0.05 u from the triangle: all equal | 1 292 | 77 % |
+| surface and normal equal (d and/or point differ) | 1 602 | 95 % |
+| surface or normal differ | 84 | 5 % |
+Contact-point clearance of the player's points that touch the ground (<1 u, 994 readings): mean −0.03 u, p5 −0.55, p95 +0.67, min −0.74, max +1.0 u (includes bounces after impacts).
+**Not explained (hypotheses):** (a) 310 records have a different `w` (plane constant) although surface/normal match — for edge/vertex hits `w` is not the face constant (FUN_002193C0 stores the face `w` only in the face branch); (b) records whose contact point is >0.05 u from my triangle probably belong to collision instances with a transform (FUN_00218268/00218310/002183F0, not ported) or to node type 0x0A; (c) 64 records with another surface are probably stale stack data or such instances. Fraction check: only 1 usable case (|Δfrac| 0.0007), too few to conclude.
+Automatically saved intermediate savestates: PINE `MsgSaveState` (slots 2–9) while the game runs from slot 1; the bike stops after ~15 s (slots 6+ show the same position).

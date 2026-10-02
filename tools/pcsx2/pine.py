@@ -3,15 +3,16 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Cliente mínimo del protocolo PINE de PCSX2 (socket Unix). Paquete: u32 tamaño total (incluye esas 4 B) + comandos; respuesta: u32 tamaño + u8 resultado (0 = OK) + datos.
 Comandos usados: Read8/16/32/64 = 0..3, Write* = 4..7, Version 8, SaveState 9, LoadState 10 (arg u8 slot), Title 11, ID 12, UUID 13, GameVersion 14, Status 15 (0 corriendo, 1 pausado, 2 apagado).
-El socket del Flatpak está en $XDG_RUNTIME_DIR/app/net.pcsx2.PCSX2/pcsx2.sock (con PINESlot distinto del 28011 se añade .<slot>)."""
+El socket del Flatpak se ve desde el host en $XDG_RUNTIME_DIR/.flatpak/net.pcsx2.PCSX2/xdg-run/pcsx2.sock (dentro del sandbox es $XDG_RUNTIME_DIR/pcsx2.sock; con PINESlot distinto del 28011 se añade .<slot>)."""
 import os, socket, struct, time
 
 RD8, RD16, RD32, RD64, VERSION, SAVE, LOAD, TITLE, ID, STATUS = 0, 1, 2, 3, 8, 9, 10, 11, 12, 15
 
 def default_socket(slot=28011):
-    rt = os.environ.get('XDG_RUNTIME_DIR', f'/run/user/{os.getuid()}')
-    base = os.path.join(rt, 'app/net.pcsx2.PCSX2/pcsx2.sock')
-    return base if slot == 28011 else f'{base}.{slot}'
+    rt = os.environ.get('XDG_RUNTIME_DIR', f'/run/user/{os.getuid()}'); sfx = '' if slot == 28011 else f'.{slot}'
+    for c in (f'.flatpak/net.pcsx2.PCSX2/xdg-run/pcsx2.sock{sfx}', f'pcsx2.sock{sfx}', f'app/net.pcsx2.PCSX2/pcsx2.sock{sfx}'):          # el primero es el real en este equipo; el otro es el documentado para algunas versiones
+        if os.path.exists(os.path.join(rt, c)): return os.path.join(rt, c)
+    return os.path.join(rt, f'pcsx2.sock{sfx}')
 
 class Pine:
     def __init__(self, path=None, timeout=5.0):
