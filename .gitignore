@@ -63,3 +63,9 @@ graphify-out/
 
 # Salida de decompilación (derivada del binario)
 decomp/
+
+# savestates, volcados y capturas del emulador: nunca al repo
+*.p2s
+*.p2s.backup
+*.cap
+SLES-*
