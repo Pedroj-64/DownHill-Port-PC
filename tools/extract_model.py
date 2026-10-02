@@ -90,21 +90,30 @@ def get_tex(m):
         if t: textures.append(t)
     return tindex[key]
 
-last_tid = -1; V, I, VO = [], [], []; L = len(ngp); i = 0; prev_end = 0
+RNG = [int(x, 0) for x in os.environ['DH_RANGE'].split(',')] if os.environ.get('DH_RANGE') else None   # depuración: "lo,hi" = sólo las cadenas VIF cuyo offset cae ahí (p. ej. las partes de piloto, que el grafo no recorre), sin instancias
+last_tid = -1; V, I, VO, SK = [], [], [], []; L = len(ngp); i = 0; prev_end = 0
 while i < L - 16:
     w = u32(ngp, i); cmd, num = w >> 24, (w >> 16) & 0xff
-    if cmd in (0x68, 0x78) and num >= 3 and i + 4 + 12 * num <= L:
-        pos = struct.unpack_from(f'<{3*num}f', ngp, i + 4)
+    rider = RNG is not None and cmd in (0x6c, 0x7c) and num >= 16 and i + 8 + 16 * num <= L and u32(ngp, i + 4 + 16 * num) >> 24 in (0x6a, 0x7a) and (u32(ngp, i + 4 + 16 * num) >> 16 & 0xff) == num   # sólo con DH_RANGE (los pilotos están en el NGP del nivel pero no se exportan con el mapa); piloto (FUN_00195b80, hipótesis): V4-32 (x, y, z, peso) + V3-8 (normales) en vez de V3-32; pose de referencia
+    psz = 16 * num if rider else 12 * num
+    if (cmd in (0x68, 0x78) and num >= 3 or rider) and i + 4 + psz <= L:
+        pos = (tuple(x for k, x in enumerate(struct.unpack_from(f'<{4*num}f', ngp, i + 4)) if k & 3 != 3) if rider else struct.unpack_from(f'<{3*num}f', ngp, i + 4))
         if all(math.isfinite(f) and abs(f) < 2e5 for f in pos) :
-            if OW and not OW.ok(i): prev_end = i + 4 + 12 * num; i = prev_end; continue   # fuera del detalle fino: salta, pero consume sus materiales
+            if (RNG and not RNG[0] <= i < RNG[1]) or (not RNG and OW and not OW.ok(i)): prev_end = i + 4 + psz; i = prev_end; continue   # fuera del detalle fino: salta, pero consume sus materiales
             group = [m for m in mats if prev_end <= m[0] < i]
             slot = min(variant, max(len(group) - 1, 0)); tid = get_tex(group[slot]) if group else last_tid   # sin material propio: hereda el estado GS anterior
             idx = hdr = None; flag = set(); uvs = cols = None
-            end = i + 4 + 12 * num
-            insts = [(k, OW.apply(k, pos)) for k in OW.ids(i)] if OW else []   # una copia por instancia del grafo (árboles, banderas…); sin dueño: tal cual
+            end = i + 4 + psz
+            skin = None
+            if rider:   # piel (VU1, microprograma en .vutext 0x0c8d..0x0cc4, hipótesis leída del desensamblado): los 7 bits bajos de los u32 de x, y, z = id de hueso (múltiplo de 4 = índice de paleta*4); w = peso1, frac(w*2048) = peso2, 1-peso1-peso2 = peso3
+                skin = []
+                for k in range(num):
+                    xi, yi, zi = struct.unpack_from('<3I', ngp, i + 4 + 16 * k); wf = struct.unpack_from('<f', ngp, i + 4 + 16 * k + 12)[0]; w2 = (wf * 2048) % 1.0
+                    skin.append(((xi & 127) >> 2, (yi & 127) >> 2, (zi & 127) >> 2, wf, w2, 1.0 - wf - w2))
+            insts = [(k, OW.apply(k, pos)) for k in OW.ids(i)] if OW and not RNG else []   # una copia por instancia del grafo (árboles, banderas…); sin dueño: tal cual
             if not insts: insts = [(None, pos)]
             for off, nm, imm, n2, sz in iter_vif(ngp, end, min(L, end + 0x4000)):
-                if nm.startswith('?') or nm == 'UNPACK V3-32': break
+                if nm.startswith('?') or nm == 'UNPACK V3-32' or (RNG and nm == 'UNPACK V4-32' and n2 >= 16): break   # >= 16 vectores = el siguiente bloque de vértices (piloto)
                 if nm == 'UNPACK V4-32':
                     hdr = imm & 0x3ff; idx = None; flag = set(); uvs = cols = None
                     sel = u32(ngp, off + 16)          # palabra 3 de la cabecera: bit 2k = pasar al material k (se mantiene hasta el próximo cambio)
@@ -131,9 +140,10 @@ while i < L - 16:
                             for o in order:
                                 u, v = (uvs[o][0] / 4096.0, uvs[o][1] / 4096.0) if uvs else (0, 0)
                                 V.extend((*wpos[3*idx[o]:3*idx[o]+3], u, 1.0 - v, *(cols[o] if cols else (1, 1, 1, 1)), tid)); I.append(len(I)); VO.append(k_inst)
+                                if skin: SK.append(skin[idx[o]])
                     idx = hdr = None; flag = set(); uvs = cols = None
                 end = off + 4 + sz
-            prev_end = end; last_tid = tid; i += 4 + 12 * num; continue
+            prev_end = end; last_tid = tid; i = end if rider else i + 4 + psz; continue   # piloto: salta toda la cadena (sus S-8/V2-16 darían falsos 0x68/0x78)
     i += 4
 def save(path, groups, chunks=False):
     """Escribe un .mdl con `groups` = [(dueño, [triángulos])], en ese orden, recompactando texturas. Con chunks=True escribe DHM3: tras los índices,
@@ -186,5 +196,9 @@ if sky_owners:
     print(f'cielo: hojas {[hex(o) for o in sorted(sky_owners)]}, {sum(len(byown[o]) for o in sky_owners)} triángulos -> {os.path.basename(sky_path)}')
 main = [(o, ts) for o, ts in byown.items() if o not in sky_owners and o not in dome_owners]; ntri = sum(len(ts) for _, ts in main)
 save(out, main, chunks=bool(OW))
+if SK and os.environ.get('DH_SKIN') and len(main) == 1 and len(SK) == len(I):   # sidecar .skin: 'DHSK', u32 n, n * (3 x u8 hueso paleta, pad, 3 x f32 pesos) en el MISMO orden que los vértices del .mdl (un solo dueño)
+    with open(os.environ['DH_SKIN'], 'wb') as f:
+        f.write(b'DHSK' + struct.pack('<I', len(SK)))
+        for b0, b1, b2, w0, w1, w2 in SK: f.write(struct.pack('<4B3f', b0, b1, b2, 0, w0, w1, w2))
 print(f'{len(textures)} texturas, {ntri * 3} vértices, {ntri} triángulos, {len(main)} chunks')
 if BADTEX: print('texturas no decodificables (id, psm, w, h, (subida w,h,fmt)):', BADTEX[:8])
