@@ -30,14 +30,57 @@ in the Jacobian. Knee and elbow channels are bounded to `[0, pi]`; residuals
 are reported instead of clamped away.
 
 Bike and model frames are both documented as X-right/Y-forward/Z-up. The pelvis
-in bike space is the explicit `DH_RIDER_AT` parameter; a finite coordinate
-search also adjusts pelvis and torso channels 6..8. Cadence defaults to
-`5.5 rad/s` (hypothesis) or can be set with `DH_RIDER_CADENCE`; in play mode
-the current implementation uses `speed * 0.12` as an explicitly hypothetical
-transmission ratio.
+in bike space is the explicit `DH_RIDER_AT` parameter. Optimization uses a
+coarse pelvis grid covering at least +/-2 units on every axis, expands to +/-4
+when the best point is on an edge, and then performs local coordinate
+refinement. Every forward-kinematics evaluation is counted. Candidates
+violating the measured arm (1.824 u) or leg (2.77 u) reach are rejected as
+geometrically invalid rather than silently accepted. Torso channels 6..8 are
+refined locally; these values remain hypotheses, not ELF-derived pose data.
 
-The optional ALP2 test reports, at phase zero and pelvis `(0,0,0)`, unoptimized
-errors `wristR=0.155424`, `wristL=0.895237`, `ankleR=2.342518`,
-`ankleL=1.839855 u`; after finite pelvis/torso optimization it reports
-`0.084407`, `1.101237`, `2.088444`, `1.580793 u`, with pelvis
-`(0.2, 0, 0.2)`. These are approximation diagnostics, not game validation.
+Increasing a hinge angle is measured through `worldPositions()` for each side,
+with an explicit anatomical direction: elbows seek +Y (forward), while knees
+seek -Y (backward). For ALP2 the measured ranges are: elbow 15 `[0,pi]`
+(forward sign +), elbow 22 `[-pi,0]` (forward sign -), knee 29 `[-pi,0]`
+(backward sign -), and knee 36 `[-pi,0]` (backward sign -). Hip flexion is
+measured separately: +0.8 on channels 26 and 33 moves their ankle effectors
+forward by about `1.9923` and `1.9920 u`.
+
+The chain-to-pedal assignment is based on the measured pose-zero X coordinate,
+not on the old palette label: the negative-X pedal is assigned to the
+negative-X ankle and the positive-X pedal to the positive-X ankle. The same
+side-by-position rule is used for the wrists.
+
+The quality target is `<0.05 u` for each effector at phase 0 and phases
+`pi/4..7*pi/4`. The optional ALP2 diagnostic records this criterion per effector. Remaining
+failures are reported as residuals after side and anatomical-direction
+correction, not as generic reach failures. The coarse stage evaluates the
+at-least-±2 grid and the refinement reports its own evaluations and convergence
+(`change < 1e-4`). This is a measured approximation diagnostic, not validation
+of the game's pose.
+
+Pelvis rotation channels 0..2 are also searched within `[-0.6, 0.6]` rad and
+reported per phase. The current ALP2 per-phase results include rotations such
+as `(0.6,0,0.6)` at phase 0 and `(0.35,0,0)` at phase `pi/4`; these are
+approximation parameters, not recovered game data. `approxCycle()` provides the
+shared-cycle mode: one pelvis translation, one pelvis rotation, and one torso
+configuration are scored against all eight crank phases, minimizing the maximum
+efector error.
+
+For each residual case the test performs a 5^4 isolated sample over the four
+measured limb channels (625 samples). Examples from the current ALP2 run:
+ankle +X at `pi/4` has isolated best `0.466244 u`, wrist -X at `pi/2` has
+`0.208819 u`, and ankle +X at `pi` has `0.391449 u`; these are classified as
+infeasible at the fixed pelvis/torso candidate, rather than as silent solver
+successes. The isolated search is a coarse diagnostic; the remaining
+shared-pelvis classification is explicitly approximate.
+
+The previously observed unconstrained diagnostic point `(1,0,0)` is rejected:
+the left-hand anchor is `2.382679 u` from the pelvis, exceeding the 1.824-u arm
+reach. At the accepted phase-zero pelvis, the anchor distances are `1.274633`,
+`1.683853`, `1.984154`, and `2.126610 u` for right hand, left hand, right
+pedal, and left pedal respectively; all fit the documented reach limits.
+
+Cadence defaults to `5.5 rad/s` (hypothesis) or can be set with
+`DH_RIDER_CADENCE`; in play mode the current implementation uses
+`speed * 0.12` as an explicitly hypothetical transmission ratio.

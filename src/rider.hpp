@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <tuple>
 #include <vector>
+#include <limits>
 
 namespace rider {
 inline constexpr uint32_t kBase = 0xA00000;     // los punteros guardados valen offset + kBase (como en ngp.hpp)
@@ -88,9 +89,31 @@ private:
 };
 
 struct IKResult { float error = 0; int iterations = 0; bool reachable = false; };
+struct HingeRange { float lower = -3.1415927f, upper = 3.1415927f, positiveDirection = 1.f; };
+enum class AnatomicalDirection { Forward, Backward };
+enum class FailureCause { None, Infeasible, LocalMinimum, SharedPelvis };
 inline float distance3(const std::array<float, 3>& a, const std::array<float, 3>& b) {
     const float x = a[0] - b[0], y = a[1] - b[1], z = a[2] - b[2];
     return std::sqrt(x * x + y * y + z * z);
+}
+
+// Measures the signed forward (model +Y) displacement caused by increasing a
+// hinge angle through the same FK path used by the solver. This avoids assuming
+// that mirrored chains share the right-hand Euler sign.
+inline HingeRange measureHingeRange(const Skeleton& sk, int effector, int channel,
+                                    AnatomicalDirection direction, float flexion = 1.0f) {
+    std::array<float, 40> zero{};
+    if (effector < 0 || (size_t)effector >= sk.j.size() || channel < 0 || channel >= (int)zero.size()) return {};
+    const auto base = sk.worldPositions(zero.data(), zero.size());
+    auto trial = zero; trial[channel] = flexion;
+    const auto moved = sk.worldPositions(trial.data(), trial.size());
+    const float displacement = moved[effector][1] - base[effector][1];
+    const float desired = direction == AnatomicalDirection::Forward ? 1.f : -1.f;
+    if (displacement * desired >= 0.f) return {0.f, 3.1415927f, 1.f};
+    return {-3.1415927f, 0.f, -1.f};
+}
+inline HingeRange forwardHingeRange(const Skeleton& sk, int effector, int channel, float flexion = 1.0f) {
+    return measureHingeRange(sk, effector, channel, AnatomicalDirection::Forward, flexion);
 }
 
 // Solver numérico sobre la cinemática directa real: usa los canales Euler del
@@ -140,57 +163,251 @@ struct ApproxResult {
     std::array<float, 3> pelvis{};
     float totalError = 0;
     bool optimized = false;
+    size_t evaluations = 0;
+    size_t coarseEvaluations = 0;
+    size_t refinementEvaluations = 0;
+    bool refinementConverged = false;
+    float refinementChange = 0;
+    std::array<HingeRange, 4> hingeRanges{};
+    std::array<float, 3> pelvisRotation{};
+    std::array<FailureCause, 4> causes{};
 };
 
+struct IsolatedIKResult {
+    float bestError = 0;
+    size_t samples = 0;
+    bool belowQuality = false;
+};
+
+inline IsolatedIKResult isolatedTargetSearch(const Skeleton& sk, int effector,
+                                             const std::array<int, 4>& channels,
+                                             const HingeRange& hinge, const std::array<float, 3>& target,
+                                             const std::array<float, 3>& torsoRotation = {}) {
+    IsolatedIKResult result{1e30f, 0, false};
+    constexpr float quality = 0.05f;
+    std::array<float, 40> pose{};
+    pose[0] = torsoRotation[0]; pose[1] = torsoRotation[1]; pose[2] = torsoRotation[2];
+    std::array<float, 40> bestPose{};
+    for (int a = 0; a < 5; a++) for (int b = 0; b < 5; b++)
+        for (int c = 0; c < 5; c++) for (int d = 0; d < 5; d++) {
+            const float span = 3.1415927f * 2.f;
+            pose[channels[0]] = -3.1415927f + span * a / 4.f;
+            pose[channels[1]] = -3.1415927f + span * b / 4.f;
+            pose[channels[2]] = -3.1415927f + span * c / 4.f;
+            pose[channels[3]] = hinge.lower + (hinge.upper - hinge.lower) * d / 4.f;
+            result.samples++;
+            const auto p = sk.worldPositions(pose.data(), pose.size());
+            const float error = distance3(p[effector], target);
+            if (error < result.bestError) { result.bestError = error; bestPose = pose; }
+        }
+    const std::array<float, 4> low = {-3.1415927f, -3.1415927f, -3.1415927f, hinge.lower};
+    const std::array<float, 4> high = {3.1415927f, 3.1415927f, 3.1415927f, hinge.upper};
+    for (int seed = 0; seed < 8; seed++) {
+        auto refined = bestPose;
+        for (int i = 0; i < 4; i++) refined[channels[i]] =
+            low[i] + (high[i] - low[i]) * ((seed * (i + 3)) % 8) / 7.f;
+        const auto solved = solveTarget(sk, refined, effector, target, channels, low, high, 120);
+        result.samples += solved.iterations;
+        result.bestError = std::min(result.bestError, solved.error);
+    }
+    result.belowQuality = result.bestError < quality;
+    return result;
+}
+
 inline ApproxResult approxPose(const Skeleton& sk, float phase, const std::array<float, 3>& pelvisBike,
-                               float cadence = 5.5f, bool optimizePelvis = true) {
+                               float cadence = 5.5f, bool optimizePelvis = true,
+                               const std::array<float, 3>& pelvisRotation = {}) {
     ApproxResult result; result.pelvis = pelvisBike;
+    result.pelvisRotation = pelvisRotation;
     const auto bind = sk.worldPositions(result.pose.data(), result.pose.size());
     const std::array<float, 3> rootModel = bind.empty() ? std::array<float, 3>{} : bind[0];
     const std::array<float, 3> hands[2] = {{1.035f, 0.791f, 0.978f}, {-1.024f, 0.790f, 0.978f}};
     const float crank = phase * cadence;
     const std::array<float, 3> feet[2] = {{0.488f, -0.28f + 0.488f * std::cos(crank), -1.025f + 0.488f * std::sin(crank)},
                                           {-0.488f, -0.28f - 0.488f * std::cos(crank), -1.025f - 0.488f * std::sin(crank)}};
-    const std::array<float, 4> hingeLow = {-3.1415927f, -3.1415927f, -3.1415927f, 0.f};
-    const std::array<float, 4> hingeHigh = {3.1415927f, 3.1415927f, 3.1415927f, 3.1415927f};
+    struct Chain { int effector; std::array<int, 4> channels; AnatomicalDirection direction; };
+    const auto bindPositions = sk.worldPositions(result.pose.data(), result.pose.size());
+    const auto bySide = [&](int positive, Chain a, Chain b) {
+        return bindPositions[a.effector][0] * positive >= 0.f ? a : b;
+    };
+    const Chain armPositive = bySide(1, {5, {12, 13, 14, 15}, AnatomicalDirection::Forward},
+                                     {8, {19, 20, 21, 22}, AnatomicalDirection::Forward});
+    const Chain armNegative = armPositive.effector == 5
+        ? Chain{8, {19, 20, 21, 22}, AnatomicalDirection::Forward}
+        : Chain{5, {12, 13, 14, 15}, AnatomicalDirection::Forward};
+    const Chain legPositive = bySide(1, {11, {26, 27, 28, 29}, AnatomicalDirection::Backward},
+                                     {14, {33, 34, 35, 36}, AnatomicalDirection::Backward});
+    const Chain legNegative = legPositive.effector == 11
+        ? Chain{14, {33, 34, 35, 36}, AnatomicalDirection::Backward}
+        : Chain{11, {26, 27, 28, 29}, AnatomicalDirection::Backward};
+    const std::array<Chain, 4> chains = {armPositive, armNegative, legPositive, legNegative};
+    std::array<HingeRange, 4> ranges{};
+    for (size_t i = 0; i < chains.size(); i++)
+        ranges[i] = measureHingeRange(sk, chains[i].effector, chains[i].channels[3], chains[i].direction);
+    result.hingeRanges = ranges;
+    const std::array<float, 4> reachLimits = {1.824f, 1.824f, 2.77f, 2.77f};
+    const std::array<float, 3> geometryAnchors[4] = {
+        hands[0], hands[1], feet[0], feet[1]};
+    bool refining = false;
     auto solveAll = [&](std::array<float, 40>& pose, const std::array<float, 3>& pelvis) {
         std::array<IKResult, 4> ik{};
-        auto solve = [&](int slot, const std::array<float, 3>& target, int eff, const std::array<int, 4>& ch) {
-            ik[slot] = solveTarget(sk, pose, eff, target, ch, hingeLow, hingeHigh);
+        auto solve = [&](int slot, const std::array<float, 3>& target, const Chain& chain) {
+            const HingeRange& range = ranges[slot];
+            const std::array<float, 4> low = {-3.1415927f, -3.1415927f, -3.1415927f, range.lower};
+            const std::array<float, 4> high = {3.1415927f, 3.1415927f, 3.1415927f, range.upper};
+            ik[slot] = solveTarget(sk, pose, chain.effector, target, chain.channels, low, high);
         };
-        solve(0, bikeToModel(hands[0], pelvis, rootModel), 5, {12, 13, 14, 15});
-        solve(1, bikeToModel(hands[1], pelvis, rootModel), 8, {19, 20, 21, 22});
-        solve(2, bikeToModel(feet[0], pelvis, rootModel), 11, {26, 27, 28, 29});
-        solve(3, bikeToModel(feet[1], pelvis, rootModel), 14, {33, 34, 35, 36});
+        solve(0, bikeToModel(hands[0], pelvis, rootModel), armPositive);
+        solve(1, bikeToModel(hands[1], pelvis, rootModel), armNegative);
+        solve(2, bikeToModel(feet[0], pelvis, rootModel), legPositive);
+        solve(3, bikeToModel(feet[1], pelvis, rootModel), legNegative);
         const auto pos = sk.worldPositions(pose.data(), pose.size());
-        const std::array<float, 4> errors = {distance3(pos[5], bikeToModel(hands[0], pelvis, rootModel)),
-                                             distance3(pos[8], bikeToModel(hands[1], pelvis, rootModel)),
-                                             distance3(pos[11], bikeToModel(feet[0], pelvis, rootModel)),
-                                             distance3(pos[14], bikeToModel(feet[1], pelvis, rootModel))};
+        const std::array<float, 4> errors = {distance3(pos[armPositive.effector], bikeToModel(hands[0], pelvis, rootModel)),
+                                             distance3(pos[armNegative.effector], bikeToModel(hands[1], pelvis, rootModel)),
+                                             distance3(pos[legPositive.effector], bikeToModel(feet[0], pelvis, rootModel)),
+                                             distance3(pos[legNegative.effector], bikeToModel(feet[1], pelvis, rootModel))};
         float total = 0; for (float e : errors) total += e;
         return std::tuple<std::array<float, 4>, float, std::array<IKResult, 4>>{errors, total, ik};
     };
-    // HIPÓTESIS H4: torso y cadencia; la búsqueda finita minimiza el error,
-    // pero no afirma que estos valores procedan del ELF.
-    result.pose[6] = -0.18f; result.pose[7] = -0.10f;
-    auto score = solveAll(result.pose, result.pelvis);
-    for (int pass = 0; pass < (optimizePelvis ? 4 : 1); pass++) {
-        bool changed = false;
-        for (int channel : {6, 7, 8}) {
-            for (float delta : {-0.05f, 0.05f}) {
-                auto candidatePose = result.pose; candidatePose[channel] += delta;
-                auto candidateScore = solveAll(candidatePose, result.pelvis);
-                if (std::get<1>(candidateScore) < std::get<1>(score)) { result.pose = candidatePose; score = candidateScore; changed = true; }
+    // HIPÓTESIS H4: torso y cadencia; ninguna de estas cifras procede del ELF.
+    std::array<float, 3> bestTorso = {-0.18f, -0.10f, 0.f};
+    std::array<float, 3> bestRotation = pelvisRotation;
+    auto evaluate = [&](const std::array<float, 3>& pelvis, const std::array<float, 3>& torsoAngles,
+                        const std::array<float, 3>& rotation) {
+        result.evaluations++;
+        if (refining) result.refinementEvaluations++; else result.coarseEvaluations++;
+        std::array<float, 40> candidate{};
+        candidate[0] = rotation[0]; candidate[1] = rotation[1]; candidate[2] = rotation[2];
+        candidate[6] = torsoAngles[0]; candidate[7] = torsoAngles[1]; candidate[8] = torsoAngles[2];
+        for (int i = 0; i < 4; i++) {
+            if (distance3(pelvis, geometryAnchors[i]) > reachLimits[i]) {
+                return std::tuple<std::array<float, 40>, std::array<float, 4>, float, std::array<IKResult, 4>>{
+                    candidate, {distance3(pelvis, geometryAnchors[0]), distance3(pelvis, geometryAnchors[1]),
+                                distance3(pelvis, geometryAnchors[2]), distance3(pelvis, geometryAnchors[3])},
+                    1e6f, {}};
             }
         }
-        if (optimizePelvis) for (int axis = 0; axis < 3; axis++) for (float delta : {-0.05f, 0.05f}) {
-            auto candidatePelvis = result.pelvis; candidatePelvis[axis] += delta;
-            auto candidatePose = result.pose; auto candidateScore = solveAll(candidatePose, candidatePelvis);
-            if (std::get<1>(candidateScore) < std::get<1>(score)) { result.pose = candidatePose; result.pelvis = candidatePelvis; score = candidateScore; changed = true; result.optimized = true; }
+        auto score = solveAll(candidate, pelvis);
+        return std::tuple<std::array<float, 40>, std::array<float, 4>, float, std::array<IKResult, 4>>{
+            candidate, std::get<0>(score), std::get<1>(score), std::get<2>(score)};
+    };
+    auto score = evaluate(result.pelvis, bestTorso, bestRotation);
+    if (optimizePelvis) {
+        auto search = [&](float radius, float step, const std::array<float, 3>& origin) {
+            std::array<float, 3> best = origin;
+            auto bestScore = score;
+            for (float x = -radius; x <= radius + step * 0.5f; x += step)
+                for (float y = -radius; y <= radius + step * 0.5f; y += step)
+                    for (float z = -radius; z <= radius + step * 0.5f; z += step) {
+                        const std::array<float, 3> candidate = {origin[0] + x, origin[1] + y, origin[2] + z};
+                        auto tested = evaluate(candidate, bestTorso, bestRotation);
+                        if (std::get<2>(tested) < std::get<2>(bestScore)) { best = candidate; bestScore = std::move(tested); }
+                    }
+            return std::pair<std::array<float, 3>, decltype(score)>{best, std::move(bestScore)};
+        };
+        auto coarse = search(2.f, 1.f, pelvisBike);
+        auto onEdge = [&](const std::array<float, 3>& p, float radius) {
+            return std::fabs(std::fabs(p[0] - pelvisBike[0]) - radius) < 1e-4f ||
+                   std::fabs(std::fabs(p[1] - pelvisBike[1]) - radius) < 1e-4f ||
+                   std::fabs(std::fabs(p[2] - pelvisBike[2]) - radius) < 1e-4f;
+        };
+        if (onEdge(coarse.first, 2.f)) coarse = search(4.f, 1.f, pelvisBike);
+        std::array<float, 3> bestPelvis = coarse.first;
+        score = coarse.second;
+        refining = true;
+        for (float step : {0.25f, 0.05f}) {
+            bool changed = true;
+            while (changed) {
+                changed = false;
+                float largestChange = 0;
+                for (int axis = 0; axis < 3; axis++) for (float delta : {-step, step}) {
+                    auto candidatePelvis = bestPelvis; candidatePelvis[axis] += delta;
+                    auto tested = evaluate(candidatePelvis, bestTorso, bestRotation);
+                    if (std::get<2>(tested) < std::get<2>(score)) { bestPelvis = candidatePelvis; score = std::move(tested); changed = true; largestChange = std::max(largestChange, std::fabs(delta)); }
+                }
+                for (int axis = 0; axis < 3; axis++) for (float delta : {-step, step}) {
+                    auto candidateTorso = bestTorso; candidateTorso[axis] += delta;
+                    auto tested = evaluate(bestPelvis, candidateTorso, bestRotation);
+                    if (std::get<2>(tested) < std::get<2>(score)) { bestTorso = candidateTorso; score = std::move(tested); changed = true; largestChange = std::max(largestChange, std::fabs(delta)); }
+                }
+                result.refinementChange = largestChange;
+                if (!changed || largestChange < 1e-4f) { result.refinementConverged = true; break; }
+            }
         }
-        if (!changed) break;
+        result.pelvis = bestPelvis;
+        for (float rx = -0.6f; rx <= 0.6001f; rx += 0.3f)
+            for (float ry = -0.6f; ry <= 0.6001f; ry += 0.3f)
+                for (float rz = -0.6f; rz <= 0.6001f; rz += 0.3f) {
+                    const std::array<float, 3> rotation = {rx, ry, rz};
+                    auto tested = evaluate(bestPelvis, bestTorso, rotation);
+                    if (std::get<2>(tested) < std::get<2>(score)) { bestRotation = rotation; score = std::move(tested); }
+                }
+        for (float step : {0.15f, 0.05f}) {
+            bool changed = true;
+            while (changed) {
+                changed = false;
+                float largestChange = 0;
+                for (int axis = 0; axis < 3; axis++) for (float delta : {-step, step}) {
+                    auto candidateRotation = bestRotation; candidateRotation[axis] += delta;
+                    candidateRotation[axis] = std::clamp(candidateRotation[axis], -0.6f, 0.6f);
+                    auto tested = evaluate(bestPelvis, bestTorso, candidateRotation);
+                    if (std::get<2>(tested) < std::get<2>(score)) { bestRotation = candidateRotation; score = std::move(tested); changed = true; largestChange = std::max(largestChange, std::fabs(delta)); }
+                }
+                result.refinementChange = std::min(result.refinementChange, largestChange);
+                if (!changed || largestChange < 1e-4f) break;
+            }
+        }
+        result.pelvisRotation = bestRotation;
+        result.optimized = true;
+    } else {
+        score = evaluate(result.pelvis, bestTorso, bestRotation);
     }
-    result.errors = std::get<0>(score); result.totalError = std::get<1>(score); result.ik = std::get<2>(score);
+    result.pose = std::get<0>(score);
+    result.errors = std::get<1>(score); result.totalError = std::get<2>(score); result.ik = std::get<3>(score);
+    return result;
+}
+
+struct CycleResult {
+    std::array<float, 3> pelvis{};
+    std::array<float, 3> pelvisRotation{};
+    std::array<float, 3> torso{};
+    std::array<std::array<float, 4>, 8> errors{};
+    std::array<float, 4> maxError{};
+    size_t evaluations = 0;
+};
+
+// Shared-cycle approximation: one pelvis/torso/rotation is selected for all
+// crank phases; each frame may still solve its four limb channels.
+inline CycleResult approxCycle(const Skeleton& sk, const std::array<float, 3>& origin,
+                               float cadence = 5.5f) {
+    CycleResult result; result.pelvis = origin; result.torso = {-0.18f, -0.10f, 0.f};
+    auto evaluate = [&](const std::array<float, 3>& pelvis, const std::array<float, 3>& rotation) {
+        std::array<float, 4> worst{};
+        for (int phaseIndex = 0; phaseIndex < 8; phaseIndex++) {
+            const auto frame = approxPose(sk, 0.7853981634f * phaseIndex, pelvis, cadence, false, rotation);
+            result.evaluations++;
+            for (int i = 0; i < 4; i++) worst[i] = std::max(worst[i], frame.errors[i]);
+        }
+        return worst;
+    };
+    auto best = evaluate(result.pelvis, result.pelvisRotation);
+    for (float x = -2.f; x <= 2.001f; x += 1.f)
+        for (float y = -2.f; y <= 2.001f; y += 1.f)
+            for (float z = -2.f; z <= 2.001f; z += 1.f)
+                for (float rx = -0.6f; rx <= 0.6001f; rx += 0.6f)
+                    for (float ry = -0.6f; ry <= 0.6001f; ry += 0.6f)
+                        for (float rz = -0.6f; rz <= 0.6001f; rz += 0.6f) {
+                            const std::array<float, 3> p = {origin[0] + x, origin[1] + y, origin[2] + z};
+                            const std::array<float, 3> r = {rx, ry, rz};
+                            const auto tested = evaluate(p, r);
+                            if (*std::max_element(tested.begin(), tested.end()) <
+                                *std::max_element(best.begin(), best.end())) {
+                                result.pelvis = p; result.pelvisRotation = r; best = tested;
+                            }
+                        }
+    result.maxError = best;
+    for (int phaseIndex = 0; phaseIndex < 8; phaseIndex++)
+        result.errors[phaseIndex] = approxPose(sk, 0.7853981634f * phaseIndex, result.pelvis, cadence, false, result.pelvisRotation).errors;
     return result;
 }
 

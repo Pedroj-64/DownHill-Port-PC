@@ -47,6 +47,10 @@ int main() {
                                  {-3.1415927f, -3.1415927f, -3.1415927f, 0.f},
                                  {3.1415927f, 3.1415927f, 3.1415927f, 3.1415927f});
     if (!legIk.reachable || legIk.error >= 1e-3f) { std::puts("FAIL synthetic leg IK"); return 1; }
+    const HingeRange syntheticHinge = forwardHingeRange(leg, 2, 2);
+    if (syntheticHinge.positiveDirection <= 0.f || syntheticHinge.lower > 0.f || syntheticHinge.upper < 1.f) {
+        std::puts("FAIL synthetic forward hinge range"); return 1;
+    }
 
     std::ifstream ngp("unpacked/LVL/ALP2.NGP", std::ios::binary);
     if (ngp) {
@@ -55,12 +59,86 @@ int main() {
         if (!real.load(raw, 0x9e2f40)) { std::puts("FAIL ALP2 skeleton load"); return 1; }
         ApproxResult unoptimized = approxPose(real, 0.f, {0.f, 0.f, 0.f}, 5.5f, false);
         ApproxResult approx = approxPose(real, 0.f, {0.f, 0.f, 0.f}, 5.5f, true);
-        constexpr float documentedThreshold = 3.0f; // u: diagnóstico de aproximación, no fidelidad al juego.
-        for (float e : approx.errors) if (!(e < documentedThreshold)) { std::puts("FAIL ALP2 IK threshold"); return 1; }
-        std::printf("ALP2 unoptimized errors %.6f %.6f %.6f %.6f; optimized errors %.6f %.6f %.6f %.6f pelvis %.6f %.6f %.6f\n",
+        constexpr float qualityThreshold = 0.05f;
+        std::printf("ALP2 phase0 unoptimized %.6f %.6f %.6f %.6f; optimized %.6f %.6f %.6f %.6f pelvis %.6f %.6f %.6f evaluations %zu\n",
                     unoptimized.errors[0], unoptimized.errors[1], unoptimized.errors[2], unoptimized.errors[3],
                     approx.errors[0], approx.errors[1], approx.errors[2], approx.errors[3],
-                    approx.pelvis[0], approx.pelvis[1], approx.pelvis[2]);
+                    approx.pelvis[0], approx.pelvis[1], approx.pelvis[2], approx.evaluations);
+        const char* names[4] = {"wristR", "wristL", "ankleR", "ankleL"};
+        for (int i = 0; i < 4; i++) std::printf("ALP2 hinge %s range [%.6f, %.6f] forward-sign %.0f\n",
+                                                  names[i], approx.hingeRanges[i].lower, approx.hingeRanges[i].upper,
+                                                  approx.hingeRanges[i].positiveDirection);
+        for (int phaseIndex = 0; phaseIndex < 8; phaseIndex++) {
+            const float phase = 0.7853981634f * phaseIndex;
+            const ApproxResult frame = approxPose(real, phase, {0.f, 0.f, 0.f}, 5.5f, true);
+            bool quality = true;
+            for (int i = 0; i < 4; i++) {
+                quality &= frame.errors[i] < qualityThreshold;
+                constexpr float upper[8][4] = {
+                    {0.05f, 0.05f, 0.05f, 0.20f}, {0.05f, 0.05f, 0.20f, 0.05f},
+                    {0.05f, 0.25f, 0.05f, 0.05f}, {0.05f, 0.15f, 0.20f, 0.05f},
+                    {0.05f, 0.05f, 0.35f, 0.05f}, {0.05f, 0.70f, 0.05f, 0.05f},
+                    {0.05f, 0.05f, 0.15f, 0.05f}, {0.35f, 0.15f, 0.05f, 0.05f}};
+                if (!(frame.errors[i] <= upper[phaseIndex][i])) {
+                    std::printf("FAIL ALP2 regression phase %d effector %s %.6f > %.6f\n",
+                                phaseIndex, names[i], frame.errors[i], upper[phaseIndex][i]);
+                    return 1;
+                }
+                std::printf("ALP2 phase %.6f %s error %.6f status %s pelvis %.6f %.6f %.6f evaluations %zu\n",
+                            phase, names[i], frame.errors[i], frame.errors[i] < qualityThreshold ? "PASS" : "FAIL: residual after side/anatomical mapping",
+                            frame.pelvis[0], frame.pelvis[1], frame.pelvis[2], frame.evaluations);
+            }
+            std::printf("ALP2 pelvis rotation %.6f %.6f %.6f\n",
+                        frame.pelvisRotation[0], frame.pelvisRotation[1], frame.pelvisRotation[2]);
+            std::printf("ALP2 phase %.6f stages coarse=%zu refine=%zu converged=%s change=%.6f\n",
+                        phase, frame.coarseEvaluations, frame.refinementEvaluations,
+                        frame.refinementConverged ? "yes" : "no", frame.refinementChange);
+            const auto root = real.worldPositions(std::array<float, 40>{}.data(), 40)[0];
+            const float crank = phase * 5.5f;
+            const std::array<std::array<float, 3>, 4> targets = {{
+                {root[0] + 1.035f - frame.pelvis[0], root[1] + 0.791f - frame.pelvis[1], root[2] + 0.978f - frame.pelvis[2]},
+                {root[0] - 1.024f - frame.pelvis[0], root[1] + 0.790f - frame.pelvis[1], root[2] + 0.978f - frame.pelvis[2]},
+                {root[0] + 0.488f - frame.pelvis[0], root[1] - 0.28f + 0.488f * std::cos(crank) - frame.pelvis[1], root[2] - 1.025f + 0.488f * std::sin(crank) - frame.pelvis[2]},
+                {root[0] - 0.488f - frame.pelvis[0], root[1] - 0.28f - 0.488f * std::cos(crank) - frame.pelvis[1], root[2] - 1.025f - 0.488f * std::sin(crank) - frame.pelvis[2]}}};
+            const std::array<std::array<int, 4>, 4> channels = {{{12,13,14,15}, {19,20,21,22}, {33,34,35,36}, {26,27,28,29}}};
+            const std::array<int, 4> effectors = {5, 8, 14, 11};
+            for (int i = 0; i < 4; i++) if (frame.errors[i] >= qualityThreshold) {
+                const auto isolated = isolatedTargetSearch(real, effectors[i], channels[i], frame.hingeRanges[i], targets[i]);
+                std::printf("ALP2 diagnosis phase %.6f %s isolated-best %.6f samples %zu cause %s\n",
+                            phase, names[i], isolated.bestError, isolated.samples,
+                            isolated.belowQuality ? "shared pelvis/torso" : "infeasible at fixed pelvis/torso");
+            }
+            if (!quality) std::printf("ALP2 quality: FAIL at this phase, threshold %.3f u; residual is not an anchoring-distance failure and approximation is not game pose\n", qualityThreshold);
+            if (!frame.refinementConverged || frame.refinementChange >= 1e-4f) {
+                std::puts("FAIL refinement did not converge"); return 1;
+            }
+        }
+        const std::array<float, 3> pelvis = approx.pelvis;
+        const std::array<std::array<float, 3>, 4> anchors = {{
+            {1.035f, 0.791f, 0.978f}, {-1.024f, 0.790f, 0.978f},
+            {0.488f, -0.280f, -1.025f}, {-0.488f, -0.280f, -1.025f}}};
+        const float armLength = 1.824f, legLength = 2.77f;
+        for (int i = 0; i < 4; i++) {
+            const float d = distance3(pelvis, anchors[i]);
+            const float limit = i < 2 ? armLength : legLength;
+            std::printf("ALP2 geometry %s distance %.6f limit %.6f status %s\n",
+                        names[i], d, limit, d <= limit ? "PASS" : "KNOWN-FAIL");
+        }
+        for (const auto& chain : std::array<std::pair<int, int>, 2>{{{11, 26}, {14, 33}}}) {
+            std::array<float, 40> zero{};
+            const auto base = real.worldPositions(zero.data(), zero.size());
+            zero[chain.second] = 0.8f;
+            const auto flexed = real.worldPositions(zero.data(), zero.size());
+            const float dy = flexed[chain.first][1] - base[chain.first][1];
+            if (!(dy > 0.f)) { std::puts("FAIL measured hip forward flexion"); return 1; }
+            std::printf("ALP2 hip channel %d effector %d +0.8 dy %.6f\n", chain.second, chain.first, dy);
+        }
+        for (int i = 0; i < 4; i++) {
+            const HingeRange& range = approx.hingeRanges[i];
+            if (i == 0 && !(range.lower <= 0.f && range.upper >= 1.f)) { std::puts("FAIL right elbow forward range"); return 1; }
+            if (i == 1 && !(range.lower <= -1.f && range.upper >= 0.f)) { std::puts("FAIL left elbow forward range"); return 1; }
+            if (i >= 2 && !(range.lower <= -1.f && range.upper >= 0.f)) { std::puts("FAIL knee backward range"); return 1; }
+        }
     }
     std::puts("rider_test OK"); return 0;
 }
