@@ -2,20 +2,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Cuerpo cinemático mínimo para la demo de bici: una esfera con gravedad que desliza por la malla de colisión (Ground::sweep) con la estructura de
 // sub-pasos de FUN_001340D8 (como mucho 2 barridos por paso; el tiempo restante se reparte tras el primer impacto). NO es la física de la bici del juego.
-// Unidades: Y arriba (ver docs/formats/coordinates.md); 10 u = 1 m es una hipótesis (docs).
+// Unidades: Y arriba (docs/formats/coordinates.md); 1 u = 1 pie (0.3048 m), comprobado con un savestate: |v| = 29.0 u/s frente a 31 km/h en el marcador (docs/p2s-savestates.md).
 #pragma once
 #include "ground.hpp"
 
 struct RideParams {
-    float radius = 3.f;          // 0.3 m: parámetro de la demo (en el juego es el radio de cada punto de contacto, body+0x15C+16*i)
-    float gravity = 98.f;        // 9.8 m/s^2 * 10 u/m
-    float pedal = 15.f;          // empuje de la demo hacia el objetivo cuando va lento (el juego tiene pedaleo del jugador)
-    float pedalBelow = 80.f;     // u/s por debajo de los cuales empuja
+    float radius = 0.75f;        // radio de los puntos de contacto de la bici en la RAM del juego (physics+0x15C+16*i = 0.75, savestate)
+    float gravity = 32.17f;      // 9.81 m/s^2 en pies/s^2
+    float pedal = 4.9f;           // empuje de la demo hacia el objetivo cuando va lento (el juego tiene pedaleo del jugador)
+    float pedalBelow = 26.f;     // u/s por debajo de los cuales empuja
     float rolling = 0.04f;       // rodadura 1/s (mismo valor que el modo bici previo de dhview)
     float turnRate = 2.5f;       // rad/s máx. que el piloto automático gira la velocidad horizontal
     float airTurn = 0.6f;        // rad/s de control en el aire (la demo no modela saltos del jugador)
-    float airPull = 1.5f;        // 1/s: en el aire la velocidad horizontal tiende hacia el objetivo (piloto automático de la demo; no existe en el juego)
-    float maxSpeed = 400.f;      // 40 m/s horizontales (la caída vertical no se limita)
+    float airPull = 3.f;        // 1/s: en el aire la velocidad horizontal tiende hacia el objetivo (piloto automático de la demo; no existe en el juego)
+    float maxSpeed = 131.f;      // 40 m/s horizontales (la caída vertical no se limita)
 };
 
 struct RideBody {

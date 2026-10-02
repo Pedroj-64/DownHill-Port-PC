@@ -14,3 +14,4 @@
 - 2026-10-02: plane distance is n.p - d (FUN_002279E8, consumer FUN_001A2738), not +d; gates cross in increasing idx; kind 8052 = finish (hypothesis) / distancia al plano = n.p - d; 8052 = meta (hipótesis).
 - 2026-10-02: demo starts at line point 3 (start gate bar is closed in the static mesh) and uses an autopilot with air pull; reported as demo aids / la demo empieza en el punto 3 y usa piloto automático.
 - 2026-10-02: NGA fully decoded for the 4 (type,mode) combos present (25348 tracks, exact sizes); other combos implemented from decompiled code, untested / NGA decodificado; combinaciones ausentes sin test.
+- 2026-10-02: units 1 u = 1 ft (savestate speed vs HUD); demo params changed; winding sign confirmed by engine hit records; savestates are ALPINEMX not ALP2 / escala 1 u = 1 pie; los savestates son ALPINEMX.

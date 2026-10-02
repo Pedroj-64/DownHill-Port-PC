@@ -158,7 +158,7 @@ int main(int argc, char** argv) {
         }
         return best;
     };
-    const float U = std::getenv("DH_UNIT") ? (float)std::atof(std::getenv("DH_UNIT")) : 10.f;   // unidades por metro (sin confirmar)
+    const float U = std::getenv("DH_UNIT") ? (float)std::atof(std::getenv("DH_UNIT")) : 3.2808f;   // unidades por metro: 1 u = 1 pie (savestate, docs/p2s-savestates.md)
     const float eye = 1.7f * U, grav = 9.8f * U; float vy = 0; bool walk = std::getenv("DH_WALK") != nullptr;
     if (walk) { float g = groundY(px, pz, py); if (!std::isnan(g)) py = g + eye; std::printf("walk: suelo en (%.0f, %.0f) = %.1f\n", px, pz, g); }
     std::vector<float> overlay;   // DH_PTS=archivo: floats x y z sueltos, se dibujan encima del modelo (rutas, puntos de control)
@@ -174,8 +174,8 @@ int main(int argc, char** argv) {
     auto startRide = [&]() {
         if (useCol && overlay.size() >= 6) {
             size_t k = std::getenv("DH_RIDE_AT") ? (size_t)std::atoi(std::getenv("DH_RIDE_AT")) : 3;   // 3: pasada la verja de salida cerrada (ride_demo.cpp)
-            k = std::min(k, overlay.size() / 3 - 2); auto gi = gcol.groundQuery(overlay[3*k], overlay[3*k+1] + 30.f, overlay[3*k+2], rp.radius, 200.f);
-            rb = RideBody(); rb.pos = {overlay[3*k], (gi.hit ? gi.height : overlay[3*k+1]) + rp.radius + 10.f, overlay[3*k+2]}; gst = Gates::State(); rideT = 0;
+            k = std::min(k, overlay.size() / 3 - 2); auto gi = gcol.groundQuery(overlay[3*k], overlay[3*k+1] + 10.f, overlay[3*k+2], rp.radius, 66.f);
+            rb = RideBody(); rb.pos = {overlay[3*k], (gi.hit ? gi.height : overlay[3*k+1]) + rp.radius + 3.f, overlay[3*k+2]}; gst = Gates::State(); rideT = 0;
             rx0 = rb.pos.x; ry0 = rb.pos.y - rp.radius; rz0 = rb.pos.z; rh = std::atan2(overlay[3*k+3] - rx0, -(overlay[3*k+5] - rz0)); walk = false; return;
         }
         if (overlay.size() >= 6) {                       // primer punto de la línea PTS con suelo debajo, mirando al siguiente (la plataforma de salida puede no estar en la malla)
@@ -213,7 +213,7 @@ int main(int argc, char** argv) {
             int ev = gts.update(gst, rb.pos, (float)rideT); if (ev > 0) std::printf("puerta %zu/%zu cruzada a los %.1f s\n", gst.counter, gts.size(), rideT);
             if (gst.finished && gst.finishTime == (float)rideT) std::printf("META a los %.1f s (%zu/%zu puertas)\n", rideT, gst.counter, gts.size());
             rx0 = rb.pos.x; ry0 = rb.pos.y - rp.radius; rz0 = rb.pos.z; float sh = std::sqrt(rb.vel.x*rb.vel.x + rb.vel.z*rb.vel.z); if (sh > 5.f) rh = std::atan2(rb.vel.x, -rb.vel.z);
-            if (frame % 10 == 0) { char t[160]; std::snprintf(t, sizeof t, "dhview  puertas %zu/%zu%s  %.0f km/h  t=%.0f s  %s", gst.counter, gts.size(), gst.finished ? " META" : "", 0.36f * std::sqrt(dot(rb.vel, rb.vel)), rideT, rb.grounded ? "suelo" : "aire"); SDL_SetWindowTitle(w, t); }
+            if (frame % 10 == 0) { char t[160]; std::snprintf(t, sizeof t, "dhview  puertas %zu/%zu%s  %.0f km/h  t=%.0f s  %s", gst.counter, gts.size(), gst.finished ? " META" : "", 1.0973f * std::sqrt(dot(rb.vel, rb.vel)), rideT, rb.grounded ? "suelo" : "aire"); SDL_SetWindowTitle(w, t); }
             px = rx0 - std::sin(rh) * 6.f * U; pz = rz0 + std::cos(rh) * 6.f * U; py = ry0 + 3.f * U; yaw = rh; pitch = -0.22f;
         } else if (ride) {
             float ddt = std::fmin(dt, 0.05f), dx = std::sin(rh), dz = -std::cos(rh), step = 0.8f * U;   // escalón máximo 0.8 m

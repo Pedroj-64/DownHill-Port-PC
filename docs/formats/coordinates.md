@@ -3,7 +3,7 @@ Resolves the "start slots spread along Y" mismatch. Evidence is numeric (`tests/
 
 | Space | Up axis | Notes |
 |-------|---------|-------|
-| NGP node space, world (nodes, `.PTS`, `.PTS` siblings, collision mesh `0x2A`, gate planes, start grid) | **+Z** | One shared space. 1 m ≈ 10 u (hypothesis, from rider eye height / 3 m start offset). |
+| NGP node space, world (nodes, `.PTS`, `.PTS` siblings, collision mesh `0x2A`, gate planes, start grid) | **+Z** | One shared space, **also the EE RAM space** (savestate positions match the collision mesh directly). **1 u = 1 ft = 0.3048 m** (confirmed: docs/p2s-savestates.md). |
 | `.mdl` written by `tools/extract_model.py` | **+Z** (raw NGP coordinates, nothing converted) | Until now `dhview` treated it as Y-up; the model looked plausible but was lying on its side. |
 | `dhview` internal space | +Y | Since this change `dhview` converts at load: `(x, y, z) → (x, z, −y)` (rotation, det +1, winding preserved) for model vertices, selector centres, sky, `DH_PTS` overlay, `DH_COL` triangles. The bike model (own space) is not converted. |
 | `Ground` (`src/ground.hpp`) | +Y after `load()` | `load()` applies the same swizzle (`zup=true`); `set()` takes Y-up triangles directly. |
