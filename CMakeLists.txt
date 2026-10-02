@@ -37,6 +37,8 @@ add_test(NAME integrator_test COMMAND integrator_test)
 
 add_executable(rider_test tests/rider_test.cpp)
 add_test(NAME rider_test COMMAND rider_test)
+add_executable(rider_mesh_test tests/rider_mesh_test.cpp)
+add_test(NAME rider_mesh_test COMMAND rider_mesh_test)
 
 add_executable(nga_test tests/nga_test.cpp)
 add_test(NAME nga_test COMMAND nga_test)
