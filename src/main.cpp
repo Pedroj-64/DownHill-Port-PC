@@ -17,6 +17,8 @@
 #include "ground.hpp"
 #include "ride.hpp"
 #include "bike.hpp"
+#include "gl_renderer.hpp"
+#include "rider.hpp"
 
 int main(int argc, char** argv) {
     if (argc < 2) { std::fprintf(stderr, "uso: dhview archivo.pts|.msh|.mdl  (mdl: F = volar/caminar, R = bici, Espacio = saltar)\n"); return 1; }
@@ -110,6 +112,18 @@ int main(int argc, char** argv) {
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, t.w, t.h, 0, GL_RGBA, GL_UNSIGNED_BYTE, t.px.data());
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    }
+    // --- Piloto (hito 4): DH_RIDER=modelo.mdl DH_RIDER_SKIN=modelo.skin DH_RIDER_NGP=nivel.NGP DH_RIDER_ROOT=0x9e2f40 [DH_RIDER_POSE=40 floats por línea/espacios] [DH_RIDER_AT="x y z"]. Sólo habla con gfx::Renderer (no GL).
+    gfx::GLRenderer gr; gfx::MeshId riderMesh = -1; rider::Skeleton riderSk; std::vector<rider::SkinVertex> riderSkin; std::vector<float> riderBind, riderVerts, riderPose(40, 0.f); float riderAt[3] = {0.f, 2.0f, 0.f};
+    if (const char* rp = std::getenv("DH_RIDER")) {
+        Model rm; std::vector<uint8_t> raw, sraw, nraw; const char* sk = std::getenv("DH_RIDER_SKIN"); const char* np = std::getenv("DH_RIDER_NGP"); const char* rt = std::getenv("DH_RIDER_ROOT");
+        if (readFile(rp, raw) && parseMdl(raw, rm) && sk && readFile(sk, sraw) && rider::parseSkin(sraw, riderSkin) && np && readFile(np, nraw) && rt && riderSk.load(nraw, std::strtoul(rt, nullptr, 0)) && riderSkin.size() * 10 == rm.mv.size()) {
+            std::vector<gfx::TextureId> tids; for (auto& t : rm.texs) tids.push_back(gr.createTexture({t.w, t.h, t.px}));
+            riderVerts = rm.mv; riderBind.resize(riderSkin.size() * 3); for (size_t i = 0; i < riderSkin.size(); i++) for (int c = 0; c < 3; c++) riderBind[3*i+c] = rm.mv[10*i+c];
+            riderMesh = gr.createMesh(riderVerts, rm.mi, tids, true);
+            if (const char* pp = std::getenv("DH_RIDER_POSE")) { std::vector<uint8_t> pr; if (readFile(pp, pr)) { std::string txt(pr.begin(), pr.end()); const char* c = txt.c_str(); for (size_t i = 0; i < riderPose.size(); i++) { char* e; float v = std::strtof(c, &e); if (e == c) break; riderPose[i] = v; c = e; } } }
+            if (const char* at = std::getenv("DH_RIDER_AT")) std::sscanf(at, "%f %f %f", &riderAt[0], &riderAt[1], &riderAt[2]);
+        } else std::fprintf(stderr, "aviso: DH_RIDER/_SKIN/_NGP/_ROOT no válidos (mdl %d skin %d ngp %d esqueleto %d vértices %zu/%zu), se ignora el piloto\n", !raw.empty(), !riderSkin.empty(), !nraw.empty(), (int)riderSk.j.size(), riderSkin.size(), rm.mv.size() / 10);
     }
     SDL_SetWindowRelativeMouseMode(w, true);
     float px = v.empty() ? 0.f : v[0], py = v.empty() ? 0.f : v[1] + (mdl ? 0.f : 300.f), pz = v.empty() ? 0.f : v[2] + (mdl ? 8.f : 0.f), yaw = 0, pitch = mdl ? 0.f : -0.4f;
@@ -366,6 +380,11 @@ int main(int argc, char** argv) {
                 V3 t = bk.pos + ax.u * (-2.05f - minY * bs);   // la rueda más baja a ras de la superficie de contacto (rueda -1.2-0.75 / -1.4-0.75 bajo el centro: promedio, hipótesis)
                 GLfloat m[16] = {r.x, r.y, r.z, 0, u.x, u.y, u.z, 0, -ax.f.x, -ax.f.y, -ax.f.z, 0, t.x, t.y, t.z, 1};
                 glTexEnvf(GL_TEXTURE_ENV, GL_RGB_SCALE, 2.6f); glPushMatrix(); glMultMatrixf(m); glScalef(bs, bs, bs); drawModel(bike); glPopMatrix();
+                if (riderMesh >= 0) {                   // piloto: espacio del modelo (x der., y adelante, z arriba) -> espacio de la bici ensamblada (adelante = -Z, arriba = +Y); posición de la pelvis = HIPÓTESIS (DH_RIDER_AT)
+                    rider::applySkin(riderSk.skin(riderPose.data(), riderPose.size()), riderSkin, riderBind, riderVerts); gr.updateVertices(riderMesh, riderVerts);
+                    const float conv[16] = {1, 0, 0, 0,  0, 0, -1, 0,  0, 1, 0, 0,  riderAt[0], riderAt[1] - 3.548f, riderAt[2], 1};   // columnas; la pelvis del modelo está a z = 3.548
+                    glPushMatrix(); glMultMatrixf(m); glScalef(bs, bs, bs); gr.draw(riderMesh, conv, 2.6f); glPopMatrix();
+                }
             }
             if (ride && !bike.mi.empty()) {                 // la bici ensamblada: 1 unidad del modelo ~ 0.28 m; rueda más baja a ras de suelo
                 static float minY = [&] { float m = 1e30f; for (size_t i = 1; i < bike.mv.size(); i += 10) m = std::fmin(m, bike.mv[i]); return m; }();

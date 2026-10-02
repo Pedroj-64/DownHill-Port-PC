@@ -80,9 +80,9 @@ inline void applySkin(const std::vector<Mat>& skin, const std::vector<SkinVertex
 }
 inline bool parseSkin(const std::vector<uint8_t>& raw, std::vector<SkinVertex>& out) {
     if (raw.size() < 8 || std::memcmp(raw.data(), "DHSK", 4)) return false;
-    uint32_t n; std::memcpy(&n, raw.data() + 4, 4); if (raw.size() < 8 + (size_t)n * 20) return false;
+    uint32_t n; std::memcpy(&n, raw.data() + 4, 4); if (raw.size() < 8 + (size_t)n * 16) return false;
     out.resize(n);
-    for (uint32_t i = 0; i < n; i++) { const uint8_t* p = raw.data() + 8 + (size_t)i * 20; for (int k = 0; k < 3; k++) out[i].bone[k] = p[k]; std::memcpy(out[i].w, p + 4, 12); }
+    for (uint32_t i = 0; i < n; i++) { const uint8_t* p = raw.data() + 8 + (size_t)i * 16; for (int k = 0; k < 3; k++) out[i].bone[k] = p[k]; std::memcpy(out[i].w, p + 4, 12); }
     return true;
 }
 }  // namespace rider
