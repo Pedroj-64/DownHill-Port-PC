@@ -1,6 +1,6 @@
 # Native level loader — plan / Plan del loader nativo (no implementado salvo el paso 1)
 Goal: `dhview`/the game read the user's ISO (or extracted files) and the level `.NGP/.PTR/.RTX/.TEX` + `PTS/*` directly in C++, with no Python step. Python tools stay as the byte-exact oracle (every native parser is checked against them on all 54 levels, as done for step 1).
-Language note: the runtime stays C++20 for now (Rust remains an open spike, `docs/en/architecture.md`); the parsers below are written as small, bounds-checked, allocation-light readers so they can be ported.
+Language note: the runtime is C++20 (decided 2026-10-02; Rust was considered and dropped, `docs/en/architecture.md`); the parsers below are written as small, bounds-checked, allocation-light readers so they can be ported.
 
 ## Inputs and what each one holds
 | File | Size (ALP2) | Contents | Python today |

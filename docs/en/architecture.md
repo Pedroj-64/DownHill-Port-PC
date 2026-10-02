@@ -35,6 +35,8 @@ A single native program that, on first run, reads the user's own disc image, con
 
 ## 3. Language decision (status: **under evaluation, not decided**)
 
+**DECIDED (2026-10-02): the runtime is C++20; Rust is dropped.** The text below is kept as the record of the discussion.
+
 **Idea recorded from the maintainer (2026-10-01):** the runtime might be better written in Rust (or another language with strong memory management) instead of C++, and it should behave sensibly on any PC. It is early, so this is recorded to be kept in mind, not acted on yet.
 
 **What the choice does and does not buy**

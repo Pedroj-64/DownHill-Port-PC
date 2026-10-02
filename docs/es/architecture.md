@@ -35,6 +35,8 @@ Un único programa nativo que, en el primer arranque, lee la imagen de disco del
 
 ## 3. Decisión de lenguaje (estado: **en evaluación, sin decidir**)
 
+**DECIDIDO (2026-10-02): el motor es C++20; Rust queda descartado.** El texto de abajo se conserva como registro de la discusión.
+
 **Idea registrada del mantenedor (2026-10-01):** quizá el motor convenga escribirlo en Rust (u otro lenguaje con buena gestión de memoria) en vez de C++, y debe comportarse con criterio en cualquier PC. Es pronto, así que se deja anotado para tenerlo en cuenta, no para actuar todavía.
 
 **Qué aporta la elección y qué no**
