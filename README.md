@@ -21,40 +21,47 @@ A native engine reimplementation (not an emulator wrapper) that loads the game's
 
 ## Progress
 
-Legend: 🟩 done · ⬜ remaining. Percentages are the maintainers' rough estimate, not a measurement; where a number is exact it says so.
+<!-- progress:start -->
+**Downhill Domination: 42.9% verified, 51.7% implemented**
 
-### Reverse engineering (decoding the game's data)
+Average of all rows. Verified = checked against evidence from the game (savestates, the game's own camera, bit-identical reference). Implemented = works but unverified or based on hypotheses. Counted rows show real units; the rest are rough maintainer estimates.
 
-| Area | Progress | Notes |
-|------|----------|-------|
-| Disc and `IE` containers (`.NGP/.PTR/.RTX/.TEX`) | 🟩🟩🟩🟩🟩🟩🟩🟩🟩⬜ 90 % | Unpacker works; a few nested variants pending |
-| Textures and palettes | 🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩 100 % | GS swizzle, every upload format (CT32, T8, T4, T8H) and the `.PTR` material link solved |
-| Scene graph and static geometry | 🟩🟩🟩🟩🟩🟩🟩🟩🟩⬜ 95 % | Whole graph with per-leaf visibility ranges; strips, UVs, vertex colour and alpha |
-| Props and instanced objects | 🟩🟩🟩🟩🟩🟩🟩🟩🟩⬜ 90 % | Trees, flags, cabin: one copy per instance with its matrix |
-| Sky / horizon panorama | 🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜ 85 % | **47 of 54 levels** (exact). The rest have no panorama root; some are enclosed arenas |
-| Fog and colour grading | 🟩⬜⬜⬜⬜⬜⬜⬜⬜⬜ 10 % | Parameters not found yet; optional `DH_FOG` is a guess, off by default |
-| Collision data | 🟩🟩🟩🟩🟩🟩🟩🟩🟩⬜ 95 % | Instance placement decoded; the C++ loader is **bit-identical to the Python reference on all 54 levels** (exact) |
-| Course line, gates, start grid | 🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜ 85 % | `.PTS` racing line, 28 gates in ALP2, 10-slot start grid; finish rule is a hypothesis |
-| Bike model | 🟩🟩🟩🟩🟩🟩🟩⬜⬜⬜ 75 % | Parts assembled into a full bike; skeleton attachment data pending |
-| Animations (`.NGA`) | 🟩🟩🟩🟩🟩🟩🟩⬜⬜⬜ 70 % | All present track types decoded; channel-to-bone mapping pending |
-| Rider body mesh | 🟩⬜⬜⬜⬜⬜⬜⬜⬜⬜ 10 % | Not found yet (`R/` only has first-person arms) |
-| Rigid-body integrator | 🟩🟩🟩🟩🟩🟩🟩⬜⬜⬜ 70 % | Traced from the disassembly (`FUN_00238818` + helpers); **not validated** against consecutive savestates yet |
+<img src="docs/progress/legend_en.svg" alt="Verified / Implemented, unverified / Missing">
 
-### Engine and game
+<img src="docs/progress/progress_re_en.svg" alt="Reverse engineering">
 
-| Area | Progress | Notes |
-|------|----------|-------|
-| Viewer (`dhview`) | 🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜ 80 % | Free camera, walk mode, camera-centred sky, play mode |
-| Bike physics (playable approximation) | 🟩🟩🟩🟩🟩🟩⬜⬜⬜⬜ 60 % | Rigid body on the ported collision sweep and contact response; several parameters are labelled hypothesis |
-| ALP2 start to finish | 🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩 done | Test autopilot crosses 28/28 gates; riding by keyboard works |
-| Native C++ loader | 🟩🟩⬜⬜⬜⬜⬜⬜⬜⬜ 25 % | Collision done; the rest still goes through the Python tools |
-| Menus and loading screens | 🟩⬜⬜⬜⬜⬜⬜⬜⬜⬜ 15 % | The 78 loading screens render; no menu logic |
-| Audio | ⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜ 5 % | VAG files located, nothing decoded in the engine |
-| AI and rivals | ⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜ 0 % | Not started |
-| Game modes and flow | ⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜ 0 % | Countdown, timing, results, save data |
-| Packaging (`.deb`, Windows) | 🟩⬜⬜⬜⬜⬜⬜⬜⬜⬜ 10 % | CPack scaffolding only |
+<img src="docs/progress/progress_engine_en.svg" alt="Engine and game">
 
-**Overall: about 35 %** (rough estimate, weighted toward the engine work that is still missing).
+<details><summary>Detail</summary>
+
+| Area | Detail |
+|---|---|
+| Disc and IE containers | Unpacker works; a few nested variants pending. |
+| Texture upload formats | CT32 (swizzled), T8, T4, T8H, plus the PTR material link. |
+| Scene graph and static geometry | Whole graph with per-leaf visibility ranges; strips, UVs, vertex colour, alpha. |
+| Props and instanced objects | Trees, flags, cabin: one copy per instance. Checked against the game's own camera. |
+| Levels with sky panorama | The other 7 have no panorama root; some are enclosed arenas. |
+| Fog and colour grading | Parameters not found; DH_FOG is a guess, off by default. |
+| Levels with decoded collision | C++ loader bit-identical to the Python reference; hit records match savestates (95% same triangle and normal). |
+| Course line, gates, start grid | PTS racing line, 28 gates in ALP2, 10-slot grid; the finish rule is a hypothesis. |
+| Bike model | Parts assembled into a full bike; skeleton attachment data pending. |
+| Animations (NGA) | All present track types decoded; channel-to-bone mapping pending. |
+| Rider body mesh | Not found yet (R/ only has first-person arms). |
+| Rigid-body integrator (functions) | FUN_00238818 and 9 helpers traced from the disassembly; not validated against consecutive savestates. |
+| Viewer (dhview) | Free camera, walk mode, camera-centred sky, play mode. |
+| Bike physics | Rigid body on the ported sweep and contact response (verified part); many parameters are labelled hypothesis. |
+| Levels ridden start to finish | ALP2 only (28/28 gates, test autopilot, 0 resets); keyboard riding works. |
+| Native C++ modules | Collision is native; scene graph, textures, models, course data, animations, bike assembly and level loading still go through the Python tools. |
+| Menus and loading screens | 78 loading screens render; no menu logic. |
+| Audio | VAG files located; nothing decoded in the engine. |
+| AI and rivals | Not started. |
+| Game modes and flow | Countdown, timing, results, save data. |
+| Packaging (deb, Windows) | CPack scaffolding only. |
+
+</details>
+
+Source data: [`docs/progress.json`](docs/progress.json), regenerate with `python3 tools/progress.py`.
+<!-- progress:end -->
 
 Format notes live in [`docs/en/formats.md`](docs/en/formats.md) and [`docs/formats/`](docs/formats/) (collision, scene instancing, bike physics, integrator, animations, markers and more). The Ghidra setup and research workflow are in [`docs/en/research.md`](docs/en/research.md); architecture and the language decision are in [`docs/en/architecture.md`](docs/en/architecture.md); design decisions are logged in [`docs/DECISIONS.md`](docs/DECISIONS.md). Everything is also available in Spanish under [`docs/es/`](docs/es/).
 
@@ -62,13 +69,13 @@ Format notes live in [`docs/en/formats.md`](docs/en/formats.md) and [`docs/forma
 
 | # | Milestone | State |
 |---|-----------|-------|
-| 1 | **Faithful map**: textured levels, props, sky, compared against the game's own camera | ✅ Done |
-| 2 | **Complete collision**: instance transforms, contact response | ✅ Done |
-| 3 | **Playable bike**: physics, keyboard control, ALP2 start to finish | ✅ Prototype (parameters partly hypothesis; faithful integrator pending validation) |
-| 4 | **Animated rider**: body mesh and channel-to-bone mapping | ⬜ Next |
-| 5 | **Native runtime**: C++ loaders replace the Python step; language decision (C++ or Rust) | ⬜ |
-| 6 | **Game flow**: menus, loading, countdown, finish, times, rivals | ⬜ |
-| 7 | **Packaging**: `.deb` and Windows builds. The package will **not** ship game data; the app will extract assets from your image on first run | ⬜ |
+| 1 | **Faithful map**: textured levels, props, sky, compared against the game's own camera | Done |
+| 2 | **Complete collision**: instance transforms, contact response | Done |
+| 3 | **Playable bike**: physics, keyboard control, ALP2 start to finish | Prototype (parameters partly hypothesis; faithful integrator pending validation) |
+| 4 | **Animated rider**: body mesh and channel-to-bone mapping | Next |
+| 5 | **Native runtime**: C++ loaders replace the Python step; language decision (C++ or Rust) | Pending |
+| 6 | **Game flow**: menus, loading, countdown, finish, times, rivals | Pending |
+| 7 | **Packaging**: `.deb` and Windows builds. The package will **not** ship game data; the app will extract assets from your image on first run | Pending |
 
 ## Building
 

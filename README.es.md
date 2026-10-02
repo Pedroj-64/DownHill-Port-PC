@@ -21,40 +21,47 @@ Una reimplementación nativa del motor (no un envoltorio de emulador) que carga 
 
 ## Progreso
 
-Leyenda: 🟩 hecho · ⬜ pendiente. Los porcentajes son una estimación aproximada de los mantenedores, no una medición; cuando una cifra es exacta, se indica.
+<!-- progress:start -->
+**Downhill Domination: 42.9% verificado, 51.7% implementado**
 
-### Ingeniería inversa (decodificar los datos del juego)
+Promedio de todas las filas. Verificado = comprobado con evidencia del juego (savestates, la cámara del propio juego, referencia idéntica bit a bit). Implementado = funciona pero sin verificar o basado en hipótesis. Las filas con unidades muestran cifras reales; el resto son estimaciones aproximadas de los mantenedores.
 
-| Área | Progreso | Notas |
-|------|----------|-------|
-| Disco y contenedores `IE` (`.NGP/.PTR/.RTX/.TEX`) | 🟩🟩🟩🟩🟩🟩🟩🟩🟩⬜ 90 % | El descompresor funciona; faltan algunas variantes anidadas |
-| Texturas y paletas | 🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩 100 % | Swizzle del GS, todos los formatos de subida (CT32, T8, T4, T8H) y el enlace de materiales del `.PTR` resueltos |
-| Grafo de escena y geometría estática | 🟩🟩🟩🟩🟩🟩🟩🟩🟩⬜ 95 % | Grafo completo con rangos de visibilidad por hoja; tiras, UV, color de vértice y alfa |
-| Props y objetos instanciados | 🟩🟩🟩🟩🟩🟩🟩🟩🟩⬜ 90 % | Árboles, banderas, cabaña: una copia por instancia con su matriz |
-| Cielo / panorama del horizonte | 🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜ 85 % | **47 de 54 niveles** (cifra exacta). El resto no tiene raíz de panorama; algunos son recintos cerrados |
-| Niebla y tono de color | 🟩⬜⬜⬜⬜⬜⬜⬜⬜⬜ 10 % | Aún no se han hallado los parámetros; `DH_FOG` es una suposición opcional, apagada por defecto |
-| Datos de colisión | 🟩🟩🟩🟩🟩🟩🟩🟩🟩⬜ 95 % | Colocación de instancias decodificada; el cargador C++ es **idéntico bit a bit a la referencia en Python en los 54 niveles** (cifra exacta) |
-| Línea del recorrido, puertas, rejilla de salida | 🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜ 85 % | Línea de carrera `.PTS`, 28 puertas en ALP2, rejilla de 10 plazas; la regla de meta es una hipótesis |
-| Modelo de la bici | 🟩🟩🟩🟩🟩🟩🟩⬜⬜⬜ 75 % | Piezas ensambladas en una bici completa; faltan los datos de anclaje del esqueleto |
-| Animaciones (`.NGA`) | 🟩🟩🟩🟩🟩🟩🟩⬜⬜⬜ 70 % | Todos los tipos de pista presentes decodificados; falta el mapeo canal–hueso |
-| Malla del cuerpo del piloto | 🟩⬜⬜⬜⬜⬜⬜⬜⬜⬜ 10 % | Aún no se encuentra (`R/` solo tiene brazos en primera persona) |
-| Integrador del cuerpo rígido | 🟩🟩🟩🟩🟩🟩🟩⬜⬜⬜ 70 % | Trazado desde el desensamblado (`FUN_00238818` y auxiliares); **sin validar** aún contra savestates consecutivos |
+<img src="docs/progress/legend_es.svg" alt="Verificado / Implementado, sin verificar / Pendiente">
 
-### Motor y juego
+<img src="docs/progress/progress_re_es.svg" alt="Ingeniería inversa">
 
-| Área | Progreso | Notas |
-|------|----------|-------|
-| Visor (`dhview`) | 🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜ 80 % | Cámara libre, modo caminar, cielo centrado en la cámara, modo de juego |
-| Física de la bici (aproximación jugable) | 🟩🟩🟩🟩🟩🟩⬜⬜⬜⬜ 60 % | Cuerpo rígido sobre el barrido de colisión y la respuesta de contacto portados; varios parámetros están marcados como hipótesis |
-| ALP2 de salida a meta | 🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩 hecho | El autopiloto de pruebas cruza 28/28 puertas; se puede conducir con el teclado |
-| Cargador nativo en C++ | 🟩🟩⬜⬜⬜⬜⬜⬜⬜⬜ 25 % | La colisión está hecha; el resto aún pasa por las herramientas Python |
-| Menús y pantallas de carga | 🟩⬜⬜⬜⬜⬜⬜⬜⬜⬜ 15 % | Las 78 pantallas de carga se renderizan; no hay lógica de menús |
-| Audio | ⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜ 5 % | Archivos VAG localizados, nada decodificado en el motor |
-| IA y rivales | ⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜ 0 % | Sin empezar |
-| Modos de juego y flujo | ⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜ 0 % | Cuenta atrás, tiempos, resultados, datos de guardado |
-| Empaquetado (`.deb`, Windows) | 🟩⬜⬜⬜⬜⬜⬜⬜⬜⬜ 10 % | Solo el andamiaje de CPack |
+<img src="docs/progress/progress_engine_es.svg" alt="Motor y juego">
 
-**En conjunto: alrededor del 35 %** (estimación aproximada, ponderada hacia el trabajo de motor que aún falta).
+<details><summary>Detalle</summary>
+
+| Área | Detalle |
+|---|---|
+| Disco y contenedores IE | El descompresor funciona; faltan algunas variantes anidadas. |
+| Formatos de subida de texturas | CT32 (con swizzle), T8, T4, T8H, más el enlace de materiales del PTR. |
+| Grafo de escena y geometría estática | Grafo completo con rangos de visibilidad por hoja; tiras, UV, color de vértice, alfa. |
+| Props y objetos instanciados | Árboles, banderas, cabaña: una copia por instancia. Comprobado con la cámara del propio juego. |
+| Niveles con panorama de cielo | Los otros 7 no tienen raíz de panorama; algunos son recintos cerrados. |
+| Niebla y tono de color | Parámetros sin encontrar; DH_FOG es una suposición, apagada por defecto. |
+| Niveles con colisión decodificada | Cargador C++ idéntico bit a bit a la referencia en Python; los registros de impacto coinciden con los savestates (95 % mismo triángulo y normal). |
+| Línea del recorrido, puertas, rejilla de salida | Línea de carrera PTS, 28 puertas en ALP2, rejilla de 10 plazas; la regla de meta es una hipótesis. |
+| Modelo de la bici | Piezas ensambladas en una bici completa; faltan los datos de anclaje del esqueleto. |
+| Animaciones (NGA) | Todos los tipos de pista presentes decodificados; falta el mapeo canal-hueso. |
+| Malla del cuerpo del piloto | Aún sin encontrar (R/ solo tiene brazos en primera persona). |
+| Integrador de cuerpo rígido (funciones) | FUN_00238818 y 9 auxiliares trazadas desde el desensamblado; sin validar contra savestates consecutivos. |
+| Visor (dhview) | Cámara libre, modo caminar, cielo centrado en la cámara, modo de juego. |
+| Física de la bici | Cuerpo rígido sobre el barrido y la respuesta de contacto portados (parte verificada); muchos parámetros están marcados como hipótesis. |
+| Niveles recorridos de salida a meta | Solo ALP2 (28/28 puertas, autopiloto de pruebas, 0 reinicios); se puede conducir con el teclado. |
+| Módulos nativos en C++ | La colisión es nativa; grafo de escena, texturas, modelos, datos del recorrido, animaciones, ensamblado de la bici y carga de niveles aún pasan por las herramientas Python. |
+| Menús y pantallas de carga | Las 78 pantallas de carga se renderizan; no hay lógica de menús. |
+| Audio | Archivos VAG localizados; nada decodificado en el motor. |
+| IA y rivales | Sin empezar. |
+| Modos de juego y flujo | Cuenta atrás, tiempos, resultados, datos de guardado. |
+| Empaquetado (deb, Windows) | Solo el andamiaje de CPack. |
+
+</details>
+
+Datos de origen: [`docs/progress.json`](docs/progress.json), se regeneran con `python3 tools/progress.py`.
+<!-- progress:end -->
 
 Las notas de formatos están en [`docs/es/formats.md`](docs/es/formats.md) y [`docs/formats/`](docs/formats/) (colisión, instanciación de escena, física de la bici, integrador, animaciones, marcadores y más). La configuración de Ghidra y el flujo de investigación están en [`docs/es/research.md`](docs/es/research.md); la arquitectura y la decisión de lenguaje, en [`docs/es/architecture.md`](docs/es/architecture.md); las decisiones de diseño se registran en [`docs/DECISIONS.md`](docs/DECISIONS.md). Todo existe también en inglés en [`docs/en/`](docs/en/).
 
@@ -62,13 +69,13 @@ Las notas de formatos están en [`docs/es/formats.md`](docs/es/formats.md) y [`d
 
 | # | Hito | Estado |
 |---|------|--------|
-| 1 | **Mapa fiel**: niveles con textura, props, cielo, comparados con la cámara del propio juego | ✅ Hecho |
-| 2 | **Colisión completa**: transformaciones de instancia, respuesta de contacto | ✅ Hecho |
-| 3 | **Bici jugable**: física, control por teclado, ALP2 de salida a meta | ✅ Prototipo (parámetros en parte hipótesis; integrador fiel pendiente de validar) |
-| 4 | **Piloto animado**: malla del cuerpo y mapeo canal–hueso | ⬜ Siguiente |
-| 5 | **Motor nativo**: cargadores C++ en lugar del paso Python; decisión de lenguaje (C++ o Rust) | ⬜ |
-| 6 | **Flujo de juego**: menús, carga, cuenta atrás, meta, tiempos, rivales | ⬜ |
-| 7 | **Empaquetado**: compilaciones `.deb` y de Windows. El paquete **no** incluirá datos del juego; la aplicación extraerá los assets de tu imagen en el primer arranque | ⬜ |
+| 1 | **Mapa fiel**: niveles con textura, props, cielo, comparados con la cámara del propio juego | Hecho |
+| 2 | **Colisión completa**: transformaciones de instancia, respuesta de contacto | Hecho |
+| 3 | **Bici jugable**: física, control por teclado, ALP2 de salida a meta | Prototipo (parámetros en parte hipótesis; integrador fiel pendiente de validar) |
+| 4 | **Piloto animado**: malla del cuerpo y mapeo canal–hueso | Siguiente |
+| 5 | **Motor nativo**: cargadores C++ en lugar del paso Python; decisión de lenguaje (C++ o Rust) | Pending |
+| 6 | **Flujo de juego**: menús, carga, cuenta atrás, meta, tiempos, rivales | Pending |
+| 7 | **Empaquetado**: compilaciones `.deb` y de Windows. El paquete **no** incluirá datos del juego; la aplicación extraerá los assets de tu imagen en el primer arranque | Pending |
 
 ## Compilación
 

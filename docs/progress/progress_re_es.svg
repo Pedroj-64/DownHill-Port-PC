@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="378" viewBox="0 0 820 378" role="img" aria-label="Ingeniería inversa">
+<style>text{font:13px system-ui,-apple-system,Segoe UI,Roboto,sans-serif;fill:#1f2328}.d{fill:#8b949e}.t{fill:#d0d7de}.v{fill:#2da44e}.w{fill:#bf8700}@media(prefers-color-scheme:dark){text{fill:#e6edf3}.d{fill:#8b949e}.t{fill:#30363d}.v{fill:#3fb950}.w{fill:#d29922}}</style>
+<text x="0" y="20" font-weight="600">Ingeniería inversa</text>
+<text x="0" y="49">Disco y contenedores IE</text><rect class="t" x="330" y="38" width="270" height="14" rx="3"/>
+<rect class="v" x="330" y="38" width="243.0" height="14" rx="3"/>
+<text class="d" x="612" y="49">90% est.</text>
+<text x="0" y="77">Formatos de subida de texturas</text><rect class="t" x="330" y="66" width="270" height="14" rx="3"/>
+<rect class="v" x="330" y="66" width="270.0" height="14" rx="3"/>
+<text class="d" x="612" y="77">4 / 4 formatos</text>
+<text x="0" y="105">Grafo de escena y geometría estática</text><rect class="t" x="330" y="94" width="270" height="14" rx="3"/>
+<rect class="v" x="330" y="94" width="256.5" height="14" rx="3"/>
+<text class="d" x="612" y="105">95% est.</text>
+<text x="0" y="133">Props y objetos instanciados</text><rect class="t" x="330" y="122" width="270" height="14" rx="3"/>
+<rect class="v" x="330" y="122" width="243.0" height="14" rx="3"/>
+<text class="d" x="612" y="133">90% est.</text>
+<text x="0" y="161">Niveles con panorama de cielo</text><rect class="t" x="330" y="150" width="270" height="14" rx="3"/>
+<rect class="v" x="330" y="150" width="235.0" height="14" rx="3"/>
+<text class="d" x="612" y="161">47 / 54 niveles</text>
+<text x="0" y="189">Niebla y tono de color</text><rect class="t" x="330" y="178" width="270" height="14" rx="3"/>
+<rect class="w" x="330.0" y="178" width="27.0" height="14" rx="3"/>
+<text class="d" x="612" y="189">0% (+10%) est.</text>
+<text x="0" y="217">Niveles con colisión decodificada</text><rect class="t" x="330" y="206" width="270" height="14" rx="3"/>
+<rect class="v" x="330" y="206" width="270.0" height="14" rx="3"/>
+<text class="d" x="612" y="217">54 / 54 niveles</text>
+<text x="0" y="245">Línea del recorrido, puertas, rejilla de salida</text><rect class="t" x="330" y="234" width="270" height="14" rx="3"/>
+<rect class="v" x="330" y="234" width="189.0" height="14" rx="3"/>
+<rect class="w" x="519.0" y="234" width="40.5" height="14" rx="3"/>
+<text class="d" x="612" y="245">70% (+15%) est.</text>
+<text x="0" y="273">Modelo de la bici</text><rect class="t" x="330" y="262" width="270" height="14" rx="3"/>
+<rect class="v" x="330" y="262" width="202.5" height="14" rx="3"/>
+<text class="d" x="612" y="273">75% est.</text>
+<text x="0" y="301">Animaciones (NGA)</text><rect class="t" x="330" y="290" width="270" height="14" rx="3"/>
+<rect class="v" x="330" y="290" width="189.0" height="14" rx="3"/>
+<text class="d" x="612" y="301">70% est.</text>
+<text x="0" y="329">Malla del cuerpo del piloto</text><rect class="t" x="330" y="318" width="270" height="14" rx="3"/>
+<text class="d" x="612" y="329">0% est.</text>
+<text x="0" y="357">Integrador de cuerpo rígido (funciones)</text><rect class="t" x="330" y="346" width="270" height="14" rx="3"/>
+<rect class="w" x="330.0" y="346" width="270.0" height="14" rx="3"/>
+<text class="d" x="612" y="357">0+10 / 10 funciones</text>
+</svg>

@@ -1,0 +1,59 @@
+{
+  "_comment": "Single source for the README progress bars (tools/progress.py). done = verified against evidence from the game (savestates, game camera, bit-identical reference); wip = implemented but unverified or hypothesis; the rest is missing. exact=true means counted units, otherwise a rough maintainer estimate on a 0-100 scale. / Fuente única de las barras de progreso del README: done = verificado con evidencia del juego; wip = implementado sin verificar o hipótesis; exact=true = unidades contadas, si no, estimación aproximada sobre 100.",
+  "sections": [
+    {
+      "id": "re",
+      "title": {"en": "Reverse engineering", "es": "Ingeniería inversa"},
+      "rows": [
+        {"name": {"en": "Disc and IE containers", "es": "Disco y contenedores IE"}, "done": 90, "wip": 0, "total": 100, "exact": false,
+         "note": {"en": "Unpacker works; a few nested variants pending.", "es": "El descompresor funciona; faltan algunas variantes anidadas."}},
+        {"name": {"en": "Texture upload formats", "es": "Formatos de subida de texturas"}, "done": 4, "wip": 0, "total": 4, "exact": true, "unit": {"en": "formats", "es": "formatos"},
+         "note": {"en": "CT32 (swizzled), T8, T4, T8H, plus the PTR material link.", "es": "CT32 (con swizzle), T8, T4, T8H, más el enlace de materiales del PTR."}},
+        {"name": {"en": "Scene graph and static geometry", "es": "Grafo de escena y geometría estática"}, "done": 95, "wip": 0, "total": 100, "exact": false,
+         "note": {"en": "Whole graph with per-leaf visibility ranges; strips, UVs, vertex colour, alpha.", "es": "Grafo completo con rangos de visibilidad por hoja; tiras, UV, color de vértice, alfa."}},
+        {"name": {"en": "Props and instanced objects", "es": "Props y objetos instanciados"}, "done": 90, "wip": 0, "total": 100, "exact": false,
+         "note": {"en": "Trees, flags, cabin: one copy per instance. Checked against the game's own camera.", "es": "Árboles, banderas, cabaña: una copia por instancia. Comprobado con la cámara del propio juego."}},
+        {"name": {"en": "Levels with sky panorama", "es": "Niveles con panorama de cielo"}, "done": 47, "wip": 0, "total": 54, "exact": true, "unit": {"en": "levels", "es": "niveles"},
+         "note": {"en": "The other 7 have no panorama root; some are enclosed arenas.", "es": "Los otros 7 no tienen raíz de panorama; algunos son recintos cerrados."}},
+        {"name": {"en": "Fog and colour grading", "es": "Niebla y tono de color"}, "done": 0, "wip": 10, "total": 100, "exact": false,
+         "note": {"en": "Parameters not found; DH_FOG is a guess, off by default.", "es": "Parámetros sin encontrar; DH_FOG es una suposición, apagada por defecto."}},
+        {"name": {"en": "Levels with decoded collision", "es": "Niveles con colisión decodificada"}, "done": 54, "wip": 0, "total": 54, "exact": true, "unit": {"en": "levels", "es": "niveles"},
+         "note": {"en": "C++ loader bit-identical to the Python reference; hit records match savestates (95% same triangle and normal).", "es": "Cargador C++ idéntico bit a bit a la referencia en Python; los registros de impacto coinciden con los savestates (95 % mismo triángulo y normal)."}},
+        {"name": {"en": "Course line, gates, start grid", "es": "Línea del recorrido, puertas, rejilla de salida"}, "done": 70, "wip": 15, "total": 100, "exact": false,
+         "note": {"en": "PTS racing line, 28 gates in ALP2, 10-slot grid; the finish rule is a hypothesis.", "es": "Línea de carrera PTS, 28 puertas en ALP2, rejilla de 10 plazas; la regla de meta es una hipótesis."}},
+        {"name": {"en": "Bike model", "es": "Modelo de la bici"}, "done": 75, "wip": 0, "total": 100, "exact": false,
+         "note": {"en": "Parts assembled into a full bike; skeleton attachment data pending.", "es": "Piezas ensambladas en una bici completa; faltan los datos de anclaje del esqueleto."}},
+        {"name": {"en": "Animations (NGA)", "es": "Animaciones (NGA)"}, "done": 70, "wip": 0, "total": 100, "exact": false,
+         "note": {"en": "All present track types decoded; channel-to-bone mapping pending.", "es": "Todos los tipos de pista presentes decodificados; falta el mapeo canal-hueso."}},
+        {"name": {"en": "Rider body mesh", "es": "Malla del cuerpo del piloto"}, "done": 0, "wip": 0, "total": 100, "exact": false,
+         "note": {"en": "Not found yet (R/ only has first-person arms).", "es": "Aún sin encontrar (R/ solo tiene brazos en primera persona)."}},
+        {"name": {"en": "Rigid-body integrator (functions)", "es": "Integrador de cuerpo rígido (funciones)"}, "done": 0, "wip": 10, "total": 10, "exact": true, "unit": {"en": "functions", "es": "funciones"},
+         "note": {"en": "FUN_00238818 and 9 helpers traced from the disassembly; not validated against consecutive savestates.", "es": "FUN_00238818 y 9 auxiliares trazadas desde el desensamblado; sin validar contra savestates consecutivos."}}
+      ]
+    },
+    {
+      "id": "engine",
+      "title": {"en": "Engine and game", "es": "Motor y juego"},
+      "rows": [
+        {"name": {"en": "Viewer (dhview)", "es": "Visor (dhview)"}, "done": 80, "wip": 0, "total": 100, "exact": false,
+         "note": {"en": "Free camera, walk mode, camera-centred sky, play mode.", "es": "Cámara libre, modo caminar, cielo centrado en la cámara, modo de juego."}},
+        {"name": {"en": "Bike physics", "es": "Física de la bici"}, "done": 15, "wip": 45, "total": 100, "exact": false,
+         "note": {"en": "Rigid body on the ported sweep and contact response (verified part); many parameters are labelled hypothesis.", "es": "Cuerpo rígido sobre el barrido y la respuesta de contacto portados (parte verificada); muchos parámetros están marcados como hipótesis."}},
+        {"name": {"en": "Levels ridden start to finish", "es": "Niveles recorridos de salida a meta"}, "done": 1, "wip": 0, "total": 54, "exact": true, "unit": {"en": "levels", "es": "niveles"},
+         "note": {"en": "ALP2 only (28/28 gates, test autopilot, 0 resets); keyboard riding works.", "es": "Solo ALP2 (28/28 puertas, autopiloto de pruebas, 0 reinicios); se puede conducir con el teclado."}},
+        {"name": {"en": "Native C++ modules", "es": "Módulos nativos en C++"}, "done": 1, "wip": 0, "total": 8, "exact": true, "unit": {"en": "modules", "es": "módulos"},
+         "note": {"en": "Collision is native; scene graph, textures, models, course data, animations, bike assembly and level loading still go through the Python tools.", "es": "La colisión es nativa; grafo de escena, texturas, modelos, datos del recorrido, animaciones, ensamblado de la bici y carga de niveles aún pasan por las herramientas Python."}},
+        {"name": {"en": "Menus and loading screens", "es": "Menús y pantallas de carga"}, "done": 15, "wip": 0, "total": 100, "exact": false,
+         "note": {"en": "78 loading screens render; no menu logic.", "es": "Las 78 pantallas de carga se renderizan; no hay lógica de menús."}},
+        {"name": {"en": "Audio", "es": "Audio"}, "done": 0, "wip": 5, "total": 100, "exact": false,
+         "note": {"en": "VAG files located; nothing decoded in the engine.", "es": "Archivos VAG localizados; nada decodificado en el motor."}},
+        {"name": {"en": "AI and rivals", "es": "IA y rivales"}, "done": 0, "wip": 0, "total": 100, "exact": false,
+         "note": {"en": "Not started.", "es": "Sin empezar."}},
+        {"name": {"en": "Game modes and flow", "es": "Modos de juego y flujo"}, "done": 0, "wip": 0, "total": 100, "exact": false,
+         "note": {"en": "Countdown, timing, results, save data.", "es": "Cuenta atrás, tiempos, resultados, datos de guardado."}},
+        {"name": {"en": "Packaging (deb, Windows)", "es": "Empaquetado (deb, Windows)"}, "done": 0, "wip": 10, "total": 100, "exact": false,
+         "note": {"en": "CPack scaffolding only.", "es": "Solo el andamiaje de CPack."}}
+      ]
+    }
+  ]
+}
