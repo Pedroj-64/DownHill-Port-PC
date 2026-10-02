@@ -7,3 +7,5 @@
 - 2026-10-02: nodes 25/11/42 documented from engine code only, no parser (kind→object mapping needs the callback decompile) / nodos 25/11/42 solo documentados.
 - 2026-10-02: collision = node 0x2A parts (FUN_00216780/FUN_00219970); ground_query uses highest triangle <= y+30 u as static equivalent of the earliest-hit sweep; margin 30 chosen from PTS test (calibration knob) / colisión = nodos 0x2A; margen 30 u calibrado con la línea PTS.
 - 2026-10-02: kind 8050/8051 interpreted as gate planes only by data (hypothesis), start grid 8060-8068 decoded from FUN_001a3480; props (1603-1631) have no engine callback so no parser needed / planos de control = hipótesis; rejilla de salida decodificada.
+- 2026-10-02: NGA curve decoding left blocked after tracing only the binding layer (lookup/instances); sampler not located within ~25 min / NGA: curvas bloqueadas, solo capa de enlace trazada.
+- 2026-10-02: loadbar_export.py reuses extract_model.py through runpy (globals texs/mats/make_texture) instead of refactoring that script / reutiliza extract_model.py sin refactorizar.
