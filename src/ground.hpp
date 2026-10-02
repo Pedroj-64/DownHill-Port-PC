@@ -67,6 +67,29 @@ public:
         return best;
     }
 
+    // Lista de impactos de UN punto de contacto como la deja el motor en su búfer de 0x30 B por punto (capacidad 8, descriptor +0x1C; FUN_0021A908 -> FUN_00216780 -> FUN_00219970).
+    // Regla de FUN_00219970 (decomp/coll4.c): `best` = fracción del mejor impacto (empieza en 1.0, después max(frac,0)); un impacto con frac>0 (o con best>0) sólo cuenta si frac < best y
+    // REEMPLAZA la lista; si frac<=0 y best<=0 se AÑADE (todos los solapes iniciales se conservan); al pasar de `cap` se corta (devuelve cap). El orden es el de recorrido (aquí: índice de triángulo).
+    // Hipótesis: el motor aplica la regla por PARTE (<=256 vértices) y concatena; el .col no guarda partes, así que aquí es global: los solapes (los únicos que usa FUN_001344F0) coinciden,
+    // de los impactos con frac>0 el motor guarda uno por parte pero FUN_00217450 sólo elige el menor, igual que aquí. El orden de recorrido dentro del límite de 8 es hipótesis.
+    std::vector<SweepHit> sweepHits(V3 p0, V3 p1, float r, size_t cap = 8) const {
+        std::vector<SweepHit> list; V3 D = p1 - p0; float best = 1.f;
+        V3 lo{std::fmin(p0.x, p1.x) - r, std::fmin(p0.y, p1.y) - r, std::fmin(p0.z, p1.z) - r}, hi{std::fmax(p0.x, p1.x) + r, std::fmax(p0.y, p1.y) + r, std::fmax(p0.z, p1.z) + r};
+        std::vector<uint32_t> cand; gather(lo, hi, cand);
+        for (uint32_t i : cand) {
+            const float* f = tris_[i].v; V3 v[3] = {{f[0], f[1], f[2]}, {f[3], f[4], f[5]}, {f[6], f[7], f[8]}};
+            if (std::fmin(v[0].x, std::fmin(v[1].x, v[2].x)) > hi.x || std::fmax(v[0].x, std::fmax(v[1].x, v[2].x)) < lo.x ||
+                std::fmin(v[0].y, std::fmin(v[1].y, v[2].y)) > hi.y || std::fmax(v[0].y, std::fmax(v[1].y, v[2].y)) < lo.y ||
+                std::fmin(v[0].z, std::fmin(v[1].z, v[2].z)) > hi.z || std::fmax(v[0].z, std::fmax(v[1].z, v[2].z)) < lo.z) continue;
+            SweepHit h;
+            if (!sweepTri(v, p0, p1, D, r, best, lo, hi, h)) continue;
+            if (h.frac > 0.f || best > 0.f) { if (best <= h.frac) continue; list.clear(); }
+            else if (list.size() >= cap) return list;   // `if (param_9 < count) return param_9`
+            h.hit = true; h.tri = i; h.surface = tris_[i].surface; list.push_back(h); best = std::fmax(h.frac, 0.f);
+        }
+        return list;
+    }
+
     // Altura/normal/superficie bajo (x,y,z): barrido de esfera r hacia abajo `reach` unidades. Sin constantes ocultas: r y reach los decide quien llama
     // (en el motor son el radio del punto de contacto de la rueda y el desplazamiento del sub-paso, FUN_001340D8).
     struct GroundInfo { bool hit = false; float height = 0; V3 normal{0, 1, 0}; uint16_t surface = 0; float frac = 1; };
@@ -176,3 +199,41 @@ private:
         out = best; return true;
     }
 };
+
+// Posición de un impacto dentro de las listas de los puntos de contacto: (punto, índice). El orden lexicográfico equivale al de direcciones del motor (búferes de 0x180 B consecutivos, FUN_001340D8).
+struct HitRef { int point = -1, index = -1; bool valid() const { return point >= 0; } };
+
+// FUN_00217450: iterador de impactos en orden (frac, dirección). Sin `prev` devuelve el de MENOR fracción (a igualdad el primero encontrado = menor dirección, comparación estricta `<`);
+// con `prev` devuelve el siguiente: frac > prev.frac, o frac == prev.frac con dirección posterior. {-1,-1} cuando no quedan.
+inline HitRef nextHit(const std::vector<std::vector<SweepHit>>& pts, HitRef prev = {}) {
+    HitRef best; const SweepHit* b = nullptr;
+    for (int p = 0; p < (int)pts.size(); p++) for (int k = 0; k < (int)pts[p].size(); k++) {
+        const SweepHit& c = pts[p][k];
+        if (b && !(c.frac < b->frac)) continue;
+        if (prev.valid()) {
+            const SweepHit& q = pts[prev.point][prev.index];
+            if (c.frac <= q.frac) {
+                if (c.frac != q.frac) continue;                                     // frac < prev.frac: ya devuelto
+                if (p < prev.point || (p == prev.point && k <= prev.index)) continue;   // misma fracción: sólo direcciones posteriores
+            }
+        }
+        best = {p, k}; b = &c;
+    }
+    return best;
+}
+
+// FUN_001344F0: despenetración. Por eje, el componente de mayor |.| de (normal * pen) entre TODOS los impactos con frac < 0 de todos los puntos; si el módulo es <= 1.0 el cuerpo se traslada
+// ese vector (FUN_00237AB0: suma el vector a la posición del nodo y al centro de masas +0x50); si es mayor, no se mueve. `apply` = ese resultado.
+struct Depenetration { V3 move; bool apply = false; };
+inline Depenetration depenetration(const std::vector<std::vector<SweepHit>>& pts) {
+    Depenetration d;
+    for (const auto& hs : pts) for (const SweepHit& h : hs) {
+        if (!(h.frac < 0.f)) continue;
+        V3 c = h.normal * h.pen;
+        if (std::fabs(d.move.x) < std::fabs(c.x)) d.move.x = c.x;
+        if (std::fabs(d.move.y) < std::fabs(c.y)) d.move.y = c.y;
+        if (std::fabs(d.move.z) < std::fabs(c.z)) d.move.z = c.z;
+    }
+    d.apply = std::sqrt(dot(d.move, d.move)) <= 1.f;
+    return d;
+}
