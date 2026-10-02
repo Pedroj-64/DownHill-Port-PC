@@ -24,6 +24,7 @@ public:
     }
     void set(std::vector<Gate> course, std::vector<Gate> finish) { course_ = std::move(course); finish_ = std::move(finish); }
     size_t size() const { return course_.size(); }
+    const Gate* courseGate(size_t i) const { return i < course_.size() ? &course_[i] : nullptr; }   // puerta i del recorrido (orden por índice); sirve para el rumbo de salida
     // Una puerta por llamada, igual que FUN_001A2738: avanza si el jugador está del lado positivo de la puerta `counter`; retrocede si está del lado negativo de la anterior.
     // Devuelve +1 / -1 / 0 (cruce hacia delante / hacia atrás / nada).
     int update(State& s, V3 pos, float t) const {

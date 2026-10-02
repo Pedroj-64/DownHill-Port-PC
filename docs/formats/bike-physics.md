@@ -1,0 +1,57 @@
+# Bike physics — playable approximation (milestone 3, lane A)
+Code: `src/bike.hpp` (physics, no SDL/GL) · `tests/bike_test.cpp` (synthetic, in `ctest`) · `tests/bike_demo.cpp` (real ALP2 data, autopilot) · `dhview` play mode (`P`).
+Rule for this doc: a statement is either **sourced** (savestate offset / `FUN_xxxx`) or marked **hypothesis**. This is NOT the engine's integrator: `FUN_00238818` is not ported (see `src/contact.hpp` header and lane B).
+
+## What comes from the engine / savestates (sourced)
+Player physics module read from a PCSX2 savestate (`rider + 0x6420`, layout in `docs/p2s-savestates.md`; RAM never goes into the repo, only the numbers):
+| value | read | used as |
+|---|---|---|
+| contact points | `+0x12C` = 4; `+0x150 + 16·i` = `(0, 2.5, −2.6)`, `(0, −1.4, −2.8)`, `(0, 1.5, 0.5)`, `(0, −0.75, 0)` (local: lateral x, forward y, up z; node rows `+0x40/+0x50/+0x60`) | the 4 sweep points (front wheel, rear wheel, two body points); all have x = 0 |
+| radius | `+0x15C + 16·i` = 0.75 u | sweep radius |
+| mass | body `+0x00` invMass = 0.01 | mass 100 |
+| inertia | body `+0x80/0x90/0xA0` diagonal 0.0023 / 0.00474 / 0.00382 | `invI`; which axis is which is a **hypothesis** (lateral / forward / up) |
+| restitution, friction | physics module `+0x114` = 0.2, `+0x118` = 0.28 (`FUN_00134630`) | `RigidBody.restitution/friction` |
+| other floats near `+0x10C…0x124` | 1.0, 100.0 (= mass), 0.987, 0.975, 3.0 | unknown; 0.975 is used as angular damping — **hypothesis** |
+| physics rate | 728 consecutive steps in 14.5 s of game time (`docs/p2s-savestates.md`) | the engine ticks at 50 Hz; the port steps at ≤ 1/120 s |
+| scale / gravity | 1 u = 1 ft; g = 32.17 u/s² | |
+| collision chain | `Ground::sweepHits` (`FUN_0021A908/00219970`), `nextHit` (`FUN_00217450`), `depenetration` (`FUN_001344F0`), `contactResponse` (`FUN_00134630` → `FUN_00238648/002384B8/00237D28`) | used as is, structure of `FUN_001340D8` (≤ 2 impacts per step) |
+
+## Model (src/bike.hpp)
+State: position (centre of mass), velocity, angular velocity, and **only the forward vector** `fwd` as orientation: `right = fwd × Y`, `up = right × fwd` (roll locked). Semi-implicit Euler: forces change velocity first, then the sweep moves the body with the new velocity and the contact impulses (`contactResponse`) edit velocity/angular velocity at the hit points.
+Per sub-step (≤ 1/120 s): controls and forces → up to two sweeps (all 4 points, rotation included) → depenetration for initial overlaps → response at the earliest hit → remaining time advances unchecked (a residual overlap is fixed by the next step).
+
+## What is a hypothesis (tuning knobs in `BikeParams`)
+| knob | value | why |
+|---|---|---|
+| roll lock | orientation = (heading, pitch) | all contact points have x = 0, so a rigid body alone would fall sideways; the engine keeps the bike upright with some other controller that is not studied |
+| `comLift` | 1.4 u | all local points shifted up (centre of mass lower, closer to the wheel axle). The engine gives points relative to the node and the COM is offset (`+0x50`) by an unknown amount; with COM at the node the bike nose-flips on every steep landing |
+| `pedalAccel` 6 u/s², `pedalMax` 40 u/s | pedalling force falling to 0 at 40 u/s | HUD of the game shows ~60 km/h (55 u/s) on slopes; previous cinematic mode used 4.9 u/s² |
+| `brakeDecel` 28 u/s² | never reverses | |
+| `rolling` 0.03 /s + `rollConst` 0.8 u/s² | rolling resistance; the constant part stops the bike on flat ground (the proportional part left 0.3 u/s creep) | |
+| `drag` 0.003 /u | quadratic; terminal ~70–85 u/s on 25°–40° slopes (savestates: 85 u/s in the long ALP2 drop) | first value (0.0012) reached 147 u/s = 161 km/h |
+| `grip` 10 /s | tyres remove lateral velocity; the engine only has the anisotropic friction in `FUN_00134630` (it removes the forward component of the friction impulse: `N × axis0`, `|.|² > 0.5`), whose magnitude is too small to steer | |
+| steering | yaw rate `1.5 / (1 + 0.03·speed)` rad/s on the ground, kept in the air | previous mode: 1.6/(1+0.04·v/U) |
+| lean (Q/E) | 7 rad/s² about the lateral axis, pitch rate clamp ±8 rad/s | player control in the air / wheelies; not studied in the engine |
+| hop (Space) | +9 u/s along `up` when the bike touched the ground in the last 0.1 s | |
+| `angDamp` 0.975 per 1/50 s | on pitch rate | see table above |
+| start gate | triangles with surface 0x681D removed (`openStartGate`) | the bar is closed in the static mesh (`collision.md`); the game opens it at the start |
+| respawn | last point where both wheels touched for ≥ 0.5 s, every 0.5 s | the real game's respawn is not studied |
+| visual lean | cosmetic roll ≤ 0.45 rad when steering (not in the physics) | |
+
+## dhview play mode
+`DH_PLAY=1 DH_BIKE=out/play/bike1.mdl build/dhview out/maps/ALP2.mdl` (or key `P`). Keys: `W` accelerate, `S` brake, `A/D` steer, `Q/E` nose up/down, `Space` hop, `Enter` respawn at the last good point, `T` back to the start grid, `R` old cinematic mode, `F` fly/walk, `Esc` quit. HUD: yellow bar = speed (full = 100 u/s), one cell per course gate (green = crossed, bar turns green at the finish); title bar has km/h, gates, time, respawns. `DH_PLAYIN="throttle brake steer lean"` fixes the controls without keyboard (used for `DH_SHOT` captures). Start = first slot of `<level>.start.pts`, heading = course-gate 0 normal; the bike is the assembled model (`tools/assemble_bike.py`, 1 model unit = 0.28 m), oriented with the body.
+
+## Validation
+* `ctest`: `bike_test` — rest on both wheels (wheel centres 0.75–0.85 above the plane), 300 u drop does not tunnel, throttle accelerates, brake stops without reversing, right steer increases heading, a 20° ramp is descended glued to the plane, roll stays locked, hop lifts ≥ 0.5 u, respawn returns to the last good point.
+* `build/bike_demo out/maps/ALP2.col out/chain0.pts out/maps/ALP2.gates out/maps/ALP2.start.pts out/maps/ALP2.mdl` (autopilot of tests: throttle, steer to the line point 5 ahead, brake above `DH_CRUISE` u/s (default 30), pitch matching in the air; 8 s without progress = respawn). Results: see `docs/DECISIONS.md` and the report; the autopilot is a test aid, not engine behaviour.
+
+## Cierre del carril A: ALP2 de salida a meta (2026-10-02)
+`build/bike_demo out/maps/ALP2.col out/chain0.pts out/maps/ALP2.gates out/maps/ALP2.start.pts out/maps/ALP2.mdl [traza.pts]` → **28/28 puertas, meta a los 379.6 s, 0 reinicios**, velocidad máx 101 u/s (110 km/h), 46 % del tiempo en el aire, `ctest` 4/4. (Antes: 31 %, punto 187/611, 25 reinicios.)
+**Qué se cambió (todo hipótesis salvo lo indicado):**
+* **Dirección en el aire** (`BikeParams::airYawAccel` 3 rad/s², `airYawMax` 0.9 rad/s, **hipótesis**: el motor no se ha estudiado en vuelo; sin ella la moto conserva el rumbo con el que sale del borde). El modo jugable ya pasa `steer`/`lean` con o sin suelo (`src/main.cpp`), así que A/D giran también en el aire y Q/E cabecean igual que el piloto automático (lean > 0 = morro arriba).
+* **Meta** (corrige `gates.hpp`): el plano 8052 de ALP2 (`n = (−0.008, 0.347, 0.938)`, `d = −8021`) tiene `dist > 0` *antes* y `< 0` *después* del punto ≈ 419 de la línea, es decir ~3 puntos antes de la puerta 28 (punto 422) y con la normal hacia atrás: tras la última puerta nunca puede cumplirse `dist > 0`. `Run::update` toma ahora **la última puerta del recorrido como línea de meta** (hipótesis; evidencia: distancias de los puntos 400–436 en esta sección). `gates.hpp` no se tocó.
+* **Cadena de la línea**: `chain0.pts` tiene 611 puntos pero tras el 438 saltan a otra zona (−2010, 5110, 999…). El demo la corta en el primer salto > 400 u y añade un punto prolongado hacia delante.
+**Piloto de PRUEBAS** (`tests/bike_demo.cpp`, no es lógica del juego): lookahead por *distancia* (primer punto a ≥ 25 u; el tramo 187→188 mide 116 u y apuntar 5 puntos más allá hacía salir del borde por otro sitio), dirección también en el aire, cabeceo hacia la normal del suelo **donde aterrizará** (trayectoria balística + `Ground::sweep`, no lo que hay justo debajo) con amortiguación de la velocidad de cabeceo, y velocidad de crucero por zonas (tramos de 20 puntos; tabla 80/60/100/45/70/90 u/s: tras un atasco esa zona y las dos anteriores prueban la siguiente). Con la tabla, la primera vuelta ya pasa con el 80: **no hizo falta ningún reinicio** (tope: 60 por atasco).
+**Por qué fallaba en 187→188** (corte lateral de la colisión, scratchpad): la línea cae 150 u en un tajo y sigue por una lámina inferior ~57 u al este; la moto sale con ~35 u/s de avance horizontal, baja unos 2.2 s y aterriza al pie de una pared, ~40 u antes de esa lámina. Se salva con ≥ ~53 u/s horizontales; el freno de crucero (30–60 u/s) lo impedía. Frenar antes de las caídas es contraproducente (ALP2 punto 6: se queda corta). Las caídas de la línea son saltos que piden velocidad.
+**Cruces con la malla visual:** 98 de 22 777 pasos (89 a ≤ 20 u sobre el suelo de colisión, 9 profundos; el primero a los 16.2 s en (−2048, 5316, 1030)). No se han vuelto a clasificar por textura; en la ejecución anterior los profundos eran follaje decorativo sin colisión (collision.md).
+**Evidencia visual** (fuera del repo): `DH_TRACE6=archivo` en `bike_demo` guarda la trayectoria (pos + dirección, 6 f32 por muestra, 10 muestras/s) y `DH_PLAY=1 DH_FRAMES=30 DH_REPLAY=archivo DH_REPLAY_AT=i DH_BIKE=out/play/bike1.mdl DH_SHOT=x.bmp build/dhview out/maps/ALP2.mdl` dibuja la bici en la muestra *i* con la cámara de seguimiento (sin simular; el HUD de puertas no se actualiza en la reproducción). Seis capturas (t = 4, 70, 150, 230, 310, 378 s): la bici se ve apoyada sobre el terreno en la mayoría (rodando por la senda, cabaña y pancartas de la zona final); a los 4 s está en el aire inclinada tras el primer salto.
