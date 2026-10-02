@@ -114,14 +114,22 @@ int main(int argc, char** argv) {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     }
     // --- Piloto (hito 4): DH_RIDER=modelo.mdl DH_RIDER_SKIN=modelo.skin DH_RIDER_NGP=nivel.NGP DH_RIDER_ROOT=0x9e2f40 [DH_RIDER_POSE=40 floats por línea/espacios] [DH_RIDER_AT="x y z"]. Sólo habla con gfx::Renderer (no GL).
-    gfx::GLRenderer gr; gfx::MeshId riderMesh = -1; rider::Skeleton riderSk; std::vector<rider::SkinVertex> riderSkin; std::vector<float> riderBind, riderVerts, riderPose(40, 0.f); float riderAt[3] = {0.f, 2.0f, 0.f};
+    gfx::GLRenderer gr; gfx::MeshId riderMesh = -1; rider::Skeleton riderSk; std::vector<rider::SkinVertex> riderSkin; std::vector<float> riderBind, riderVerts, riderPose(40, 0.f); float riderAt[3] = {0.f, 2.0f, 0.f}; bool riderApprox = false, riderCadenceExplicit = false; float riderPhase = 0.f, riderCadence = 5.5f; rider::ApproxResult riderApproxResult;
     if (const char* rp = std::getenv("DH_RIDER")) {
         Model rm; std::vector<uint8_t> raw, sraw, nraw; const char* sk = std::getenv("DH_RIDER_SKIN"); const char* np = std::getenv("DH_RIDER_NGP"); const char* rt = std::getenv("DH_RIDER_ROOT");
         if (readFile(rp, raw) && parseMdl(raw, rm) && sk && readFile(sk, sraw) && rider::parseSkin(sraw, riderSkin) && np && readFile(np, nraw) && rt && riderSk.load(nraw, std::strtoul(rt, nullptr, 0)) && riderSkin.size() * 10 == rm.mv.size()) {
             std::vector<gfx::TextureId> tids; for (auto& t : rm.texs) tids.push_back(gr.createTexture({t.w, t.h, t.px}));
             riderVerts = rm.mv; riderBind.resize(riderSkin.size() * 3); for (size_t i = 0; i < riderSkin.size(); i++) for (int c = 0; c < 3; c++) riderBind[3*i+c] = rm.mv[10*i+c];
             riderMesh = gr.createMesh(riderVerts, rm.mi, tids, true);
-            if (const char* pp = std::getenv("DH_RIDER_POSE")) { std::vector<uint8_t> pr; if (readFile(pp, pr)) { std::string txt(pr.begin(), pr.end()); const char* c = txt.c_str(); for (size_t i = 0; i < riderPose.size(); i++) { char* e; float v = std::strtof(c, &e); if (e == c) break; riderPose[i] = v; c = e; } } }
+            if (const char* pp = std::getenv("DH_RIDER_POSE")) {
+                riderApprox = !std::strcmp(pp, "approx");
+                if (riderApprox) {
+                    if (const char* cad = std::getenv("DH_RIDER_CADENCE")) { riderCadence = std::fmax(0.f, (float)std::atof(cad)); riderCadenceExplicit = true; }
+                    std::fprintf(stderr, "rider pose: approx (HIPÓTESIS; cadencia %.3f rad/s, solver no es la pose del juego)\n", riderCadence);
+                } else {
+                    std::vector<uint8_t> pr; if (readFile(pp, pr)) { std::string txt(pr.begin(), pr.end()); const char* c = txt.c_str(); for (size_t i = 0; i < riderPose.size(); i++) { char* e; float v = std::strtof(c, &e); if (e == c) break; riderPose[i] = v; c = e; } }
+                }
+            }
             if (const char* at = std::getenv("DH_RIDER_AT")) std::sscanf(at, "%f %f %f", &riderAt[0], &riderAt[1], &riderAt[2]);
         } else std::fprintf(stderr, "aviso: DH_RIDER/_SKIN/_NGP/_ROOT no válidos (mdl %d skin %d ngp %d esqueleto %d vértices %zu/%zu), se ignora el piloto\n", !raw.empty(), !riderSkin.empty(), !nraw.empty(), (int)riderSk.j.size(), riderSkin.size(), rm.mv.size() / 10);
     }
@@ -328,6 +336,17 @@ int main(int argc, char** argv) {
         if (k[SDL_SCANCODE_D]) { px += rx*sp; pz += rz*sp; }
         if (k[SDL_SCANCODE_A]) { px -= rx*sp; pz -= rz*sp; }
         }
+        if (riderApprox && riderSk.j.size() >= 15) {
+            if (play && !riderCadenceExplicit) riderCadence = std::fmax(0.f, prun.bike.speed() * 0.12f); // HIPÓTESIS: relación velocidad-cadencia; sustituir por transmisión medida.
+            riderPhase += std::fmin(dt, 0.05f);
+            riderApproxResult = rider::approxPose(riderSk, riderPhase, {riderAt[0], riderAt[1], riderAt[2]}, riderCadence, true);
+            std::copy(riderApproxResult.pose.begin(), riderApproxResult.pose.end(), riderPose.begin());
+            std::printf("rider frame=%d wristR=%.6f wristL=%.6f ankleR=%.6f ankleL=%.6f pelvis=(%.6f %.6f %.6f)\n",
+                        frame, riderApproxResult.errors[0], riderApproxResult.errors[1], riderApproxResult.errors[2], riderApproxResult.errors[3],
+                        riderApproxResult.pelvis[0], riderApproxResult.pelvis[1], riderApproxResult.pelvis[2]);
+            for (float error : riderApproxResult.errors) if (error > 1e-2f)
+                std::fprintf(stderr, "aviso: rider IK error %.6f u supera 1e-2 u\n", error);
+        }
         int ww, hh; SDL_GetWindowSizeInPixels(w, &ww, &hh);
         glViewport(0, 0, ww, hh); { static float bg[3] = {0.05f, 0.06f, 0.09f}; static bool init = false; if (!init && !M.chunks.empty() && sky.mi.empty() && dome.mi.empty()) { bg[0] = 0.58f; bg[1] = 0.70f; bg[2] = 0.86f; } /* nivel sin cúpula de cielo: azul claro por defecto */ if (!init) { init = true; if (const char* b = std::getenv("DH_BG")) std::sscanf(b, "%f %f %f", &bg[0], &bg[1], &bg[2]); } glClearColor(bg[0], bg[1], bg[2], 1); }
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);   // DH_BG="r g b": color de fondo (p. ej. magenta para ver huecos) glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -382,7 +401,9 @@ int main(int argc, char** argv) {
                 glTexEnvf(GL_TEXTURE_ENV, GL_RGB_SCALE, 2.6f); glPushMatrix(); glMultMatrixf(m); glScalef(bs, bs, bs); drawModel(bike); glPopMatrix();
                 if (riderMesh >= 0) {                   // piloto: espacio del modelo (x der., y adelante, z arriba) -> espacio de la bici ensamblada (adelante = -Z, arriba = +Y); posición de la pelvis = HIPÓTESIS (DH_RIDER_AT)
                     rider::applySkin(riderSk.skin(riderPose.data(), riderPose.size()), riderSkin, riderBind, riderVerts); gr.updateVertices(riderMesh, riderVerts);
-                    const float conv[16] = {1, 0, 0, 0,  0, 0, -1, 0,  0, 1, 0, 0,  riderAt[0], riderAt[1] - 3.548f, riderAt[2], 1};   // columnas; la pelvis del modelo está a z = 3.548
+                    const auto rootModel = riderSk.worldPositions(riderPose.data(), riderPose.size())[0];
+                    const auto& pelvis = riderApprox ? riderApproxResult.pelvis : std::array<float, 3>{riderAt[0], riderAt[1], riderAt[2]};
+                    const float conv[16] = {1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 1, 0,  pelvis[0] - rootModel[0], pelvis[1] - rootModel[1], pelvis[2] - rootModel[2], 1};   // HIPÓTESIS H4: ambos marcos comparten X derecha/Y adelante/Z arriba.
                     glPushMatrix(); glMultMatrixf(m); glScalef(bs, bs, bs); gr.draw(riderMesh, conv, 2.6f); glPopMatrix();
                 }
             }

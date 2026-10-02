@@ -20,5 +20,24 @@ Tool: `tools/rider_live.py` (probes over an `eeMemory.bin`; dumps never go into 
 ## What is needed from PCSX2 (GUI debugger, not scriptable from here)
 **A write breakpoint on the Euler field of a resident joint table**, e.g. ALP2 kind 4090 root table: RAM `0xA00000 + 0x9e2e60 + 0x20 = 0x13e2e80` (st05 has ALP2-sized resident NGP at `0xA00000`; confirm with the first bytes of the table: `11 00 00 00 03 00 00 00` at `0x13e2e60`). Break on write while the game runs a race, then read: the **PC** (the writer), `$s0/$s2` or the register holding the pose pointer (`pose + 4` = float array; `*(pose+0xc)` = matrix array) — in `FUN_0020ad00`-like code the pose float base is `*unaff_s2`. With that pointer in hand, dump 0x200 bytes at it and the rider index. Two savestates one frame apart taken at the break would also give the exact input/output pair (channels → matrices) to settle the Euler order for legs. If a write breakpoint never fires, hypothesis 1 holds and the palette must be captured from VU1 memory (`0x358 + 4·bone`, 15 matrices) with a savestate taken while the rider microprogram (`.vutext` 0x0c8d) is running, e.g. a VU1 `MSCAL` breakpoint.
 
-## Not done
-No IK solver implemented (nothing to verify it against yet). No hands-on-grips / feet-on-pedals metric could be run because no candidate pose array was identified.
+## Approximation H4 (2026-10-02)
+The native body pose is still unlocated, so `DH_RIDER_POSE=approx` is explicitly
+an approximation, not a claim about the game's pose. `src/rider.hpp` now solves
+the four effectors with forward kinematics plus damped Gauss-Newton: wrists 5/8
+use shoulder+elbow channels (12..15 and 19..22), and ankles 11/14 use
+hip+knee channels (26..29 and 33..36). Wrist/ankle channels are not included
+in the Jacobian. Knee and elbow channels are bounded to `[0, pi]`; residuals
+are reported instead of clamped away.
+
+Bike and model frames are both documented as X-right/Y-forward/Z-up. The pelvis
+in bike space is the explicit `DH_RIDER_AT` parameter; a finite coordinate
+search also adjusts pelvis and torso channels 6..8. Cadence defaults to
+`5.5 rad/s` (hypothesis) or can be set with `DH_RIDER_CADENCE`; in play mode
+the current implementation uses `speed * 0.12` as an explicitly hypothetical
+transmission ratio.
+
+The optional ALP2 test reports, at phase zero and pelvis `(0,0,0)`, unoptimized
+errors `wristR=0.155424`, `wristL=0.895237`, `ankleR=2.342518`,
+`ankleL=1.839855 u`; after finite pelvis/torso optimization it reports
+`0.084407`, `1.101237`, `2.088444`, `1.580793 u`, with pelvis
+`(0.2, 0, 0.2)`. These are approximation diagnostics, not game validation.
