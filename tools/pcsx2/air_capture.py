@@ -12,8 +12,10 @@ import live, pine_capture
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--slot', type=int, default=1); ap.add_argument('--rider', type=int, default=1); ap.add_argument('--lift', type=float, default=1000.0)
     ap.add_argument('--seconds', type=float, default=2.0); ap.add_argument('--out', required=True); ap.add_argument('--timeout', type=float, default=40.0)
-    ap.add_argument('--omega', type=float, nargs=3); ap.add_argument('--vel', type=float, nargs=3); a = ap.parse_args()
-    p = live.connect(); p.load_state(a.slot); time.sleep(1.0); base = live.rider(a.rider); link = base + 0x6428; pos = base + 0x6420 + 0x10 + 0x50; t0 = time.time()
+    ap.add_argument('--param', action='append', default=[], metavar='OFF=VAL', help='float en módulo+OFF (hex), escrito tras cargar el estado: p.ej. 0x124=1.0 (prueba de procedencia de las constantes)'); ap.add_argument('--omega', type=float, nargs=3); ap.add_argument('--vel', type=float, nargs=3); a = ap.parse_args()
+    p = live.connect(); p.load_state(a.slot); time.sleep(1.0); base = live.rider(a.rider)
+    if a.param: live.poke_f32(p, [(base + 0x6420 + int(k, 16), float(v)) for k, v in (x.split('=') for x in a.param)])
+    link = base + 0x6428; pos = base + 0x6420 + 0x10 + 0x50; t0 = time.time()
     while p.read32(link) == 0:                                            # módulo ligado a su nodo = cuerpo en uso
         if time.time() - t0 > a.timeout: sys.exit('el cuerpo del piloto %d no se activó' % a.rider)
     time.sleep(0.005)                                                     # el cuerpo se siembra tras ligarse el nodo: esperar a ver su primer paso
