@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <vector>
 #include <bits/basic_string.h>
@@ -19,6 +20,7 @@
 #include "bike.hpp"
 #include "gl_renderer.hpp"
 #include "rider.hpp"
+#include "rider_mesh.hpp"
 
 int main(int argc, char** argv) {
     if (argc < 2) { std::fprintf(stderr, "uso: dhview archivo.pts|.msh|.mdl  (mdl: F = volar/caminar, R = bici, Espacio = saltar)\n"); return 1; }
@@ -137,6 +139,21 @@ int main(int argc, char** argv) {
             }
             if (const char* at = std::getenv("DH_RIDER_AT")) std::sscanf(at, "%f %f %f", &riderAt[0], &riderAt[1], &riderAt[2]);
         } else std::fprintf(stderr, "aviso: DH_RIDER/_SKIN/_NGP/_ROOT no válidos (mdl %d skin %d ngp %d esqueleto %d vértices %zu/%zu), se ignora el piloto\n", !raw.empty(), !riderSkin.empty(), !nraw.empty(), (int)riderSk.j.size(), riderSkin.size(), rm.mv.size() / 10);
+    } else if (const char* np = std::getenv("DH_RIDER_NGP")) {
+        const char* co = std::getenv("DH_RIDER_CHAIN");
+        std::vector<uint8_t> nraw; rider_mesh::Mesh native;
+        size_t off = co ? std::strtoull(co, nullptr, 0) : std::numeric_limits<size_t>::max();
+        if (!co) {
+            uint32_t kind = 0;
+            if (const char* rk = std::getenv("DH_RIDER_KIND")) kind = static_cast<uint32_t>(std::strtoul(rk, nullptr, 0));
+            if (readFile(np, nraw)) rider_mesh::findChain(nraw, off, kind);
+        }
+        if (off != std::numeric_limits<size_t>::max() && readFile(np, nraw) && rider_mesh::load(nraw, off, native)) {
+            riderVerts = native.vertices; riderMesh = gr.createMesh(riderVerts, native.indices, {}, true);
+            std::fprintf(stderr, "rider_mesh: cadena 0x%zx, %u posiciones, %zu vertices render, %u paquetes (hipótesis de cadena)\n", off, native.positionCount, native.vertices.size() / 10, native.packetCount);
+        } else {
+            std::fprintf(stderr, "aviso: DH_RIDER_NGP/DH_RIDER_CHAIN no válidos; se ignora el piloto nativo\n");
+        }
     }
     SDL_SetWindowRelativeMouseMode(w, true);
     float px = v.empty() ? 0.f : v[0], py = v.empty() ? 0.f : v[1] + (mdl ? 0.f : 300.f), pz = v.empty() ? 0.f : v[2] + (mdl ? 8.f : 0.f), yaw = 0, pitch = mdl ? 0.f : -0.4f;
