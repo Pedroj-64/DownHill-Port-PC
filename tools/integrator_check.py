@@ -82,6 +82,7 @@ def show(rows, label):
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('files', nargs='+'); ap.add_argument('--ticks', type=int, default=0)
     ap.add_argument('--assert', dest='check', action='store_true', help='aplica los criterios del plan (jugador, bici en el aire): PASA/FALLA por criterio y código de salida 1 si falla')
+    ap.add_argument('--rider', type=int, default=None, help='con .cap: índice del piloto a comprobar (por defecto el primero)')
     ap.add_argument('--t-tol', type=float, default=T_TOL, help='tolerancia de |T_eff| (provisional)'); a = ap.parse_args()
     if len(a.files) == 1 and a.files[0].endswith('.cap'):
         from analyze_capture import read_cap
@@ -89,7 +90,8 @@ def main():
         agg = []
         for k in range(len(fr) - 1):
             rows = pair(fr[k][1], fr[k + 1][1], a.ticks or 1, k)
-            if rows: agg.append(rows[0])   # jugador (primer piloto)
+            row = next((r for r in rows if a.rider is None or r[0] == a.rider), None)   # por defecto el jugador (primer piloto)
+            if row: agg.append(row)
         if agg:
             e = np.array([[r[3], r[4], r[5], r[6]] for r in agg]); print(f'jugador, {len(agg)} pares: mediana |pos|err={np.median(e[:, 0]):.2e}  |R|err={np.median(e[:, 1]):.2e}  p95 pos={np.percentile(e[:, 0], 95):.2e}  p95 R={np.percentile(e[:, 1], 95):.2e}')
             Fz = np.array([r[7] for r in agg]); print('F_eff mediana (x,y,z) =', np.median(Fz, axis=0).round(2), ' (en el aire sólo gravedad: F = m*g con m = 1/invM)')
