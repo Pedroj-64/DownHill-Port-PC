@@ -242,7 +242,8 @@ inline IsolatedIKResult isolatedPelvisSearch(const Skeleton& sk, int effector,
 inline ApproxResult approxPose(const Skeleton& sk, float phase, const std::array<float, 3>& pelvisBike,
                                float cadence = 5.5f, bool optimizePelvis = true,
                                const std::array<float, 3>& pelvisRotation = {},
-                               const std::array<float, 3>& footOffset = {}) {
+                               const std::array<float, 3>& footOffset = {},
+                               const std::array<float, 3>& torso = {-0.18f, -0.10f, 0.f}) {
     ApproxResult result; result.pelvis = pelvisBike;
     result.pelvisRotation = pelvisRotation;
     const auto bind = sk.worldPositions(result.pose.data(), result.pose.size());
@@ -298,7 +299,7 @@ inline ApproxResult approxPose(const Skeleton& sk, float phase, const std::array
         return std::tuple<std::array<float, 4>, float, std::array<IKResult, 4>>{errors, total, ik};
     };
     // HIPÓTESIS H4: torso y cadencia; ninguna de estas cifras procede del ELF.
-    std::array<float, 3> bestTorso = {-0.18f, -0.10f, 0.f};
+    std::array<float, 3> bestTorso = torso;
     std::array<float, 3> bestRotation = pelvisRotation;
     auto evaluate = [&](const std::array<float, 3>& pelvis, const std::array<float, 3>& torsoAngles,
                         const std::array<float, 3>& rotation) {

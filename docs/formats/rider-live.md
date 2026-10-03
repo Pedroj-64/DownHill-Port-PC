@@ -130,3 +130,6 @@ pedal, and left pedal respectively; all fit the documented reach limits.
 Cadence defaults to `5.5 rad/s` (hypothesis) or can be set with
 `DH_RIDER_CADENCE`; in play mode the current implementation uses
 `speed * 0.12` as an explicitly hypothetical transmission ratio.
+
+## Viewer integration notes (2026-10-02) / notas del visor
+`DH_RIDER_POSE=approx` is opt-in and experimental (hypothesis, not the game's pose). The pelvis and torso are optimised **once** at phase 0 (starting from `DH_RIDER_AT`, converted from the assembled-bike frame Y-up to the model frame Z-up) and then fixed; each frame only the four limbs are solved (about 0.01 s/frame instead of 0.1 s with a per-frame search, which also made the pelvis jump). `DH_RIDER_DEBUG=1` prints the per-limb error every 30 frames. The default (non-approx) placement keeps the model→assembled-bike mapping `(x, y, z) → (x, z, −y)`; an earlier version of the integration replaced it with the identity and laid the rider flat.
