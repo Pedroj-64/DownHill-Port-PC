@@ -5,6 +5,7 @@
 Uso:
   integrator_check.py estado.p2s                 -> invariantes de UN estado (v = P*invM, omega = D*L, iw = diag, R ortonormal, nodo = cm - com*R) para todos los pilotos
   integrator_check.py a.p2s b.p2s [--ticks N]    -> predice b desde a con N pasos de 1/50 s (N se ajusta si se omite) y compara posición, orientación y momentos
+  integrator_check.py aire.cap --assert [--rider N] [--eval otra.cap --eval-rider M]  -> oráculo por niveles de caída libre (integrator_airfit.py)
   integrator_check.py captura.cap                -> lo mismo con cada par de muestras consecutivas de tools/pcsx2/pine_capture.py (la captura trae nodo + módulo de física por paso)
 Fuerza y torque se limpian al final de cada paso (FUN_00237C78) y valen 0 en los estados guardados: se infieren de la variación de momentos, (P1-P0)/dt y (L1-L0)/dt.
 La referencia de abajo es la misma que src/integrator_fidel.hpp en float64 (tests/integrator_test.cpp cubre la versión C++)."""
@@ -14,8 +15,6 @@ sys.path.insert(0, os.path.dirname(__file__)); sys.path.insert(0, os.path.join(o
 from p2s import State
 
 DT = 1 / 50.0   # divisor del paso físico: u32 en 0x2C85FC (gp-0x4B74, FUN_0023F078) = 50 en los savestates PAL
-# Criterios de --assert (plan H3, paso 0b; se recalibran con los primeros pares reales). G = hipótesis: 32.17 ft/s² con 1 u = 1 ft (docs/p2s-savestates.md), eje de subida = +z.
-G, POS_TOL, R_TOL, FZ_REL, FXY_REL, T_TOL = 32.17, 1e-3, 1e-5, 1e-3, 1e-3, 1.0   # T_TOL: provisional (sin calibrar)
 
 def body(s, r):
     """Campos del cuerpo rígido (cuerpo = módulo + 0x10) y del nodo de un piloto de State.riders()."""
@@ -57,23 +56,6 @@ def pair(s0, s1, ticks, label):
         rows.append((r0['index'], r0['type'], best, np.abs(p['pos'] - c['pos']).max(), np.abs(p['R'] - c['R']).max(), np.abs(p['vel'] - c['vel']).max(), np.abs(p['omega'] - c['omega']).max(), Feff, np.linalg.norm(c['pos'] - a['pos']), Teff, a['invm']))
     return rows
 
-def evaluate(pos_err, R_err, F, T, invm, t_tol=T_TOL):
-    """Criterios del plan para UN par con la bici en el aire: [(nombre, pasa, valor, límite)]. F, T = fuerza y torque efectivos; m = 1/invM."""
-    mg = G / invm; fz = abs(F[2] + mg) / mg; fxy = float(np.hypot(F[0], F[1])) / mg; t = float(np.linalg.norm(T))
-    return [('|dpos| <= %g' % POS_TOL, pos_err <= POS_TOL, pos_err, POS_TOL), ('max|dR_ij| <= %g' % R_TOL, R_err <= R_TOL, R_err, R_TOL),
-            ('F_z = -m*g (rel <= %g)' % FZ_REL, fz <= FZ_REL, fz, FZ_REL), ('|F_xy| <= %g*m*g' % FXY_REL, fxy <= FXY_REL, fxy, FXY_REL), ('|T_eff| <= %g' % t_tol, t <= t_tol, t, t_tol)]
-
-def verdict(rows, label, t_tol=T_TOL):
-    """Imprime PASA/FALLA por criterio para el jugador (primer piloto) de cada par; True si todo pasa."""
-    ok = True; many = len(rows) > 1   # con varios pares (.cap) sólo se listan los criterios que fallan
-    for k, r in enumerate(rows):
-        res = evaluate(r[3], r[4], r[7], r[9], r[10], t_tol); ok &= all(p for _, p, _, _ in res)
-        if not many or not all(p for _, p, _, _ in res): print(f'== {label}' + (f' par {k}' if many else ''))
-        for name, p, v, lim in res:
-            if not many or not p: print(f"  {'PASA ' if p else 'FALLA'} {name}: {v:.3e}")
-    if many: print(f"{'PASA' if ok else 'FALLA'}: {len(rows)} pares")
-    return ok
-
 def show(rows, label):
     print(f'== {label}')
     for i, t, n, ep, eR, ev, ew, F, mv, *_ in rows:
@@ -81,9 +63,15 @@ def show(rows, label):
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('files', nargs='+'); ap.add_argument('--ticks', type=int, default=0)
-    ap.add_argument('--assert', dest='check', action='store_true', help='aplica los criterios del plan (jugador, bici en el aire): PASA/FALLA por criterio y código de salida 1 si falla')
+    ap.add_argument('--assert', dest='check', action='store_true', help='sólo con .cap de caída libre: oráculo por niveles de integrator_airfit (modelo: residuos vs 3×suelo float32; procedencia: pendiente); salida 1 si falla el modelo')
+    ap.add_argument('--eval', help='con --assert: otra .cap para evaluar el ajuste (validación cruzada)'); ap.add_argument('--eval-rider', type=int)
     ap.add_argument('--rider', type=int, default=None, help='con .cap: índice del piloto a comprobar (por defecto el primero)')
-    ap.add_argument('--t-tol', type=float, default=T_TOL, help='tolerancia de |T_eff| (provisional)'); a = ap.parse_args()
+    a = ap.parse_args()
+    if a.check:
+        import integrator_airfit as af
+        if len(a.files) != 1 or not a.files[0].endswith('.cap'): sys.exit('--assert necesita una .cap de caída libre (tools/pcsx2/air_capture.py); los pares sueltos no determinan c, cL y G')
+        B = af.load(a.files[0], a.rider if a.rider is not None else 1); other = af.load(a.eval, a.eval_rider if a.eval_rider is not None else (a.rider or 1)) if a.eval else B
+        _, ok = af.report(B, other, os.path.basename(a.files[0])); print('NIVEL MODELO:', 'PASA' if ok else 'FALLA', '| NIVEL PROCEDENCIA: PENDIENTE (ajuste empírico)'); sys.exit(0 if ok else 1)
     if len(a.files) == 1 and a.files[0].endswith('.cap'):
         from analyze_capture import read_cap
         fr = read_cap(a.files[0]); print(f'{len(fr)} muestras')
@@ -94,14 +82,11 @@ def main():
             if row: agg.append(row)
         if agg:
             e = np.array([[r[3], r[4], r[5], r[6]] for r in agg]); print(f'jugador, {len(agg)} pares: mediana |pos|err={np.median(e[:, 0]):.2e}  |R|err={np.median(e[:, 1]):.2e}  p95 pos={np.percentile(e[:, 0], 95):.2e}  p95 R={np.percentile(e[:, 1], 95):.2e}')
-            Fz = np.array([r[7] for r in agg]); print('F_eff mediana (x,y,z) =', np.median(Fz, axis=0).round(2), ' (en el aire sólo gravedad: F = m*g con m = 1/invM)')
-            if a.check: sys.exit(0 if verdict(agg, os.path.basename(a.files[0]), a.t_tol) else 1)
-        elif a.check: sys.exit('--assert: la captura no tiene pares')
+            Fz = np.array([r[7] for r in agg]); print('F_eff mediana (x,y,z) =', np.median(Fz, axis=0).round(2), ' (incluye amortiguamiento y contactos: ver integrator_airfit.py para el modelo de caída libre)')
     elif len(a.files) == 1:
-        if a.check: sys.exit('--assert necesita dos estados o un .cap')
         selfcheck(State(a.files[0]), os.path.basename(a.files[0]))
     else:
         rows = pair(State(a.files[0]), State(a.files[1]), a.ticks, ''); label = f'{os.path.basename(a.files[0])} -> {os.path.basename(a.files[1])}'; show(rows, label)
-        if a.check: sys.exit(0 if rows and verdict(rows[:1], label, a.t_tol) else 1)
+
 
 if __name__ == '__main__': main()
