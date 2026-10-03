@@ -21,6 +21,14 @@ def enable_pine():
 
 def running(): return subprocess.run(['pgrep', '-x', 'pcsx2-qt'], capture_output=True).returncode == 0
 
+def wait_socket(timeout=90, resolve=None, poll=0.5):
+    """Espera al socket PINE recalculando la ruta en cada vuelta (al lanzar, default_socket() cae a una ruta de respaldo hasta que el socket existe)."""
+    resolve = resolve or pine.default_socket; t0 = time.time()
+    while not os.path.exists(sock := resolve()):
+        if time.time() - t0 > timeout: sys.exit(f'no aparece el socket PINE {sock}')
+        time.sleep(poll)
+    return sock
+
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--iso'); ap.add_argument('--slot', type=int, default=1); ap.add_argument('--seconds', type=float, default=30); ap.add_argument('--out', required=True)
     ap.add_argument('--no-launch', action='store_true', help='PCSX2 ya está abierto con PINE activo'); ap.add_argument('--riders', type=int, default=6); a = ap.parse_args()
@@ -29,11 +37,7 @@ def main():
         if running(): sys.exit('PCSX2 está abierto: ciérralo (o usa --no-launch si ya tiene PINE activo).')
         print('PINE activado en el ini' if enable_pine() else 'PINE ya estaba activo')
         proc = subprocess.Popen(['flatpak', 'run', 'net.pcsx2.PCSX2', '-batch', '-fastboot', '--', a.iso], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    sock = pine.default_socket(); t0 = time.time()
-    while not os.path.exists(sock):
-        if time.time() - t0 > 90: sys.exit(f'no aparece el socket PINE {sock}')
-        time.sleep(0.5)
-    p = pine.Pine(sock)
+    t0 = time.time(); p = pine.Pine(wait_socket())
     while time.time() - t0 < 120:                                        # esperar a que el juego corra
         try:
             if p.status() == 0 and p.game_id().startswith('SLES'): break
