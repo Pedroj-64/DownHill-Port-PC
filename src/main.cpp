@@ -129,7 +129,12 @@ int main(int argc, char** argv) {
     } else if (const char* np = std::getenv("DH_RIDER_NGP")) {
         const char* co = std::getenv("DH_RIDER_CHAIN");
         std::vector<uint8_t> nraw; rider_mesh::Mesh native;
-        const size_t off = co ? std::strtoull(co, nullptr, 0) : std::numeric_limits<size_t>::max();
+        size_t off = co ? std::strtoull(co, nullptr, 0) : std::numeric_limits<size_t>::max();
+        if (!co) {
+            uint32_t kind = 0;
+            if (const char* rk = std::getenv("DH_RIDER_KIND")) kind = static_cast<uint32_t>(std::strtoul(rk, nullptr, 0));
+            if (readFile(np, nraw)) rider_mesh::findChain(nraw, off, kind);
+        }
         if (off != std::numeric_limits<size_t>::max() && readFile(np, nraw) && rider_mesh::load(nraw, off, native)) {
             riderVerts = native.vertices; riderMesh = gr.createMesh(riderVerts, native.indices, {}, true);
             std::fprintf(stderr, "rider_mesh: cadena 0x%zx, %u posiciones, %zu vertices render, %u paquetes (hipótesis de cadena)\n", off, native.positionCount, native.vertices.size() / 10, native.packetCount);
