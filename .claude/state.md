@@ -14,17 +14,17 @@ H4 piloto en paralelo, en pausa. Plan: `.claude/plans/H3-integrador.md`.
 - H5: C++20 cerrado; colisión nativa 1/8 módulos; cargador nativo de malla del
   piloto 13/13 (último commit; progress.json aún no lo cuenta).
 
-## Pasos 0 y 0b de H3 (hechos)
-- Plan actualizado (criterios aprobados): |Δpos|<=1e-3, |ΔR|<=1e-5, F_z=-m·g rel<=1e-3, |F_xy|<=1e-3·m·g, T_eff≈0 (T_TOL=1.0 provisional); ΔP/ΔL eliminados. g=32.17 y eje +z = hipótesis.
-- `tools/integrator_check.py --assert [--t-tol]` (PASA/FALLA, salida 1) + `tests/test_integrator_check.py`; 76 tests Python OK, guard OK.
-- PINE probado: socket real `/run/user/1000/.flatpak/net.pcsx2.PCSX2/xdg-run/pcsx2.sock`, responde. Backup en `~/backups/dh-sstates-2026-10-03/`.
-- DEFECTO pendiente de OK: `pine_capture.py` sin `--no-launch` resuelve el socket antes de que exista (ver plan, sección PINE).
-- Agente `savestate-validator` carga bien.
+## H3: pasos 1 y 2 hechos (caída libre fabricada); oráculo del plan INADECUADO -> pendiente decisión del usuario
+- Hallazgo: el módulo físico (rider+0x6420) solo se integra en tramos de ~1.2 s (impactos/"GOLPE"; enlace `+0x6428` = nodo); el resto del tiempo el juego mueve el nodo por otra vía. `tools/pcsx2/air_capture.py` espera ese enlace y SUBE el cuerpo (+z) por PINE; el juego integra solo (nodo coherente).
+- Caídas: `~/dh-states/h3/air_r1b.cap` (+1000), `air_r1_L400/L2500.cap`, `air_r5.cap` (rider 5): 50 pasos consecutivos cada una. `air_r1.cap` = intento fallido (poke sobrescrito).
+- `--assert` del plan FALLA en todos (|Δpos| 3.9e-2, |ΔR| 7e-4, F_z, F_xy, T): el supuesto "en el aire F_eff = (0,0,-m·g)" es FALSO. Modelo ajustado (residuo 2e-6): antes de integrar el juego amortigua P *= 1-1.25·dt y L *= 1-0.65·dt; gravedad F=(0,0,-m·96.6) entra en FUN_00238818 (pos y R usan la velocidad/omega ya amortiguadas; P += dt·F después).
+- `tools/integrator_airfit.py`: con ese modelo, 50 pasos: |Δpos| <= 9.7e-4 (suelo float32 = ulp 9.8e-4), |ΔR| 1.7e-7, P/L rel 3e-8..7e-8. Mismas constantes en 2 pilotos y 3 alturas (G=96.6 u/s2: 1 u ≈ 0.1 m, no 1 ft: hipótesis a revisar).
+- Commits: af14d6a, 7766e2c, 55f29e5, fd580bc, 595b415. Sin push. Backup y sstates intactos.
 
 ## Próximas 3 tareas
-1. Con OK del usuario: arreglar `pine_capture.py` (recalcular `default_socket()` en el bucle de espera).
-2. Paso 1: dejar la bici en el aire (slot de caída larga de ALP2) y capturar (`--seconds` corto, `--out` fuera del repo; no sobrescribir slots 2-9 sin backup).
-3. Paso 2: `python3 tools/integrator_check.py <air.cap> --ticks 1 --assert`; recalibrar umbrales; doc-writer + `progress.py`.
+1. Usuario: aprobar rediseñar el oráculo (plan paso 0b): sustituir F_eff/T_eff por el modelo de integrator_airfit (pos<=1e-3 (ulp), R<=1e-5, P/L rel<=1e-6) y marcar c, cL, G como constantes del juego (hipótesis hasta hallarlas en el binario).
+2. Paso 4: docs es/en en `docs/formats/integrator.md` + `docs/progress.json` (doc-writer) y `python3 tools/progress.py`.
+3. Localizar c=125, cL=0.65, G=96.6 en el binario (¿FUN_xxxxxxxx que amortigua antes de FUN_00238818?) y validar con otro estado (jugador al chocar).
 
 ## Hipótesis abiertas (cómo validarlas)
 - Parámetros de `bike.hpp`: comparar contra el integrador fiel con pares en el aire (H3).
