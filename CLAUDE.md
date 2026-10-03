@@ -32,6 +32,7 @@ Progreso: `docs/progress.json` (se regenera con `python3 tools/progress.py`). De
    sin un script de validación ejecutado contra los 54 niveles.
 7. Nada de Gemini ni otras IAs externas: todo con Claude.
 8. Un paso del plan por invocación; el plan debe tener oráculo ejecutable.
+9. Prohibido crear dispositivos virtuales de entrada (uinput/evdev/xdotool/ydotool/wtype) o simular teclado/ratón sin permiso explícito del usuario; ningún script puede robar el foco de su ventana. Las capturas usan PINE con `--no-launch` (PCSX2 ya abierto); lanzar PCSX2 abre una ventana, avisar antes.
 
 ## Flujo
 - `/status` dónde estamos; `/plan-milestone` nuevo plan; `/re-format` hipótesis de formato;
