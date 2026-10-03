@@ -262,9 +262,9 @@ int main(int argc, char** argv) {
     for (bool run = true; run;) {
         for (SDL_Event e; SDL_PollEvent(&e);) {
             if (e.type == SDL_EVENT_QUIT || (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE)) run = false;
-            if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_R && mdl) { ride = !ride; if (ride) { play = false; startRide(); } }   // R: modo bici (demo cinemática)
+            if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_R && mdl) { static bool fromPlay = false; if (!ride) { fromPlay = play; ride = true; play = false; startRide(); } else { ride = false; if (fromPlay) startPlay(); } }   // R: bici automática y de vuelta al modo jugable (antes la segunda R dejaba la cámara libre sin bici)   // R: modo bici (demo cinemática)
             if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_P && mdl) { play = !play; if (play) startPlay(); }   // P: modo jugable
-            if (play && e.type == SDL_EVENT_KEY_DOWN) { if (e.key.key == SDLK_SPACE) hopPressed = true; if (e.key.key == SDLK_T) startPlay(); if (e.key.key == SDLK_RETURN) prun.respawn(); }
+            if (play && e.type == SDL_EVENT_KEY_DOWN) { if (e.key.key == SDLK_SPACE) hopPressed = true; if (e.key.key == SDLK_T) { startPlay(); std::fprintf(stderr, "T: salida (%.0f %.0f %.0f)\n", prun.bike.pos.x, prun.bike.pos.y, prun.bike.pos.z); } if (e.key.key == SDLK_RETURN) { prun.respawn(); std::fprintf(stderr, "Enter: reaparece en (%.0f %.0f %.0f), reapariciones %d\n", prun.bike.pos.x, prun.bike.pos.y, prun.bike.pos.z, (int)prun.respawns); } }
             if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_F && mdl) { walk = !walk; vy = 0; ride = false; play = false; }   // F: volar <-> caminar con gravedad
             if (e.type == SDL_EVENT_MOUSE_MOTION) { yaw += e.motion.xrel * 0.003f; pitch -= e.motion.yrel * 0.003f; }
         }
