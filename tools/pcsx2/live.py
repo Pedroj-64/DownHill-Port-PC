@@ -12,3 +12,6 @@ WR32 = 6   # PINE MsgWrite32
 def wr32(p, addr, v): p.send(struct.pack('<BII', WR32, addr, v & 0xFFFFFFFF))
 def wr_f32(p, addr, f): wr32(p, addr, struct.unpack('<I', struct.pack('<f', f))[0])
 def rider(i): return RIDER_BASE + i * RIDER_STRIDE
+def poke_f32(p, items):
+    """items = [(dirección, float)] -> una sola ráfaga PINE (todas las escrituras seguidas, sin lecturas intermedias)."""
+    p.send(b''.join(struct.pack('<BII', WR32, a, struct.unpack('<I', struct.pack('<f', f))[0]) for a, f in items))
