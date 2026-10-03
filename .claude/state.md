@@ -14,17 +14,16 @@ H4 piloto en paralelo, en pausa. Plan: `.claude/plans/H3-integrador.md`.
 - H5: C++20 cerrado; colisión nativa 1/8 módulos; cargador nativo de malla del
   piloto 13/13 (último commit; progress.json aún no lo cuenta).
 
-## H3: pasos 1 y 2 hechos (caída libre fabricada); oráculo del plan INADECUADO -> pendiente decisión del usuario
-- Hallazgo: el módulo físico (rider+0x6420) solo se integra en tramos de ~1.2 s (impactos/"GOLPE"; enlace `+0x6428` = nodo); el resto del tiempo el juego mueve el nodo por otra vía. `tools/pcsx2/air_capture.py` espera ese enlace y SUBE el cuerpo (+z) por PINE; el juego integra solo (nodo coherente).
-- Caídas: `~/dh-states/h3/air_r1b.cap` (+1000), `air_r1_L400/L2500.cap`, `air_r5.cap` (rider 5): 50 pasos consecutivos cada una. `air_r1.cap` = intento fallido (poke sobrescrito).
-- `--assert` del plan FALLA en todos (|Δpos| 3.9e-2, |ΔR| 7e-4, F_z, F_xy, T): el supuesto "en el aire F_eff = (0,0,-m·g)" es FALSO. Modelo ajustado (residuo 2e-6): antes de integrar el juego amortigua P *= 1-1.25·dt y L *= 1-0.65·dt; gravedad F=(0,0,-m·96.6) entra en FUN_00238818 (pos y R usan la velocidad/omega ya amortiguadas; P += dt·F después).
-- `tools/integrator_airfit.py`: con ese modelo, 50 pasos: |Δpos| <= 9.7e-4 (suelo float32 = ulp 9.8e-4), |ΔR| 1.7e-7, P/L rel 3e-8..7e-8. Mismas constantes en 2 pilotos y 3 alturas (G=96.6 u/s2: 1 u ≈ 0.1 m, no 1 ft: hipótesis a revisar).
-- Commits: af14d6a, 7766e2c, 55f29e5, fd580bc, 595b415. Sin push. Backup y sstates intactos.
+## H3: oráculo de dos niveles hecho; falta procedencia de G y paso 4 cerrado (docs)
+- Oráculo rediseñado (plan actualizado): `integrator_check.py <cap> --rider N --assert [--eval otra.cap --eval-rider M]` = `integrator_airfit.py`. Nivel modelo: umbrales 3×suelo float32 (pos 2.93e-3; R,P,L 3.58e-7); validación cruzada r1<->r5 PASA (<=1.0 ulp pos, R 1.4-1.7e-7), también con ω y v laterales escritas.
+- Procedencia: c, cL = `módulo+0x120` (0.975) / `+0x11C` (0.987), confirmado escribiendo (c=2.5, cL=5.0). G=96.600±1e-4 NO localizada: 3×32.17 rechazada (~900σ), 98.1 rechazada, `módulo+0x124`=3.0 NO es el multiplicador; única `32.2f` en código: 0x136374 (fn 0x13634C), hipótesis sin probar. Todo "ajuste empírico", NO validado; contador de funciones sin cambios (progress.json: nota "Parcial").
+- Regla nueva (CLAUDE.md 9): sin uinput/evdev ni robar foco sin permiso. Capturas en `~/dh-states/h3/` (air_*.cap, prov_*.cap). Backup y sstates intactos.
+- Commits: ebda174 d643d81 cce18e4 690062a 8f67e2f (+ anteriores). Sin push.
 
 ## Próximas 3 tareas
-1. Usuario: aprobar rediseñar el oráculo (plan paso 0b): sustituir F_eff/T_eff por el modelo de integrator_airfit (pos<=1e-3 (ulp), R<=1e-5, P/L rel<=1e-6) y marcar c, cL, G como constantes del juego (hipótesis hasta hallarlas en el binario).
-2. Paso 4: docs es/en en `docs/formats/integrator.md` + `docs/progress.json` (doc-writer) y `python3 tools/progress.py`.
-3. Localizar c=125, cL=0.65, G=96.6 en el binario (¿FUN_xxxxxxxx que amortigua antes de FUN_00238818?) y validar con otro estado (jugador al chocar).
+1. Localizar G: probar escribiendo candidatas (global 0x77A758, campos `+0x418/+0x150` del objeto de 0x13634C) y ver si G del ajuste cambia; luego citar la FUN_xxxxxxxx.
+2. Localizar la función que aplica los factores `+0x11C/+0x120` (escritura/lectura en RAM o desensamblado) y su orden respecto a FUN_00238818.
+3. Con ambos niveles: marcar validada la función en progress.json (doc-writer + progress.py) y validar con otro caso (jugador al chocar).
 
 ## Hipótesis abiertas (cómo validarlas)
 - Parámetros de `bike.hpp`: comparar contra el integrador fiel con pares en el aire (H3).

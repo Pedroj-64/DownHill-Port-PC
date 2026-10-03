@@ -3,16 +3,12 @@
 ## Objetivo
 Demostrar que `src/integrator_fidel.hpp` (`FUN_00238818`) reproduce el integrador del juego, con >=1 función validada contra savestates reales.
 
-## Oráculo ejecutable
-- Datos: >=3 pares de savestates consecutivos (1 tick = 1/50 s) con la bici en el aire, capturados por PINE: `python3 tools/pcsx2/pine_capture.py --out <dir> [--slot --seconds --no-launch]`.
-- Comando: `python3 tools/integrator_check.py <estado_a> <estado_b> --ticks 1`.
-- Comando con veredicto: `python3 tools/integrator_check.py <a> <b> --ticks 1 --assert` (o `<captura.cap> --assert`): PASA/FALLA por criterio, salida != 0 si falla (jugador, solo tramos en el aire).
-- Criterio de aceptación (aprobado tras el paso 0; float32, tick = 1/50 s): por par, |Δpos| <= 1e-3 u; máx |ΔR_ij| <= 1e-5; F_eff = (P1-P0)/dt con F_z = -m·g (error relativo <= 1e-3) y |F_xy| <= 1e-3·m·g; |T_eff| ≈ 0 (`T_TOL` = 1.0, provisional).
-  - m = 100 (invM = 0.01) y 1 u = 1 ft: medidos, `integrator.md` y `docs/p2s-savestates.md`. g = 32.17 u/s² y eje de subida = +z: **hipótesis** (derivadas de 1 u = 1 ft; `integrator.md` solo las "espera").
-  - ΔP/ΔL relativos eliminados: vacuos (`integrator_check.py` infiere F y T de ΔP y ΔL, así que P y L coinciden por construcción).
-  - Un residuo sistemático en F_eff o T_eff NO es fallo automático: dispara el paso 3 (diagnóstico por sub-función).
-  - Estos umbrales se recalibran con los primeros pares reales.
-- Sin pares válidos no hay veredicto: el plan no se cierra.
+## Oráculo ejecutable (rediseñado 2026-10-03: el criterio F_eff=(0,0,-m·g) era falso; ver `docs/formats/integrator.md`)
+- Datos: capturas en caída libre de `python3 tools/pcsx2/air_capture.py --rider N --lift 1000 [--omega x y z] [--vel x y z] --out <cap>` (PCSX2 abierto con PINE; el cuerpo solo se integra en ventanas de ~1.2 s), fuera del repo (`~/dh-states/h3/`). 50 ticks consecutivos (1/50 s) por captura.
+- Comando: `python3 tools/integrator_check.py <cap> --rider N --assert [--eval <otra.cap> --eval-rider M]` (= `tools/integrator_airfit.py`). Salida 1 si falla el nivel modelo.
+- Nivel modelo: modelo `P*=1-c·dt, L*=1-cL·dt, FUN_00238818(F=(0,0,-m·G))`; residuos de |Δpos|, |ΔR|, P y L relativos <= 3 × suelo float32 (pos: ulp del mayor |pos|; R, P, L: ulp(1.0)). Validación cruzada obligatoria (ajustar con una captura, evaluar con otra).
+- Nivel procedencia: c, cL, G deben localizarse (RAM/binario). Estado: c, cL = campos `módulo+0x120/0x11C` (confirmado por escritura); G sin localizar (hipótesis A: 3×32.2; B: 3×32.17 rechazada por los datos). Hasta entonces: "ajuste empírico", NO validado.
+- Sin ambos niveles no se cierra el plan; el contador de funciones validadas no sube.
 
 ## Pasos (uno por invocación)
 0. (hecho) Contraste: leer `docs/formats/integrator.md`, corregir el criterio de este plan y probar `pine_capture.py --help` / `integrator_check.py --help`. Archivos permitidos: este plan. Verificación: criterio final anotado aquí.
