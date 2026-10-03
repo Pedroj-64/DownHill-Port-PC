@@ -123,37 +123,41 @@ int main(int argc, char** argv) {
             std::vector<gfx::TextureId> tids; for (auto& t : rm.texs) tids.push_back(gr.createTexture({t.w, t.h, t.px}));
             riderVerts = rm.mv; riderBind.resize(riderSkin.size() * 3); for (size_t i = 0; i < riderSkin.size(); i++) for (int c = 0; c < 3; c++) riderBind[3*i+c] = rm.mv[10*i+c];
             riderMesh = gr.createMesh(riderVerts, rm.mi, tids, true);
-            if (const char* pp = std::getenv("DH_RIDER_POSE")) {
-                riderApprox = !std::strcmp(pp, "approx");
-                if (riderApprox) {
-                    if (const char* cad = std::getenv("DH_RIDER_CADENCE")) { riderCadence = std::fmax(0.f, (float)std::atof(cad)); riderCadenceExplicit = true; }
-                    std::fprintf(stderr, "rider pose: approx (HIPÓTESIS; cadencia %.3f rad/s, solver no es la pose del juego)\n", riderCadence);
-                    // La pelvis y el torso se optimizan UNA vez (fase 0) y se fijan; por fotograma sólo se resuelven las extremidades (antes: ~0.1 s/fotograma y la pelvis saltaba).
-                    // DH_RIDER_AT está en el marco de la bici ensamblada (Y arriba, adelante -Z); el solver trabaja en el marco del modelo (X der., Y adelante, Z arriba).
-                    const auto first = rider::approxPose(riderSk, 0.f, {riderAt[0], -riderAt[2], riderAt[1]}, riderCadence, true);
-                    riderPelvisZ = first.pelvis; riderPelvisRot = first.pelvisRotation; riderTorso = {first.pose[6], first.pose[7], first.pose[8]};
-                    std::fprintf(stderr, "rider approx: pelvis=(%.2f %.2f %.2f) errores máx. de la fase 0: %.3f %.3f %.3f %.3f u\n", riderPelvisZ[0], riderPelvisZ[1], riderPelvisZ[2], first.errors[0], first.errors[1], first.errors[2], first.errors[3]);
-                } else {
-                    std::vector<uint8_t> pr; if (readFile(pp, pr)) { std::string txt(pr.begin(), pr.end()); const char* c = txt.c_str(); for (size_t i = 0; i < riderPose.size(); i++) { char* e; float v = std::strtof(c, &e); if (e == c) break; riderPose[i] = v; c = e; } }
-                }
-            }
-            if (const char* at = std::getenv("DH_RIDER_AT")) std::sscanf(at, "%f %f %f", &riderAt[0], &riderAt[1], &riderAt[2]);
         } else std::fprintf(stderr, "aviso: DH_RIDER/_SKIN/_NGP/_ROOT no válidos (mdl %d skin %d ngp %d esqueleto %d vértices %zu/%zu), se ignora el piloto\n", !raw.empty(), !riderSkin.empty(), !nraw.empty(), (int)riderSk.j.size(), riderSkin.size(), rm.mv.size() / 10);
-    } else if (const char* np = std::getenv("DH_RIDER_NGP")) {
+    } else if (const char* np = std::getenv("DH_RIDER_NGP")) {      // carga nativa: sólo el NGP del nivel (sin Python); DH_RIDER_KIND=4090 elige el modelo, DH_RIDER_CHAIN fuerza el inicio de la cadena
         const char* co = std::getenv("DH_RIDER_CHAIN");
-        std::vector<uint8_t> nraw; rider_mesh::Mesh native;
-        size_t off = co ? std::strtoull(co, nullptr, 0) : std::numeric_limits<size_t>::max();
-        if (!co) {
-            uint32_t kind = 0;
-            if (const char* rk = std::getenv("DH_RIDER_KIND")) kind = static_cast<uint32_t>(std::strtoul(rk, nullptr, 0));
-            if (readFile(np, nraw)) rider_mesh::findChain(nraw, off, kind);
+        std::vector<uint8_t> nraw; rider_mesh::Mesh native; const size_t none = std::numeric_limits<size_t>::max();
+        size_t off = co ? std::strtoull(co, nullptr, 0) : none, end = none, skRoot = none;
+        if (readFile(np, nraw)) {
+            if (!co) { uint32_t kind = 0; if (const char* rk = std::getenv("DH_RIDER_KIND")) kind = static_cast<uint32_t>(std::strtoul(rk, nullptr, 0)); rider_mesh::findChain(nraw, off, kind, &end, &skRoot); }
+            if (const char* rt = std::getenv("DH_RIDER_ROOT")) skRoot = std::strtoul(rt, nullptr, 0);
+            const bool ok = off != none && (end != none ? rider_mesh::loadRange(nraw, off, end, native) : rider_mesh::load(nraw, off, native));
+            if (ok) {
+                riderVerts = native.vertices; riderMesh = gr.createMesh(riderVerts, native.indices, {}, true);   // sin texturas: la decodificación de texturas es del hito 5 (docs/formats/rider.md)
+                if (skRoot != none && riderSk.load(nraw, skRoot) && native.boneIds.size() == 3 * (riderVerts.size() / 10)) {   // piel y esqueleto nativos
+                    const size_t nv = riderVerts.size() / 10; riderSkin.resize(nv); riderBind.resize(3 * nv);
+                    for (size_t i = 0; i < nv; i++) { for (int k = 0; k < 3; k++) { riderSkin[i].bone[k] = native.boneIds[3*i+k]; riderSkin[i].w[k] = native.weights[3*i+k]; riderBind[3*i+k] = riderVerts[10*i+k]; } }
+                }
+                std::fprintf(stderr, "rider_mesh: cadena 0x%zx..0x%zx, %u posiciones, %zu vértices, %u paquetes, esqueleto %s (sin texturas)\n", off, end, native.positionCount, riderVerts.size() / 10, native.packetCount, riderSk.j.empty() ? "no" : "sí");
+            } else std::fprintf(stderr, "aviso: DH_RIDER_NGP/KIND/CHAIN no válidos; se ignora el piloto nativo\n");
+        } else std::fprintf(stderr, "aviso: no se pudo leer DH_RIDER_NGP\n");
+    }
+    if (riderMesh >= 0) {   // pose y colocación comunes a la ruta con .mdl y a la nativa
+        if (const char* pp = std::getenv("DH_RIDER_POSE")) {
+            riderApprox = !std::strcmp(pp, "approx");
+            if (riderApprox) {
+                if (const char* cad = std::getenv("DH_RIDER_CADENCE")) { riderCadence = std::fmax(0.f, (float)std::atof(cad)); riderCadenceExplicit = true; }
+                std::fprintf(stderr, "rider pose: approx (HIPÓTESIS; cadencia %.3f rad/s, solver no es la pose del juego)\n", riderCadence);
+                // La pelvis y el torso se optimizan UNA vez (fase 0) y se fijan; por fotograma sólo se resuelven las extremidades (antes: ~0.1 s/fotograma y la pelvis saltaba).
+                // DH_RIDER_AT está en el marco de la bici ensamblada (Y arriba, adelante -Z); el solver trabaja en el marco del modelo (X der., Y adelante, Z arriba).
+                const auto first = rider::approxPose(riderSk, 0.f, {riderAt[0], -riderAt[2], riderAt[1]}, riderCadence, true);
+                riderPelvisZ = first.pelvis; riderPelvisRot = first.pelvisRotation; riderTorso = {first.pose[6], first.pose[7], first.pose[8]};
+                std::fprintf(stderr, "rider approx: pelvis=(%.2f %.2f %.2f) errores máx. de la fase 0: %.3f %.3f %.3f %.3f u\n", riderPelvisZ[0], riderPelvisZ[1], riderPelvisZ[2], first.errors[0], first.errors[1], first.errors[2], first.errors[3]);
+            } else {
+                std::vector<uint8_t> pr; if (readFile(pp, pr)) { std::string txt(pr.begin(), pr.end()); const char* c = txt.c_str(); for (size_t i = 0; i < riderPose.size(); i++) { char* e; float v = std::strtof(c, &e); if (e == c) break; riderPose[i] = v; c = e; } }
+            }
         }
-        if (off != std::numeric_limits<size_t>::max() && readFile(np, nraw) && rider_mesh::load(nraw, off, native)) {
-            riderVerts = native.vertices; riderMesh = gr.createMesh(riderVerts, native.indices, {}, true);
-            std::fprintf(stderr, "rider_mesh: cadena 0x%zx, %u posiciones, %zu vertices render, %u paquetes (hipótesis de cadena)\n", off, native.positionCount, native.vertices.size() / 10, native.packetCount);
-        } else {
-            std::fprintf(stderr, "aviso: DH_RIDER_NGP/DH_RIDER_CHAIN no válidos; se ignora el piloto nativo\n");
-        }
+        if (const char* at = std::getenv("DH_RIDER_AT")) std::sscanf(at, "%f %f %f", &riderAt[0], &riderAt[1], &riderAt[2]);
     }
     SDL_SetWindowRelativeMouseMode(w, true);
     float px = v.empty() ? 0.f : v[0], py = v.empty() ? 0.f : v[1] + (mdl ? 0.f : 300.f), pz = v.empty() ? 0.f : v[2] + (mdl ? 8.f : 0.f), yaw = 0, pitch = mdl ? 0.f : -0.4f;

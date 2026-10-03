@@ -234,14 +234,15 @@ inline bool load(const std::vector<uint8_t>& data, size_t chainOffset, Mesh& out
 
 // Recorrido verificado en tools/export_riders.py: nodo tipo 25 -> grupo en +0x2c
 // -> selector tipo 2 -> menor cadena VIF. El kind opcional evita elegir otro rider.
-inline bool findChain(const std::vector<uint8_t>& data, size_t& chainOffset, uint32_t wantedKind = 0) {
+// Devuelve el inicio de la cadena VIF; opcionalmente su fin (el nodo selector que la sigue) y la raíz del esqueleto (el hijo tipo 35 del grupo).
+inline bool findChain(const std::vector<uint8_t>& data, size_t& chainOffset, uint32_t wantedKind = 0, size_t* chainEnd = nullptr, size_t* skeletonRoot = nullptr) {
     Reader r(data);
     for (size_t node = 0; node + 0x30 <= data.size(); node += 4) {
         const uint32_t head = r.u32(node);
         if ((head & 0x3f) != 25 || (wantedKind && (head >> 18) != wantedKind)) continue;
         size_t group;
         if (!r.range(node + 0x2c, 4) || !r.ptr(node + 0x2c, group) || !r.range(group, 0x24) || (r.u32(group) & 0x3f) != 1) continue;
-        const uint32_t children = r.u32(group + 8);
+        const uint32_t children = r.u16(group + 8);   // u16: la mitad alta de la palabra es la máscara de visibilidad
         if (children > 64 || !r.range(group + 0x20, static_cast<size_t>(children) * 4)) continue;
         for (uint32_t i = 0; i < children; ++i) {
             size_t selector;
@@ -253,7 +254,11 @@ inline bool findChain(const std::vector<uint8_t>& data, size_t& chainOffset, uin
                 size_t chain;
                 if (r.ptr(selector + 0x28 + 8u * k, chain)) best = std::min(best, chain);
             }
-            if (best < selector) { chainOffset = best; return true; }
+            if (best < selector) {
+                chainOffset = best; if (chainEnd) *chainEnd = selector;
+                if (skeletonRoot) { *skeletonRoot = std::numeric_limits<size_t>::max(); for (uint32_t c = 0; c < children; ++c) { size_t q; if (r.ptr(group + 0x20 + 4u * c, q) && (r.u32(q) & 0x3f) == 35) { *skeletonRoot = q; break; } } }
+                return true;
+            }
         }
     }
     return false;

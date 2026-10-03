@@ -49,3 +49,6 @@ extractor for all 13 ALP2 rider ranges. Pixel decoding (GS swizzle and CLUT)
 is still deferred; the viewer may continue loading textures from Python-
 generated `.mdl` files.
 The path is opt-in and experimental, not the game's live pose or renderer.
+
+## Native viewer path (2026-10-02) / ruta nativa del visor
+`DH_RIDER_NGP=<level.NGP> DH_RIDER_KIND=4090` (no Python, no `.mdl`): `rider_mesh::findChain` walks type-25 node → `+0x2c` group (child count is the **u16** at `+8`; its high half is the visibility mask, reading it as u32 made every real node fail) → selector → chain, and also returns the chain end (the selector) and the skeleton root (the type-35 child); the mesh is read with `loadRange(chain, selector)` (the old `load(chain)` ran past the model: 5198 positions instead of 504 for 4090). Skin ids/weights and the skeleton come from the same NGP, so `DH_RIDER_POSE=approx` works without Python; the result is silhouette-identical to the `.mdl` path (checked against the viewer render). Textures are not decoded natively yet (rider drawn untextured), see above.
