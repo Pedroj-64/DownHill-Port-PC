@@ -36,11 +36,14 @@ Leg channels and the pelvis/root translation source; attachment of the rider to 
 
 ## Native loader (experimental)
 `src/rider_mesh.hpp` provides a bounds-checked reader for a rider VIF chain when
-`DH_RIDER_NGP` names the NGP and `DH_RIDER_CHAIN` is the file offset of its
-`V4-32` position block. It decodes the following `V3-8` normals and the GIF
+`DH_RIDER_NGP` names the NGP. `DH_RIDER_CHAIN` remains an explicit file-offset
+override; without it, `findChain()` follows the verified type-25 -> `+0x2c`
+group -> type-2 selector -> chain-pointer traversal. `DH_RIDER_KIND` can
+restrict automatic discovery to one node kind. It decodes the following `V3-8` normals and the GIF
 batch stream (`S-8`, `V4-5`, `V2-16`, `MSCNT`) into the ten-float `.mdl`
 vertex layout, triangle indices, and the three packed skin ids/weights.
-`DH_RIDER_NGP` is an opt-in viewer path and does not claim to locate the game's
-chain automatically; the chain offset remains an explicit input (hypothesis
-until matched against an ALP2 dump). The current repository has no
-`unpacked/LVL/ALP2.NGP`, so real-model vertex-for-vertex validation is skipped.
+`batchMaterial` preserves the per-batch TEX0 selector word. Mapping that word
+through the level `.PTR/.TEX/.RTX` tables to the extractor's final compact
+texture index is still pending; the native parity gate therefore compares
+geometry, skin, and triangle topology separately from texture remapping.
+The path is opt-in and experimental, not the game's live pose or renderer.
