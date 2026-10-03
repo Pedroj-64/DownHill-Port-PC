@@ -1,0 +1,52 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(git push:*)",
+      "Read(./.env)",
+      "Read(./**/.env)",
+      "Read(./*.iso)",
+      "Read(./*.tar.xz)",
+      "Read(./iso_extract/**)",
+      "Read(./unpacked/**)",
+      "Read(./ghidra_projects/**)",
+      "Edit(./*.iso)",
+      "Edit(./*.tar.xz)",
+      "Edit(./iso_extract/**)",
+      "Edit(./unpacked/**)",
+      "Edit(./ghidra_projects/**)",
+      "Edit(./decomp/**)",
+      "Write(./*.iso)",
+      "Write(./*.tar.xz)",
+      "Write(./iso_extract/**)",
+      "Write(./unpacked/**)",
+      "Write(./ghidra_projects/**)",
+      "Write(./decomp/**)"
+    ],
+    "allow": [
+      "Bash(cmake --build build*)",
+      "Bash(cmake -S . -B build*)",
+      "Bash(ctest --test-dir build*)",
+      "Bash(python3 -m unittest*)",
+      "Bash(sh tools/guard.sh)",
+      "Bash(python3 tools/progress.py)",
+      "Bash(python3 tools/integrator_check.py*)",
+      "Bash(python3 tools/dh.py doctor)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/block_game_data.py\""
+          }
+        ]
+      }
+    ]
+  }
+}
