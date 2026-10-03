@@ -27,6 +27,30 @@ struct Mesh {
     std::vector<uint32_t> batchMaterial; // palabra TEX0/selector del lote
 };
 
+struct TextureResolver {
+    struct Material { size_t offset; uint16_t id; uint32_t cbp; bool decodable; };
+    std::vector<Material> materials;
+    mutable std::vector<std::pair<uint16_t, uint32_t>> firstKeys;
+
+    int resolveGroup(uint32_t selector, size_t begin, size_t end, int inherited) const {
+        std::vector<const Material*> group;
+        for (const Material& material : materials)
+            if (begin <= material.offset && material.offset < end) group.push_back(&material);
+        if (group.empty()) return inherited;
+        size_t slot = 0;
+        if (selector) slot = static_cast<size_t>(std::countr_zero(selector) / 2);
+        const Material& material = *group[std::min(slot, group.size() - 1)];
+        if (!material.decodable) return -1;
+        const auto key = std::make_pair(material.id, material.cbp);
+        auto it = std::find(firstKeys.begin(), firstKeys.end(), key);
+        if (it == firstKeys.end()) {
+            firstKeys.push_back(key);
+            return static_cast<int>(firstKeys.size() - 1);
+        }
+        return static_cast<int>(it - firstKeys.begin());
+    }
+};
+
 class Reader {
     const std::vector<uint8_t>& d_;
 public:
@@ -118,10 +142,12 @@ inline void addVertex(Mesh& out, const Reader& r, size_t pos, size_t color, size
 
 // Carga una cadena rider a partir de un offset que apunta al V4-32 de posiciones.
 // `chainOffset` y todos los offsets internos son offsets de archivo, no punteros EE.
-inline bool loadRange(const std::vector<uint8_t>& data, size_t rangeBegin, size_t rangeEnd, Mesh& out) {
+inline bool loadRange(const std::vector<uint8_t>& data, size_t rangeBegin, size_t rangeEnd, Mesh& out,
+                      const TextureResolver* textures = nullptr) {
     out = Mesh(); Reader r(data); if (rangeBegin > rangeEnd || rangeEnd > data.size()) return false;
     const bool trace = std::getenv("DH_RIDER_TRACE") != nullptr;
-    size_t scan = rangeBegin;
+    size_t scan = rangeBegin, previousEnd = rangeBegin;
+    int inheritedTex = -1;
     while (scan < rangeEnd) {
         Unpack pos;
         if (!unpack(r, scan, pos) || (pos.cmd & 0xf) != 0xc || pos.count < 16 ||
@@ -136,7 +162,8 @@ inline bool loadRange(const std::vector<uint8_t>& data, size_t rangeBegin, size_
             ids[i] = {static_cast<uint8_t>((x & 127u) >> 2), static_cast<uint8_t>((y & 127u) >> 2), static_cast<uint8_t>((z & 127u) >> 2)};
             weights[i] = {w, w2, 1.0f - w - w2};
         }
-        size_t vertexPos = scan + 4, color = 0, uv = 0; uint32_t hdr = 0, material = 0; int tex = 0; bool haveBatch = false;
+        size_t vertexPos = scan + 4, color = 0, uv = 0; uint32_t hdr = 0, material = 0; int tex = textures ? textures->resolveGroup(0, previousEnd, scan, inheritedTex) : 0; bool haveBatch = false;
+        inheritedTex = tex;
         std::vector<uint8_t> strip; std::vector<bool> adc;
         while (o < rangeEnd) {
         Unpack u;
@@ -147,7 +174,7 @@ inline bool loadRange(const std::vector<uint8_t>& data, size_t rangeBegin, size_
                 hdr = u.imm & 0x3ff;
                 if (r.range(o + 16, 4)) {
                     material = r.u32(o + 16); haveBatch = true;
-                    if (material) tex = static_cast<int>(std::countr_zero(material) / 2);
+                    tex = textures ? textures->resolveGroup(material, previousEnd, scan, tex) : (material ? static_cast<int>(std::countr_zero(material) / 2) : 0);
                 }
             }
             else if (op == 0x2 && u.count >= 3 && strip.empty()) strip.assign(r.bytes(o + 4), r.bytes(o + 4 + u.count));
@@ -194,13 +221,15 @@ inline bool loadRange(const std::vector<uint8_t>& data, size_t rangeBegin, size_
         }
         o += size;
         }
+        previousEnd = scan + 4 + pos.payload + 4 + normal.payload;
         scan = o > scan ? o : scan + 4;
     }
     return !out.vertices.empty() && out.indices.size() == out.vertices.size() / 10;
 }
 
-inline bool load(const std::vector<uint8_t>& data, size_t chainOffset, Mesh& out) {
-    return loadRange(data, chainOffset, data.size(), out);
+inline bool load(const std::vector<uint8_t>& data, size_t chainOffset, Mesh& out,
+                 const TextureResolver* textures = nullptr) {
+    return loadRange(data, chainOffset, data.size(), out, textures);
 }
 
 // Recorrido verificado en tools/export_riders.py: nodo tipo 25 -> grupo en +0x2c

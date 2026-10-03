@@ -24,31 +24,33 @@ static bool readFile(const fs::path& p, std::vector<uint8_t>& d) {
     std::ifstream f(p, std::ios::binary); if (!f) return false;
     d.assign(std::istreambuf_iterator<char>(f), {}); return true;
 }
+static bool read64(const std::vector<uint8_t>& d, size_t o, uint64_t& v) {
+    if (o + 8 > d.size()) return false; std::memcpy(&v, d.data() + o, 8); return true;
+}
 static bool buildTextureResolver(const fs::path& base, const std::vector<uint8_t>& ngp, rider_mesh::TextureResolver& out) {
     std::vector<uint8_t> ptrData, texData, rtxData;
     if (!readFile(base.string() + ".PTR", ptrData) || !readFile(base.string() + ".TEX", texData) || !readFile(base.string() + ".RTX", rtxData)) return false;
+    std::map<uint16_t, bool> texIds; std::map<uint32_t, bool> clutIds;
     if (ptrData.size() < 4) return false;
     const uint32_t n0 = u32(ptrData, 0);
     if (n0 > (ptrData.size() - 4) / 4) return false;
-    const size_t q = 4 + static_cast<size_t>(n0) * 4;
-    if (q + 4 > ptrData.size()) return false;
-    const uint32_t nt = u32(ptrData, q);
-    if (nt > (ptrData.size() - q - 4) / 8) return false;
-    const size_t texRefs = q + 4, tex0Count = texRefs + 4u * nt;
+    size_t off = 4 + static_cast<size_t>(n0) * 4;
+    if (off + 4 > ptrData.size()) return false;
+    const uint32_t nt = u32(ptrData, off);
+    if (nt > (ptrData.size() - off - 4) / 4) return false;
+    const size_t texRefs = off + 4, tex0Count = texRefs + 4u * nt;
     if (tex0Count + 4 > ptrData.size()) return false;
     const uint32_t nc = u32(ptrData, tex0Count);
     if (nc != nt || nc > (ptrData.size() - tex0Count - 4) / 4) return false;
     const size_t tex0Refs = tex0Count + 4;
-    std::map<uint16_t, bool> texIds;
     for (size_t p = static_cast<size_t>(u32(texData, 4)) * 16; p + 16 <= texData.size();) {
         const uint32_t next = u32(texData, p), id = u32(texData, p + 8);
-        texIds[static_cast<uint16_t>(id)] = true;
+        texIds[static_cast<uint16_t>(id & 0xffffu)] = true;
         if (!next) break;
         const size_t step = static_cast<size_t>(next & ~3u) * 4;
         if (!step || p > texData.size() - step) break;
         p += step;
     }
-    std::map<uint32_t, bool> clutIds;
     for (size_t p = 0; p + 16 <= rtxData.size();) {
         const uint32_t next = u32(rtxData, p), id = u32(rtxData, p + 8);
         clutIds[id >> 16] = true;
@@ -59,14 +61,12 @@ static bool buildTextureResolver(const fs::path& base, const std::vector<uint8_t
     }
     for (uint32_t i = 0; i < nt; ++i) {
         const uint32_t texRef = u32(ptrData, texRefs + 4u * i), tex0Ref = u32(ptrData, tex0Refs + 4u * i);
-        if (texRef + 2 > ptrData.size() || tex0Ref + 8 > ngp.size()) return false;
-        uint64_t tex0; std::memcpy(&tex0, ngp.data() + tex0Ref, 8);
-        const uint16_t id = u16(ptrData, texRef);
+        if (texRef + 2 > ngp.size() || tex0Ref + 8 > ngp.size()) return false;
+        uint64_t tex0; if (!read64(ngp, tex0Ref, tex0)) return false;
+        const uint16_t id = u16(ngp, texRef);
         const uint32_t psm = static_cast<uint32_t>((tex0 >> 20) & 63u), cbp = static_cast<uint32_t>((tex0 >> 37) & 0x3fffu);
         const bool decodable = (psm == 0x13 || psm == 0x14 || psm == 0x1b) && texIds.count(id) && clutIds.count(cbp);
-        out.materials.push_back({id, cbp, decodable});
-        const auto key = std::make_pair(id, cbp);
-        if (decodable && std::find(out.firstKeys.begin(), out.firstKeys.end(), key) == out.firstKeys.end()) out.firstKeys.push_back(key);
+        out.materials.push_back({tex0Ref, id, cbp, decodable});
     }
     return true;
 }
@@ -142,8 +142,8 @@ int main(int argc, char** argv) {
         const std::string command = "DH_RANGE=" + std::to_string(ref.lo) + "," + std::to_string(ref.hi) + " DH_SKIN=" + skin.string() +
             " python3 " + (root / "tools/extract_model.py").string() + " " + base.string() + " " + mdl.string() + " >/dev/null";
         if (std::system(command.c_str()) != 0) { std::fprintf(stderr, "%u python extractor failed\n", ref.kind); ++failed; continue; }
-        RefMesh py; rider_mesh::Mesh native;
-        const bool mdlOk = readMdl(mdl, py), skinOk = mdlOk && readSkin(skin, py), nativeOk = skinOk && rider_mesh::loadRange(ngp, ref.lo, ref.hi, native, &textures);
+        RefMesh py; rider_mesh::Mesh native; rider_mesh::TextureResolver modelTextures = textures;
+        const bool mdlOk = readMdl(mdl, py), skinOk = mdlOk && readSkin(skin, py), nativeOk = skinOk && rider_mesh::loadRange(ngp, ref.lo, ref.hi, native, &modelTextures);
         const bool ok = mdlOk && skinOk && nativeOk;
         if (!ok) std::fprintf(stderr, "%u status mdl=%d skin=%d native=%d range=%zx..%zx\n", ref.kind, mdlOk, skinOk, nativeOk, ref.lo, ref.hi);
         if (!ok) { std::fprintf(stderr, "%u parse failed\n", ref.kind); ++failed; continue; }
