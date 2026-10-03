@@ -35,6 +35,28 @@ def wait_socket(timeout=90, resolve=None, poll=0.5):
         time.sleep(poll)
     return sock
 
+def record(p, out_path, riders, seconds, sync_rider=None, t0=None):
+    """Muestrea la RAM de PCSX2 (ya con el estado cargado) cada paso de física y escribe un .cap. sync_rider: piloto cuya posición de cuerpo marca el paso (None = nodo del jugador, como antes)."""
+    t0 = t0 or time.time()
+    n = struct.unpack('<I', p.read_windows([(RIDER_COUNT_ADDR, 8)])[0][:4])[0]; print('pilotos:', n)
+    n = check_riders(n, riders)
+    # punteros fijos (nodo del cuerpo) una vez
+    ptrs = p.read_windows([(RIDER_BASE + i * RIDER_STRIDE + 0x7928, 8) for i in range(n)])
+    nodes = [struct.unpack_from('<I', b, 4)[0] for b in ptrs]
+    windows = [(RIDER_COUNT_ADDR, 8)] + [(RIDER_BASE + i * RIDER_STRIDE + 0x7928, 8) for i in range(n)] + [(RIDER_BASE + i * RIDER_STRIDE + 0x7A58, 8) for i in range(n)] \
+              + [(nd, 0x70) for nd in nodes] + [(RIDER_BASE + i * RIDER_STRIDE + PHYS_OFF, 0x1E0) for i in range(n)] + [HITS]
+    out = open(out_path, 'wb'); out.write(MAGIC + struct.pack('<II', len(windows), 0)); [out.write(struct.pack('<II', w[0], w[1])) for w in windows]
+    cw = (nodes[0] + 0x10, 16) if sync_rider is None else (RIDER_BASE + sync_rider * RIDER_STRIDE + PHYS_OFF + 0x60, 16)   # sincronía: nodo del jugador (por defecto) o cuerpo del piloto indicado (momento lineal P): cambia en cada paso de física
+    last = None; frames = 0; t_end = time.time() + seconds; torn = 0
+    while time.time() < t_end:
+        c1 = p.read_windows([cw])[0]
+        if c1 == last: time.sleep(0.001); continue                         # esperar un nuevo paso de física
+        data = p.read_windows(windows); c2 = p.read_windows([cw])[0]
+        if c2 != c1: torn += 1; last = c2; continue                        # la RAM cambió durante la lectura: descartar la muestra
+        last = c1; out.write(struct.pack('<dI', time.time() - t0, sum(len(d) for d in data))); [out.write(d) for d in data]; frames += 1
+    out.close(); print(f'{frames} muestras ({torn} descartadas por lectura partida) -> {out_path}')
+    return frames
+
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--iso'); ap.add_argument('--slot', type=int, default=1); ap.add_argument('--seconds', type=float, default=30); ap.add_argument('--out', required=True)
     ap.add_argument('--no-launch', action='store_true', help='PCSX2 ya está abierto con PINE activo'); ap.add_argument('--riders', type=int, default=6); a = ap.parse_args()
@@ -50,23 +72,7 @@ def main():
         except Exception: pass
         time.sleep(0.5)
     print('juego:', p.game_id(), p.title()); time.sleep(2); p.load_state(a.slot); print(f'savestate slot {a.slot} cargado'); time.sleep(1.5)
-    n = struct.unpack('<I', p.read_windows([(RIDER_COUNT_ADDR, 8)])[0][:4])[0]; print('pilotos:', n)
-    n = check_riders(n, a.riders)
-    # punteros fijos (nodo del cuerpo) una vez
-    ptrs = p.read_windows([(RIDER_BASE + i * RIDER_STRIDE + 0x7928, 8) for i in range(n)])
-    nodes = [struct.unpack_from('<I', b, 4)[0] for b in ptrs]
-    windows = [(RIDER_COUNT_ADDR, 8)] + [(RIDER_BASE + i * RIDER_STRIDE + 0x7928, 8) for i in range(n)] + [(RIDER_BASE + i * RIDER_STRIDE + 0x7A58, 8) for i in range(n)] \
-              + [(nd, 0x70) for nd in nodes] + [(RIDER_BASE + i * RIDER_STRIDE + PHYS_OFF, 0x1E0) for i in range(n)] + [HITS]
-    out = open(a.out, 'wb'); out.write(MAGIC + struct.pack('<II', len(windows), 0)); [out.write(struct.pack('<II', w[0], w[1])) for w in windows]
-    cw = (nodes[0] + 0x10, 16)                                                # sincronía: la posición del nodo del jugador cambia en cada paso de física
-    last = None; frames = 0; t_end = time.time() + a.seconds; torn = 0
-    while time.time() < t_end:
-        c1 = p.read_windows([cw])[0]
-        if c1 == last: time.sleep(0.001); continue                         # esperar un nuevo paso de física
-        data = p.read_windows(windows); c2 = p.read_windows([cw])[0]
-        if c2 != c1: torn += 1; last = c2; continue                        # la RAM cambió durante la lectura: descartar la muestra
-        last = c1; out.write(struct.pack('<dI', time.time() - t0, sum(len(d) for d in data))); [out.write(d) for d in data]; frames += 1
-    out.close(); print(f'{frames} muestras ({torn} descartadas por lectura partida) -> {a.out}')
+    record(p, a.out, a.riders, a.seconds, None, t0)
     if proc: subprocess.run(['flatpak', 'kill', 'net.pcsx2.PCSX2'])
 
 if __name__ == '__main__': main()
