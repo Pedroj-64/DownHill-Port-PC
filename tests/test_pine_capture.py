@@ -16,4 +16,10 @@ class WaitSocket(unittest.TestCase):
     def test_timeout(self):
         with self.assertRaises(SystemExit): pine_capture.wait_socket(0.05, lambda: '/nonexistent/x.sock', 0.01)
 
+class CheckRiders(unittest.TestCase):
+    def test_range(self):
+        self.assertEqual(pine_capture.check_riders(10, 6), 6); self.assertEqual(pine_capture.check_riders(10, 10), 10); self.assertEqual(pine_capture.check_riders(1, 6), 1)
+        for bad in (0, 11, 0xFFFFFFFF):
+            with self.assertRaises(SystemExit): pine_capture.check_riders(bad, 6)
+
 if __name__ == '__main__': unittest.main()

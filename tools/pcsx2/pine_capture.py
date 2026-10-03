@@ -13,6 +13,7 @@ from p2s import RIDER_BASE, RIDER_STRIDE, RIDER_COUNT_ADDR, PHYS_OFF
 INI = os.path.expanduser('~/.var/app/net.pcsx2.PCSX2/config/PCSX2/inis/PCSX2.ini')
 HITS = (0x2DD600, 0x800)            # pila de la física donde quedan los registros de impacto (savestate ALPINEMX; se confirma en el análisis)
 MAGIC = b'DHCAP1\0\0'
+MAX_RIDERS = 10                     # ALP2 trae 10 pilotos; fuera de 1..MAX_RIDERS el estado no es una carrera
 
 def enable_pine():
     s = open(INI).read()
@@ -20,6 +21,11 @@ def enable_pine():
     shutil.copy(INI, INI + '.bak'); open(INI, 'w').write(s.replace('EnablePINE = false', 'EnablePINE = true')); return True
 
 def running(): return subprocess.run(['pgrep', '-x', 'pcsx2-qt'], capture_output=True).returncode == 0
+
+def check_riders(n, limit):
+    """Valida el nº de pilotos leído del estado (1..MAX_RIDERS) y devuelve cuántos capturar (<= limit)."""
+    if not 1 <= n <= MAX_RIDERS: sys.exit('el savestate no es una carrera (nº de pilotos inválido)')
+    return min(n, limit)
 
 def wait_socket(timeout=90, resolve=None, poll=0.5):
     """Espera al socket PINE recalculando la ruta en cada vuelta (al lanzar, default_socket() cae a una ruta de respaldo hasta que el socket existe)."""
@@ -45,8 +51,7 @@ def main():
         time.sleep(0.5)
     print('juego:', p.game_id(), p.title()); time.sleep(2); p.load_state(a.slot); print(f'savestate slot {a.slot} cargado'); time.sleep(1.5)
     n = struct.unpack('<I', p.read_windows([(RIDER_COUNT_ADDR, 8)])[0][:4])[0]; print('pilotos:', n)
-    if not 1 <= n <= 8: sys.exit('el savestate no es una carrera (nº de pilotos inválido)')
-    n = min(n, a.riders)
+    n = check_riders(n, a.riders)
     # punteros fijos (nodo del cuerpo) una vez
     ptrs = p.read_windows([(RIDER_BASE + i * RIDER_STRIDE + 0x7928, 8) for i in range(n)])
     nodes = [struct.unpack_from('<I', b, 4)[0] for b in ptrs]
