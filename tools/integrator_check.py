@@ -14,6 +14,8 @@ sys.path.insert(0, os.path.dirname(__file__)); sys.path.insert(0, os.path.join(o
 from p2s import State
 
 DT = 1 / 50.0   # divisor del paso físico: u32 en 0x2C85FC (gp-0x4B74, FUN_0023F078) = 50 en los savestates PAL
+# Criterios de --assert (plan H3, paso 0b; se recalibran con los primeros pares reales). G = hipótesis: 32.17 ft/s² con 1 u = 1 ft (docs/p2s-savestates.md), eje de subida = +z.
+G, POS_TOL, R_TOL, FZ_REL, FXY_REL, T_TOL = 32.17, 1e-3, 1e-5, 1e-3, 1e-3, 1.0   # T_TOL: provisional (sin calibrar)
 
 def body(s, r):
     """Campos del cuerpo rígido (cuerpo = módulo + 0x10) y del nodo de un piloto de State.riders()."""
@@ -52,16 +54,35 @@ def pair(s0, s1, ticks, label):
         dt = best * DT; Feff = (c['P'] - a['P']) / dt; Teff = (c['L'] - a['L']) / dt
         # con N>1 la fuerza efectiva promedio no es exacta (la fuerza se recalcula en cada paso); la comprobación de pos usa Euler repetido con vel constante = aproximación
         p = step(a, dt, Feff, Teff)
-        rows.append((r0['index'], r0['type'], best, np.abs(p['pos'] - c['pos']).max(), np.abs(p['R'] - c['R']).max(), np.abs(p['vel'] - c['vel']).max(), np.abs(p['omega'] - c['omega']).max(), Feff, np.linalg.norm(c['pos'] - a['pos'])))
+        rows.append((r0['index'], r0['type'], best, np.abs(p['pos'] - c['pos']).max(), np.abs(p['R'] - c['R']).max(), np.abs(p['vel'] - c['vel']).max(), np.abs(p['omega'] - c['omega']).max(), Feff, np.linalg.norm(c['pos'] - a['pos']), Teff, a['invm']))
     return rows
+
+def evaluate(pos_err, R_err, F, T, invm, t_tol=T_TOL):
+    """Criterios del plan para UN par con la bici en el aire: [(nombre, pasa, valor, límite)]. F, T = fuerza y torque efectivos; m = 1/invM."""
+    mg = G / invm; fz = abs(F[2] + mg) / mg; fxy = float(np.hypot(F[0], F[1])) / mg; t = float(np.linalg.norm(T))
+    return [('|dpos| <= %g' % POS_TOL, pos_err <= POS_TOL, pos_err, POS_TOL), ('max|dR_ij| <= %g' % R_TOL, R_err <= R_TOL, R_err, R_TOL),
+            ('F_z = -m*g (rel <= %g)' % FZ_REL, fz <= FZ_REL, fz, FZ_REL), ('|F_xy| <= %g*m*g' % FXY_REL, fxy <= FXY_REL, fxy, FXY_REL), ('|T_eff| <= %g' % t_tol, t <= t_tol, t, t_tol)]
+
+def verdict(rows, label, t_tol=T_TOL):
+    """Imprime PASA/FALLA por criterio para el jugador (primer piloto) de cada par; True si todo pasa."""
+    ok = True; many = len(rows) > 1   # con varios pares (.cap) sólo se listan los criterios que fallan
+    for k, r in enumerate(rows):
+        res = evaluate(r[3], r[4], r[7], r[9], r[10], t_tol); ok &= all(p for _, p, _, _ in res)
+        if not many or not all(p for _, p, _, _ in res): print(f'== {label}' + (f' par {k}' if many else ''))
+        for name, p, v, lim in res:
+            if not many or not p: print(f"  {'PASA ' if p else 'FALLA'} {name}: {v:.3e}")
+    if many: print(f"{'PASA' if ok else 'FALLA'}: {len(rows)} pares")
+    return ok
 
 def show(rows, label):
     print(f'== {label}')
-    for i, t, n, ep, eR, ev, ew, F, mv in rows:
+    for i, t, n, ep, eR, ev, ew, F, mv, *_ in rows:
         print(f'rider{i} t{t} ticks={n} |pos|err={ep:.2e} |R|err={eR:.2e} |v|err={ev:.2e} |w|err={ew:.2e}  F_eff=({F[0]:.1f},{F[1]:.1f},{F[2]:.1f})  desplaz.={mv:.3f}')
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument('files', nargs='+'); ap.add_argument('--ticks', type=int, default=0); a = ap.parse_args()
+    ap = argparse.ArgumentParser(); ap.add_argument('files', nargs='+'); ap.add_argument('--ticks', type=int, default=0)
+    ap.add_argument('--assert', dest='check', action='store_true', help='aplica los criterios del plan (jugador, bici en el aire): PASA/FALLA por criterio y código de salida 1 si falla')
+    ap.add_argument('--t-tol', type=float, default=T_TOL, help='tolerancia de |T_eff| (provisional)'); a = ap.parse_args()
     if len(a.files) == 1 and a.files[0].endswith('.cap'):
         from analyze_capture import read_cap
         fr = read_cap(a.files[0]); print(f'{len(fr)} muestras')
@@ -72,7 +93,13 @@ def main():
         if agg:
             e = np.array([[r[3], r[4], r[5], r[6]] for r in agg]); print(f'jugador, {len(agg)} pares: mediana |pos|err={np.median(e[:, 0]):.2e}  |R|err={np.median(e[:, 1]):.2e}  p95 pos={np.percentile(e[:, 0], 95):.2e}  p95 R={np.percentile(e[:, 1], 95):.2e}')
             Fz = np.array([r[7] for r in agg]); print('F_eff mediana (x,y,z) =', np.median(Fz, axis=0).round(2), ' (en el aire sólo gravedad: F = m*g con m = 1/invM)')
-    elif len(a.files) == 1: selfcheck(State(a.files[0]), os.path.basename(a.files[0]))
-    else: show(pair(State(a.files[0]), State(a.files[1]), a.ticks, ''), f'{os.path.basename(a.files[0])} -> {os.path.basename(a.files[1])}')
+            if a.check: sys.exit(0 if verdict(agg, os.path.basename(a.files[0]), a.t_tol) else 1)
+        elif a.check: sys.exit('--assert: la captura no tiene pares')
+    elif len(a.files) == 1:
+        if a.check: sys.exit('--assert necesita dos estados o un .cap')
+        selfcheck(State(a.files[0]), os.path.basename(a.files[0]))
+    else:
+        rows = pair(State(a.files[0]), State(a.files[1]), a.ticks, ''); label = f'{os.path.basename(a.files[0])} -> {os.path.basename(a.files[1])}'; show(rows, label)
+        if a.check: sys.exit(0 if rows and verdict(rows[:1], label, a.t_tol) else 1)
 
 if __name__ == '__main__': main()
