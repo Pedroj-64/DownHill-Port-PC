@@ -42,8 +42,10 @@ group -> type-2 selector -> chain-pointer traversal. `DH_RIDER_KIND` can
 restrict automatic discovery to one node kind. It decodes the following `V3-8` normals and the GIF
 batch stream (`S-8`, `V4-5`, `V2-16`, `MSCNT`) into the ten-float `.mdl`
 vertex layout, triangle indices, and the three packed skin ids/weights.
-`batchMaterial` preserves the per-batch TEX0 selector word. Mapping that word
-through the level `.PTR/.TEX/.RTX` tables to the extractor's final compact
-texture index is still pending; the native parity gate therefore compares
-geometry, skin, and triangle topology separately from texture remapping.
+`batchMaterial` preserves the per-batch TEX0 selector word, and the native
+resolver maps it through the level `.PTR/.TEX/.RTX` metadata to the compact
+texture index using first appearance of `(texture id, CBP)`, matching the
+extractor for all 13 ALP2 rider ranges. Pixel decoding (GS swizzle and CLUT)
+is still deferred; the viewer may continue loading textures from Python-
+generated `.mdl` files.
 The path is opt-in and experimental, not the game's live pose or renderer.
