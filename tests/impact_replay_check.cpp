@@ -27,6 +27,8 @@ int main(int argc, char** argv) {
     auto worldPts = [&](const Body& b, std::vector<V3>& out) { out.clear(); for (int i = 0; i < np; i++) {   // FUN_001348A0: world = nodePos + local * R (filas = ejes)
         V4 w; for (int j = 0; j < 3; j++) at(w, j) = (at(loc[i], 0) * at(b.nodeRot.r[0], j) + at(loc[i], 1) * at(b.nodeRot.r[1], j)) + at(loc[i], 2) * at(b.nodeRot.r[2], j);
         w.x += b.nodePos.x; w.y += b.nodePos.y; w.z += b.nodePos.z; out.push_back(toYup(w)); } };
+    float maxPos = 0; for (const Rec& t : T) for (float v : t.pos) maxPos = std::fmax(maxPos, std::fabs(v));
+    const double ulpPos = std::nextafter(maxPos, 1e30f) - maxPos; int nImp = 0, nPass = 0; std::vector<size_t> failed;   // umbrales PROVISIONALES de impacto (aprobados 2026-10-04): |dpos| <= 3 ulp, |dR| <= 1e-3, relP <= 5e-4, relL <= 2e-3
     std::printf("tick | contactos(inicio) iter hits | dpos  dnodo  dR  relP  relL | respuestas |J|\n");
     for (size_t k = k0; k <= k1 && k + 1 < T.size(); k++) {
         Body b = make(T[k]); engine::preStep(b); std::vector<std::vector<SweepHit>> L; std::vector<SweepHit> side; std::vector<float> jmag; int nhit = 0;
@@ -48,7 +50,9 @@ int main(int argc, char** argv) {
             for (int i = 0; i < 3; i++) dR = std::fmax(dR, std::fabs(at(b.nodeRot.r[i], j) - t.R[3 * i + j])); }
         if (std::getenv("DH_DEBUG")) std::printf("\n   pos real-modelo=(%.3f %.3f %.3f) vel modelo=(%.1f %.1f %.1f) real=(%.1f %.1f %.1f)", t.pos[0] - b.pos.x, t.pos[1] - b.pos.y, t.pos[2] - b.pos.z, b.vel.x, b.vel.y, b.vel.z, t.P[0] * invm, t.P[1] * invm, t.P[2] * invm);
         if (std::getenv("DH_DEBUG")) std::printf("\n   P real(k)=(%.0f %.0f %.0f) real(k+1)=(%.0f %.0f %.0f) modelo=(%.0f %.0f %.0f) L real(k+1)=(%.0f %.0f %.0f) modelo=(%.0f %.0f %.0f)\n", T[k].P[0], T[k].P[1], T[k].P[2], t.P[0], t.P[1], t.P[2], b.P.x, b.P.y, b.P.z, t.L[0], t.L[1], t.L[2], b.L.x, b.L.y, b.L.z);
+        if (nhit > 0) { nImp++; bool ok = dpos <= 3 * ulpPos && dR <= 1e-3 && dP / mP <= 5e-4 && dL / mL <= 2e-3; if (ok) nPass++; else failed.push_back(k); }
         std::printf("%4zu | it=%d hits=%d | %.2e %.2e %.2e %.2e %.2e |", k, it, nhit, dpos, dnode, dR, dP / mP, dL / mL); for (float j : jmag) std::printf(" %.1f", j); std::printf("\n");
     }
-    return 0;
+    std::printf("impactos (ticks con contacto): %d, bajo umbrales provisionales: %d", nImp, nPass); if (!failed.empty()) { std::printf("; fallan:"); for (size_t k : failed) std::printf(" %zu", k); } std::printf("\n");
+    return std::getenv("DH_ASSERT") && nPass != nImp ? 1 : 0;
 }
