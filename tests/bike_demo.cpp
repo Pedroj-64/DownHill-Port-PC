@@ -30,6 +30,8 @@ int main(int argc, char** argv) {
     Ground vis; bool haveVis = false; if (argc > 5) { std::vector<uint8_t> m; std::vector<Ground::Tri> vt; if (rd(argv[5], m) && mdlTris(m, vt, true)) { vis.set(vt); haveVis = true; } }
     Run run; run.gates = &gates; const Gate* g0 = gates.courseGate(0); float h0 = g0 ? std::atan2(g0->n.x, -g0->n.z) : 0.f;
     run.start(g, start, h0); Bike& bike = run.bike;
+    if (const char* e = std::getenv("DH_CONTACT_TRACE")) bike.trace = std::fopen(e, "w");   // con DH_TRACE_FROM=<punto> solo desde ese punto de la línea (por defecto 125)
+    if (const char* e = std::getenv("DH_SUBSTEP")) bike.P.subStep = (float)std::atof(e);   // ablación: sub-paso máximo del integrador (el motor responde 1 vez por tick de 1/50 s)
     const float dt = 1.f / 60.f; size_t idx = 0, bestIdx = 0; for (size_t q = 0; q < n; q++) if ((line[q].x - start.x) * (line[q].x - start.x) + (line[q].z - start.z) * (line[q].z - start.z) < (line[idx].x - start.x) * (line[idx].x - start.x) + (line[idx].z - start.z) * (line[idx].z - start.z)) idx = q;
     bestIdx = idx; std::printf("salida (%.0f %.0f %.0f) rumbo %.2f rad, punto de la línea %zu de %zu\n", start.x, start.y, start.z, h0, idx, n);
     // Piloto de PRUEBAS que 'aprende' como un jugador: la velocidad de crucero depende de la zona (tramos de 20 puntos de la línea) y, al atascarse, esa zona y las dos anteriores prueban la siguiente velocidad de la tabla. DH_CRUISE=v fija una velocidad única.
@@ -39,7 +41,7 @@ int main(int argc, char** argv) {
     for (; run.t < 900;) {
         size_t lo = idx > 30 ? idx - 30 : 0, hi = std::min(n - 1, idx + 60); float bd = 1e30f; size_t bi = idx;
         for (size_t q = lo; q <= hi; q++) { float d = (line[q].x - bike.pos.x) * (line[q].x - bike.pos.x) + (line[q].z - bike.pos.z) * (line[q].z - bike.pos.z); if (d < bd) { bd = d; bi = q; } }
-        idx = bi; static const float look = std::getenv("DH_LOOK") ? (float)std::atof(std::getenv("DH_LOOK")) : 25.f;   // lookahead por DISTANCIA (no por índice): el tramo 187->188 de ALP2 mide 116 u y apuntar 5 puntos más allá hace salir del borde por otro sitio
+        idx = bi; bike.traceOn = idx >= (std::getenv("DH_TRACE_FROM") ? (size_t)std::atoi(std::getenv("DH_TRACE_FROM")) : 125); static const float look = std::getenv("DH_LOOK") ? (float)std::atof(std::getenv("DH_LOOK")) : 25.f;   // lookahead por DISTANCIA (no por índice): el tramo 187->188 de ALP2 mide 116 u y apuntar 5 puntos más allá hace salir del borde por otro sitio
         size_t ti = std::min(n - 1, idx + 1); while (ti + 1 < n && (line[ti].x - bike.pos.x) * (line[ti].x - bike.pos.x) + (line[ti].z - bike.pos.z) * (line[ti].z - bike.pos.z) < look * look) ti++; V3 tg = line[ti];
         BikeInput in; float want = std::atan2(tg.x - bike.pos.x, -(tg.z - bike.pos.z)); in.steer = std::fmax(-1.f, std::fmin(1.f, 2.f * wrap(want - bike.heading()))); in.throttle = 1.f;
         float sp2 = bike.speed(); static const float cruiseEnv = std::getenv("DH_CRUISE") ? (float)std::atof(std::getenv("DH_CRUISE")) : 0.f; float cruise0 = cruiseEnv > 0 ? cruiseEnv : cruiseTab[tries[std::min(tries.size() - 1, idx / 20)] % 6]; static const float dropV = std::getenv("DH_DROPV") ? (float)std::atof(std::getenv("DH_DROPV")) : 1e9f;   // DH_DROPV=u/s: velocidad de entrada a caídas fuertes (por defecto sin límite: las caídas de la línea son saltos que necesitan velocidad)

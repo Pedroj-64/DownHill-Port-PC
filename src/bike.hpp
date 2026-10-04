@@ -6,6 +6,8 @@
 // Unidades: Y arriba, unidades de mundo del juego (sin conversión a metros: g = 96.6 u/s^2, véase integrator.md). Ejes locales de la moto como en el motor (node+0x40 fila 0 = lateral): x lateral, y adelante, z arriba (savestate).
 #pragma once
 #include <bit>
+#include <cstdio>
+#include <cstdlib>
 #include <cstdint>
 #include "contact.hpp"
 #include "gates.hpp"
@@ -75,6 +77,7 @@ struct Bike {
     bool grounded = false, wheelF = false, wheelR = false; float coyote = 0, tF = 0, tR = 0;   // grounded/wheelF/wheelR = contacto en los últimos 0.1 s (en reposo el barrido a veces no llega a tocar en un sub-paso)
     V3 groundN{0, 1, 0}; uint16_t surface = 0;
     uint32_t sweeps = 0, hits = 0, overlaps = 0; double airTime = 0;
+    FILE* trace = nullptr; bool traceOn = false;           // traza de depuración (DH_CONTACT_TRACE en bike_demo): una línea por respuesta de contacto
 
     Bike() { rb.invMass = 1.f / P.mass; rb.restitution = P.restitution; rb.friction = P.friction; }
     Axes axes() const { return axesFromFwd(fwd); }
@@ -136,10 +139,13 @@ private:
             const SweepHit H = L[hr.point][hr.index]; hits++;
             if (H.frac < 0.f) {                                    // solape inicial: FUN_001344F0 mueve el cuerpo; la respuesta de velocidad a continuación es hipótesis (el motor la deja al impacto siguiente)
                 overlaps++; Depenetration d = depenetration(L);
-                if (d.apply || dot(d.move, d.move) < 16.f) { pos = pos + d.move; rb.com = pos; }
+                if (trace && traceOn) std::fprintf(trace, "it=%d DEPEN pt=%d pen=%.3f move=(%.2f %.2f %.2f) |move|=%.2f apply=%d\n", it, hr.point, H.pen, d.move.x, d.move.y, d.move.z, std::sqrt(dot(d.move, d.move)), (int)d.apply);
+                if (d.apply || (!std::getenv("DH_DEPEN_FAITHFUL") && dot(d.move, d.move) < 16.f)) { pos = pos + d.move; rb.com = pos; }
             } else { advance(h * rem * H.frac); rem *= 1.f - H.frac; }
             Axes Ah = axes(); syncInertia(Ah);
-            contactResponse(rb, H.point, H.normal, Ah.r, hr.point);
+            V3 vb = rb.vel; float vnB = dot(H.normal, vb);
+            float jn = contactResponse(rb, H.point, H.normal, Ah.r, hr.point);
+            if (trace && traceOn) { V3 cr = cross(H.normal, Ah.r); std::fprintf(trace, "it=%d pt=%d surf=%u tri=%u frac=%.4f pen=%.3f n=(%.2f %.2f %.2f) aniso=%d vn=%.1f |Jn|=%.1f v=(%.2f %.2f %.2f)->(%.2f %.2f %.2f) |v|=%.2f->%.2f\n", it, hr.point, (unsigned)H.surface, (unsigned)H.tri, H.frac, H.pen, H.normal.x, H.normal.y, H.normal.z, dot(cr, cr) > 0.5f, vnB, jn, vb.x, vb.y, vb.z, rb.vel.x, rb.vel.y, rb.vel.z, std::sqrt(dot(vb, vb)), std::sqrt(dot(rb.vel, rb.vel))); }
         }
         if (rem > 1e-4f) advance(h * rem);                         // el resto del paso sin comprobar (el solape que quede lo corrige el paso siguiente)
         Axes Ae = axes(); float wpe = dot(rb.omega, Ae.r); wpe = std::fmax(-8.f, std::fmin(8.f, wpe));
