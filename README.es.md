@@ -171,6 +171,8 @@ Reglas básicas:
 
 Gracias a las comunidades de PCSX2 y Ghidra, y a todas las personas que han documentado el hardware de la PS2 (GS, VIF, VU) a lo largo de los años.
 
+Parte del análisis del desensamblado se apoyó en herramientas de asistencia para la lectura de código; toda afirmación se marca como hipótesis hasta validarla con un script contra el juego.
+
 ## Autoría
 
 Creado y mantenido por **Pedro Soto**, con contribuciones de la comunidad (ver [`AUTHORS`](AUTHORS)).

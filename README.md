@@ -171,6 +171,8 @@ Ground rules:
 
 Thanks to the PCSX2 and Ghidra communities, and to everyone who has documented the PS2 hardware (GS, VIF, VU) over the years.
 
+Part of the disassembly analysis was supported by code-reading assistive tools; every claim is marked as a hypothesis until validated by a script against the game.
+
 ## Authors
 
 Created and maintained by **Pedro Soto**, with contributions from the community (see [`AUTHORS`](AUTHORS)).
