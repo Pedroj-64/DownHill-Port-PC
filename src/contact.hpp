@@ -34,14 +34,14 @@ inline float impulseDenominator(const RigidBody& b, V3 point, V3 d) {
 }
 
 // FUN_00238648: impulso de FRICCIÓN. vn = N . vrel; si vn > -0.001 -> impulso 0. Si no: t = vrel - N*vn (velocidad tangencial), t^ = t/|t|,
-// impulso = -t^ / impulseDenominator(t^)  (módulo 1/denominador: la rutina guarda en el lane w el valor |t|/|t| = 1 y lo divide por el denominador; se escala luego por el coeficiente en FUN_00134630,
-// así la fricción resta `coef` unidades de velocidad tangencial por contacto). |t| = 0 no está protegido en el motor (división 0/0): aquí devuelve 0 (hipótesis: no ocurre con vn < -0.001 salvo caída exacta).
+// impulso = -t^ * |t| / impulseDenominator(t^)  (corregido 2026-10-04 con el desensamblado: antes se usaba -t^/K, sin el factor |t|; el lane w guarda |t|/K; se escala luego por el coeficiente
+// en FUN_00134630, así la fricción resta `coef` x la velocidad tangencial por contacto). |t| = 0 no está protegido en el motor (división 0/0): aquí devuelve 0 (hipótesis: no ocurre con vn < -0.001 salvo caída exacta).
 inline V3 frictionImpulse(const RigidBody& b, V3 point, V3 normal, V3 surfVel = {}) {
     V3 vr = contactVelocity(b, point, surfVel); float vn = dot(normal, vr);
     if (-0.001f < vn) return {};
     V3 t = vr - normal * vn; float l = std::sqrt(dot(t, t)); if (l == 0.f) return {};
     t = t * (1.f / l);
-    return t * (-1.f / impulseDenominator(b, point, t));
+    return t * (-l / impulseDenominator(b, point, t));          // FUN_00238648 0x2387d4-0x2387f4: out.xyz = -t^ * |t| / K (|t| guardado en sp+0x3c por 0x238750): anula TODA la velocidad tangencial (adherencia)
 }
 
 // FUN_002384B8: impulso NORMAL con restitución e = body+0x114: j = -(e+1)*vn / denominador(N), impulso = N*j; si vn > -0.001 -> 0.

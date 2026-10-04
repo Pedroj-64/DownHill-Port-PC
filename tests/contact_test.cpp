@@ -53,20 +53,20 @@ int main() {
     // --- rotación: impulso fuera de línea con el centro de masas: L += r x J, omega = I^-1 L ---
     { RigidBody b; b.invMass = 1; b.iInv[0] = b.iInv[4] = b.iInv[8] = 0.5f; applyImpulse(b, {0, 2, 0}, {1, 0, 0});   // r=(1,0,0) x (0,2,0) = (0,0,2)
       NEAR(b.angMom.z, 2.f, 1e-6f); NEAR(b.omega.z, 1.f, 1e-6f); NEAR(b.vel.y, 2.f, 1e-6f); }
-    // --- fricción: tangencial 3 u/s, masa 1, sin rotación, coef 1 -> resta 1 u/s de la velocidad tangencial; punto 2: x1.25 ---
+    // --- fricción: tangencial 3 u/s, masa 1, sin rotación, coef 1 -> anula los 3 u/s (impulso -t^|t|/K, FUN_00238648); punto 2: x1.25 ---
     { for (int idx : {0, 2}) {
         RigidBody b; b.invMass = 1; for (float& f : b.iInv) f = 0; b.vel = {3, -5, 0}; b.linMom = b.vel; b.friction = 1.f; b.restitution = 0.f;
-        V3 fi = frictionImpulse(b, {0, 0, 0}, {0, 1, 0}); NEAR(fi.x, -1.f, 1e-5f); NEAR(fi.y, 0.f, 1e-5f);          // módulo 1/denominador, sentido opuesto a la tangente
+        V3 fi = frictionImpulse(b, {0, 0, 0}, {0, 1, 0}); NEAR(fi.x, -3.f, 1e-5f); NEAR(fi.y, 0.f, 1e-5f);          // módulo |t|/denominador, sentido opuesto a la tangente
         float mag = contactResponse(b, {0, 0, 0}, {0, 1, 0}, {1, 0, 0}, idx);   // axis0 = X: f = N x X = (0,0,1); el impulso de fricción (en X) no tiene componente en f -> se conserva
-        float k = idx == 2 ? 1.25f : 1.f; NEAR(b.vel.x, 3.f - k, 1e-4f); NEAR(b.vel.y, 0.f, 1e-4f); NEAR(mag, 5.f, 1e-4f); } }
+        float k = idx == 2 ? 1.25f : 1.f; NEAR(b.vel.x, 3.f - 3.f * k, 1e-4f); NEAR(b.vel.y, 0.f, 1e-4f); NEAR(mag, 5.f, 1e-4f); } }
     // --- fricción anisótropa: axis0 = Z -> f = N x Z = (-1,0,0): el componente X de la fricción desaparece; Z se conserva ---
     { RigidBody b; b.invMass = 1; for (float& f : b.iInv) f = 0; b.vel = {3, -5, 4}; b.linMom = b.vel; b.friction = 1.f;
       contactResponse(b, {0, 0, 0}, {0, 1, 0}, {0, 0, 1}, 0);
       NEAR(b.vel.x, 3.f, 1e-4f);                       // sin fricción en X
-      NEAR(b.vel.z, 4.f - 0.8f, 1e-4f);                // tangente (3,0,4)/5: fricción -(0.6,0,0.8); sólo queda la parte en Z
+      NEAR(b.vel.z, 0.f, 1e-4f);                      // tangente (3,0,4), |t| = 5: fricción -(3,0,4); sólo queda la parte en Z (anula los 4)
       NEAR(b.vel.y, 0.f, 1e-4f); }
     // --- |N x axis0|^2 <= 0.5 (eje casi paralelo a la normal): no se filtra la fricción ---
     { RigidBody b; b.invMass = 1; for (float& f : b.iInv) f = 0; b.vel = {3, -5, 0}; b.linMom = b.vel; b.friction = 1.f;
-      contactResponse(b, {0, 0, 0}, {0, 1, 0}, {0, 1, 0}, 0); NEAR(b.vel.x, 2.f, 1e-4f); }
+      contactResponse(b, {0, 0, 0}, {0, 1, 0}, {0, 1, 0}, 0); NEAR(b.vel.x, 0.f, 1e-4f); }
     std::printf("contact_test OK\n"); return 0;
 }
