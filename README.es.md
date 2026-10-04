@@ -47,7 +47,7 @@ Promedio de todas las filas. Verificado = comprobado con evidencia del juego (sa
 | Modelo de la bici | Piezas ensambladas en una bici completa; faltan los datos de anclaje del esqueleto. |
 | Animaciones (NGA) | Todos los tipos de pista presentes decodificados; falta el mapeo canal-hueso. |
 | Malla del cuerpo del piloto | Encontrada en el NGP de cada nivel (kinds 4030-4130, 13 modelos en ALP2); piel decodificada del código VU1 y posada con clips BANIM; aún sin comparar con el juego. |
-| Integrador de cuerpo rígido (funciones) | FUN_00238818 y 9 auxiliares trazadas desde el desensamblado. Parcial: el modelo de vuelo libre coincide en 4 capturas x 50 ticks consecutivos hasta ~1 ulp float32 (ajuste empírico de c, cL, G; c y cL localizadas en RAM, G y el código del amortiguamiento no); NO cuenta como validado. |
+| Integrador de cuerpo rígido (funciones) | FUN_00238818 y 9 auxiliares trazadas desde el desensamblado. FUN_00238818 validada SOLO EN VUELO LIBRE: el port C++ con las constantes del motor leídas del ELF (FUN_00134060: amortiguamiento 0,975/0,987, G = -96,6000061; sin ajuste) coincide en 4 capturas x 50 ticks consecutivos hasta ~1 ulp float32. Contactos e impactos sin validar, por eso cuenta como wip, no done. |
 | Visor (dhview) | Cámara libre, modo caminar, cielo centrado en la cámara, modo de juego. |
 | Física de la bici | Cuerpo rígido sobre el barrido y la respuesta de contacto portados (parte verificada); muchos parámetros están marcados como hipótesis. |
 | Niveles recorridos de salida a meta | Solo ALP2 (28/28 puertas, autopiloto de pruebas, 0 reinicios); se puede conducir con el teclado. |

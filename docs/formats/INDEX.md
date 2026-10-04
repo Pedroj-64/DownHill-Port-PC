@@ -15,6 +15,7 @@ Coverage inferred from file names only (documents were not opened).
 | Instanciado de escena / Scene instancing | [scene-instancing.md](scene-instancing.md) |
 | Física de la bici / Bike physics | [bike-physics.md](bike-physics.md) |
 | Integrador (`FUN_00238818`) / Integrator | [integrator.md](integrator.md) |
+| Módulo físico de la bici / Bike physics module | [physics-module.md](physics-module.md) |
 | Operaciones macro VU0 / VU0 macro ops | [vu0-macro-ops.md](vu0-macro-ops.md) |
 | Piloto (malla, esqueleto, piel) / Rider (mesh, skeleton, skin) | [rider.md](rider.md) |
 | Piloto en vivo / Rider live | [rider-live.md](rider-live.md) |

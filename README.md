@@ -47,7 +47,7 @@ Average of all rows. Verified = checked against evidence from the game (savestat
 | Bike model | Parts assembled into a full bike; skeleton attachment data pending. |
 | Animations (NGA) | All present track types decoded; channel-to-bone mapping pending. |
 | Rider body mesh | Found in each level NGP (kinds 4030-4130, 13 models in ALP2); skinning decoded from the VU1 code and posed with BANIM clips; not yet compared with the game. |
-| Rigid-body integrator (functions) | FUN_00238818 and 9 helpers traced from the disassembly. Partial: free-flight model matches 4 captures x 50 consecutive ticks to ~1 float32 ulp (empirical fit of c, cL, G; c and cL located in RAM, G and the damping code not located); NOT counted as validated. |
+| Rigid-body integrator (functions) | FUN_00238818 and 9 helpers traced from the disassembly. FUN_00238818 is validated for FREE FLIGHT only: the C++ port with the engine constants read from the ELF (FUN_00134060: damping 0.975/0.987, G = -96.6000061; no fit) matches 4 captures x 50 consecutive ticks to ~1 float32 ulp. Contacts and impacts not validated, so counted as wip, not done. |
 | Viewer (dhview) | Free camera, walk mode, camera-centred sky, play mode. |
 | Bike physics | Rigid body on the ported sweep and contact response (verified part); many parameters are labelled hypothesis. |
 | Levels ridden start to finish | ALP2 only (28/28 gates, test autopilot, 0 resets); keyboard riding works. |
