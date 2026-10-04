@@ -35,7 +35,10 @@ def wait_socket(timeout=90, resolve=None, poll=0.5):
         time.sleep(poll)
     return sock
 
-def record(p, out_path, riders, seconds, sync_rider=None, t0=None):
+# Ventanas extra del controlador de conducción (hito 3b, --ride): ctrl = rider0 + 0x40C0 (cuerpo rígido de conducción, ctrl+0x80..0x880 ya va en HITS), banderas/estado/parámetros del piloto 0 y globales de la física
+RIDE_WINDOWS = lambda: [(RIDER_BASE + 0x40C0, 0x80), (RIDER_BASE + 0x3F58, 0x40), (RIDER_BASE + 0x4098, 8), (RIDER_BASE + 0x4EC8, 0x20), (RIDER_BASE + 0x7900, 0x2D0), (0x77A7D8, 0x20), (0x2C85F8, 8), (0x2C8620, 8)]   # longitudes múltiplo de 8 y direcciones alineadas (read_windows lee con Read64)
+
+def record(p, out_path, riders, seconds, sync_rider=None, t0=None, ride=False):
     """Muestrea la RAM de PCSX2 (ya con el estado cargado) cada paso de física y escribe un .cap. sync_rider: piloto cuya posición de cuerpo marca el paso (None = nodo del jugador, como antes)."""
     t0 = t0 or time.time()
     n = struct.unpack('<I', p.read_windows([(RIDER_COUNT_ADDR, 8)])[0][:4])[0]; print('pilotos:', n)
@@ -44,7 +47,7 @@ def record(p, out_path, riders, seconds, sync_rider=None, t0=None):
     ptrs = p.read_windows([(RIDER_BASE + i * RIDER_STRIDE + 0x7928, 8) for i in range(n)])
     nodes = [struct.unpack_from('<I', b, 4)[0] for b in ptrs]
     windows = [(RIDER_COUNT_ADDR, 8)] + [(RIDER_BASE + i * RIDER_STRIDE + 0x7928, 8) for i in range(n)] + [(RIDER_BASE + i * RIDER_STRIDE + 0x7A58, 8) for i in range(n)] \
-              + [(nd, 0x70) for nd in nodes] + [(RIDER_BASE + i * RIDER_STRIDE + PHYS_OFF, 0x1E0) for i in range(n)] + [HITS]
+              + [(nd, 0x70) for nd in nodes] + [(RIDER_BASE + i * RIDER_STRIDE + PHYS_OFF, 0x1E0) for i in range(n)] + [HITS] + (RIDE_WINDOWS() if ride else [])
     out = open(out_path, 'wb'); out.write(MAGIC + struct.pack('<II', len(windows), 0)); [out.write(struct.pack('<II', w[0], w[1])) for w in windows]
     cw = (nodes[0] + 0x10, 16) if sync_rider is None else (RIDER_BASE + sync_rider * RIDER_STRIDE + PHYS_OFF + 0x60, 16)   # sincronía: nodo del jugador (por defecto) o cuerpo del piloto indicado (momento lineal P): cambia en cada paso de física
     last = None; frames = 0; t_end = time.time() + seconds; torn = 0
@@ -59,7 +62,7 @@ def record(p, out_path, riders, seconds, sync_rider=None, t0=None):
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--iso'); ap.add_argument('--slot', type=int, default=1); ap.add_argument('--seconds', type=float, default=30); ap.add_argument('--out', required=True)
-    ap.add_argument('--no-launch', action='store_true', help='PCSX2 ya está abierto con PINE activo'); ap.add_argument('--riders', type=int, default=6); a = ap.parse_args()
+    ap.add_argument('--no-launch', action='store_true', help='PCSX2 ya está abierto con PINE activo'); ap.add_argument('--riders', type=int, default=6); ap.add_argument('--ride', action='store_true', help='añade las ventanas del controlador de conducción (ctrl, banderas, globales)'); a = ap.parse_args()
     proc = None
     if not a.no_launch:
         if running(): sys.exit('PCSX2 está abierto: ciérralo (o usa --no-launch si ya tiene PINE activo).')
@@ -72,7 +75,7 @@ def main():
         except Exception: pass
         time.sleep(0.5)
     print('juego:', p.game_id(), p.title()); time.sleep(2); p.load_state(a.slot); print(f'savestate slot {a.slot} cargado'); time.sleep(1.5)
-    record(p, a.out, a.riders, a.seconds, None, t0)
+    record(p, a.out, a.riders, a.seconds, None, t0, a.ride)
     if proc: subprocess.run(['flatpak', 'kill', 'net.pcsx2.PCSX2'])
 
 if __name__ == '__main__': main()
