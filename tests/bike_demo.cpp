@@ -13,7 +13,8 @@ static float wrap(float a) { while (a > 3.14159f) a -= 6.28318f; while (a < -3.1
 static SweepHit predictLanding(const Ground& g, const Bike& b) {
     V3 p = b.pos, v = b.vel(); const float h = 0.05f;
     for (int i = 0; i < 100; i++) {
-        V3 v2 = v; v2.y -= b.P.gravity * h; V3 q = p + (v + v2) * (0.5f * h);
+        V3 v2 = v * std::pow(b.P.linDamp, engine::kTickHz * h); v2.y -= b.P.gravity * h;   // mismo orden que FUN_00134060: amortiguar y luego el peso
+        V3 q = p + (v + v2) * (0.5f * h);
         SweepHit s = g.sweep(p, q, b.P.radius); if (s.hit) return s; p = q; v = v2;
     }
     return SweepHit();

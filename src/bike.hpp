@@ -2,11 +2,31 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Moto jugable APROXIMADA (hito 3, carril A). Cuerpo rígido con integrador semi-implícito propio sobre la cadena del motor ya portada: barrido de los 4 puntos de contacto
 // (Ground::sweepHits, FUN_0021A908/00219970), orden de impactos (nextHit, FUN_00217450), despenetración (FUN_001344F0) y respuesta de contacto (contactResponse, FUN_00134630).
-// El integrador de FUN_00238818 NO está portado (docs/formats/bike-physics.md): el de aquí es propio y todo lo que no sale del ELF/savestates va marcado `hipótesis`.
-// Unidades: Y arriba, 1 u = 1 pie (docs/p2s-savestates.md). Ejes locales de la moto como en el motor (node+0x40 fila 0 = lateral): x lateral, y adelante, z arriba (savestate).
+// El integrador de aquí es propio (semi-implícito); el fiel (FUN_00238818) vive en integrator_fidel.hpp. De FUN_00134060 salen g y el amortiguamiento (namespace engine); lo que no sale del ELF/savestates va marcado `hipótesis`.
+// Unidades: Y arriba, unidades de mundo del juego (sin conversión a metros: g = 96.6 u/s^2, véase integrator.md). Ejes locales de la moto como en el motor (node+0x40 fila 0 = lateral): x lateral, y adelante, z arriba (savestate).
 #pragma once
+#include <bit>
+#include <cstdint>
 #include "contact.hpp"
 #include "gates.hpp"
+#include "integrator_fidel.hpp"
+
+// Constantes y orden del paso de fuerzas del motor, del desensamblado (docs/formats/integrator.md "Procedencia resuelta", physics-module.md). Unidades de mundo del juego, SIN conversión a metros.
+namespace engine {
+constexpr float kTickHz = 50.f;                                         // FUN_0023F078: u32 en 0x2C85FC = 50 (paso físico de 1/50 s)
+inline float gravity() { return std::bit_cast<float>(0xC2C13334u); }    // FUN_00134060 0x1340A4: lui 0xC2C1; ori 0x3334 = -96.6000061 u/s^2 (= 3 x 32.2f en float32; el significado de 'unidad' es hipótesis)
+inline float massWeight() { return std::bit_cast<float>(0x42C80000u); } // módulo+0x110 = 100.0 (FUN_00133AB0 0x133AB0): masa para el peso
+inline float linDamp() { return std::bit_cast<float>(0x3F79999Au); }    // módulo+0x120 = 0.975 por tick (FUN_00133AB0 0x133B00..0x133B38; leído en FUN_00134060 0x134080)
+inline float angDamp() { return std::bit_cast<float>(0x3F7CAC08u); }    // módulo+0x11C = 0.987 por tick (FUN_00133AB0 0x133AEC; leído en FUN_00134060 0x13408C)
+// FUN_00134060(módulo): (1) FUN_00237C78 fuerza y par a cero; (2) FUN_00237960(cuerpo, +0x120): P y vel (xyz) *= f lineal; (3) FUN_00237998(cuerpo, +0x11C): L y omega (xyz) *= f angular;
+// (4) FUN_00237C88(cuerpo, (0,0,m*G)) con G negativo: suma el peso a la fuerza. Después FUN_001340D8 llama a FUN_00238818 (integ::integrate / integ::tick).
+inline void preStep(integ::Body& b, float kLin = linDamp(), float kAng = angDamp(), float m = massWeight(), float G = gravity()) {
+    integ::clearForces(b);
+    b.P.x *= kLin; b.P.y *= kLin; b.P.z *= kLin; b.vel.x *= kLin; b.vel.y *= kLin; b.vel.z *= kLin;
+    b.L.x *= kAng; b.L.y *= kAng; b.L.z *= kAng; b.omega.x *= kAng; b.omega.y *= kAng; b.omega.z *= kAng;
+    b.force.z += m * G;
+}
+}  // namespace engine
 
 struct BikeInput { float throttle = 0, brake = 0, steer = 0, lean = 0; bool hop = false; };   // steer > 0 = derecha; lean > 0 = morro arriba; hop = un solo paso
 
@@ -17,19 +37,21 @@ struct BikeParams {
     float mass = 100.f;                                    // body+0x00 invMass = 0.01
     float invI[3] = {0.0023f, 0.00474f, 0.00382f};         // body+0x80/0x90/0xA0 diagonal; asignación a (lateral, adelante, arriba): hipótesis
     float restitution = 0.2f, friction = 0.28f;            // módulo +0x114 / +0x118
-    float gravity = 32.17f;                                // 9.81 m/s^2 en pies/s^2
+    float gravity = -engine::gravity();                    // 96.6 u/s^2: FUN_00134060 0x1340A4 (g del motor, módulo+0x110 = masa del peso)
+    float linDamp = engine::linDamp();                     // 0.975 por tick de 1/50 s sobre P y vel: módulo+0x120, FUN_00134060 / FUN_00237960
+    float angDamp = engine::angDamp();                     // 0.987 por tick sobre L y omega: módulo+0x11C, FUN_00134060 / FUN_00237998
     // --- HIPÓTESIS (no salen del ELF; afinadas para que se conduzca, véase bike-physics.md) ---
-    float pedalAccel = 6.f, pedalMax = 40.f;               // u/s^2 de pedaleo y velocidad a la que deja de empujar
+    float pedalAccel = 60.f, pedalMax = 50.f;              // u/s^2 de pedaleo y velocidad a la que deja de empujar (hipótesis; reajustado: el amortiguamiento lineal del motor, 1.27/s, frena en llano: v_eq = a/(c + a/vmax) ~ 24 u/s)
     float brakeDecel = 28.f;                               // u/s^2 con el freno a fondo (nunca invierte el sentido)
-    float rolling = 0.03f, drag = 0.003f;                  // rodadura 1/s y resistencia cuadrática 1/u (velocidad terminal ~70-85 u/s en bajada; el marcador del juego da ~60 km/h = 55 u/s, savestates hasta 85 u/s en caída)
+    float rolling = 0.03f;                                 // rodadura 1/s (hipótesis). La resistencia ya no es una hipótesis cuadrática: el amortiguamiento lineal del motor da velocidad terminal g/c = 96.6/1.27 = 76 u/s en caída (savestates hasta 85 u/s)
     float comLift = 1.4f;                                  // sube todos los puntos locales (baja el centro de masas efectivo): el motor da los puntos respecto al nodo y el centro de masas está desplazado (+0x50), desplazamiento desconocido: hipótesis de estabilidad
     float rollConst = 0.8f;                                // u/s^2 de rodadura constante en el suelo: detiene la moto en llano (hipótesis)
-    float angDamp = 0.975f;                                // por paso de 1/50 s sobre el cabeceo; el módulo del motor tiene 0.975 en +0x120 (savestate): que sea amortiguación angular es hipótesis
+    float pitchDamp = 0.975f;                              // HIPÓTESIS (no es del motor): amortiguación extra del cabeceo por tick de 1/50 s; era el único uso del 0.975 antes de localizar FUN_00134060, y sin ella el cabeceo oscila en las caídas largas de ALP2
     float grip = 10.f;                                     // 1/s: rapidez con que el neumático anula la velocidad lateral (el motor sólo tiene la fricción anisótropa de FUN_00134630)
     float steerRate = 1.5f, steerSpeedK = 0.03f;           // rad/s de giro a velocidad 0 y su caída con la velocidad (u/s)
     float airYawAccel = 3.f, airYawMax = 0.9f;             // HIPÓTESIS: dirección en el aire (rad/s^2 y tope rad/s); el motor no se ha estudiado en vuelo. Sin esto la moto conserva el rumbo con el que sale del borde
     float leanAccel = 7.f;                                 // rad/s^2 sobre el eje lateral (inclinar el cuerpo adelante/atrás)
-    float hop = 9.f;                                       // u/s de impulso del salto
+    float hop = 15.6f;                                     // u/s de impulso del salto (hipótesis; con g = 96.6 da la misma altura ~1.26 u que 9 u/s con el g antiguo)
     float subStep = 1.f / 120.f;                           // paso máximo del integrador
 };
 
@@ -84,7 +106,10 @@ private:
     void sub(const Ground& g, const BikeInput& in, float h, bool first) {
         Axes A = axes(); rb.com = pos; syncInertia(A);
         // --- mandos y fuerzas (hipótesis: ver BikeParams) ---
-        V3 v = rb.vel; bool gr = coyote > 0.f;
+        // orden de FUN_00134060: primero el amortiguamiento de P/vel y L/omega (factor por tick de 1/50 s llevado al sub-paso h), luego las fuerzas (peso incluido)
+        float kl = std::pow(P.linDamp, engine::kTickHz * h), ka = std::pow(P.angDamp, engine::kTickHz * h);
+        rb.omega = rb.omega * ka;
+        V3 v = rb.vel * kl; bool gr = coyote > 0.f;
         if (gr) {
             V3 f = unit(fwd - groundN * dot(fwd, groundN)); float sf = dot(v, f);
             if (in.throttle > 0) v = v + f * (P.pedalAccel * in.throttle * std::fmax(0.f, 1.f - sf / P.pedalMax) * h);
@@ -92,12 +117,12 @@ private:
             v = v - A.r * (dot(v, A.r) * std::fmin(1.f, P.grip * h)); v = v * (1.f - P.rolling * h);
             { float vs = std::sqrt(dot(v, v)); if (vs > 1e-6f) v = v * (std::fmax(0.f, vs - P.rollConst * h) / vs); }
         }
-        v.y -= P.gravity * h; v = v - v * (P.drag * std::sqrt(dot(v, v)) * h);
+        v.y -= P.gravity * h;
         if (in.hop && first && gr) { v = v + A.u * P.hop; coyote = 0; }
         rb.vel = v; rb.linMom = v * P.mass;
         float wp = dot(rb.omega, A.r), wy = rb.omega.y;
         if (gr) wy = -in.steer * P.steerRate / (1.f + P.steerSpeedK * std::sqrt(dot(v, v))); else wy = std::fmax(-P.airYawMax, std::fmin(P.airYawMax, wy * (1.f - 0.3f * h) - in.steer * P.airYawAccel * h));   // derecha = giro negativo sobre Y
-        wp *= std::pow(P.angDamp, 50.f * h); wp += in.lean * P.leanAccel * h;
+        wp *= std::pow(P.pitchDamp, engine::kTickHz * h); wp += in.lean * P.leanAccel * h;
         rb.omega = A.r * wp + V3{0, 1, 0} * wy; syncInertia(A);
 
         // --- barrido y respuesta: estructura de FUN_001340D8 (como mucho 2 impactos por paso) ---

@@ -43,3 +43,7 @@ add_executable(rider_mesh_check tests/rider_mesh_check.cpp)
 
 add_executable(nga_test tests/nga_test.cpp)
 add_test(NAME nga_test COMMAND nga_test)
+
+# Oráculo de vuelo libre: usa un volcado numérico fuera del repo (DH_AIR_REF); sin él, SKIP.
+add_executable(air_replay_check tests/air_replay_check.cpp)
+add_test(NAME air_replay_check COMMAND air_replay_check $ENV{DH_AIR_REF})
