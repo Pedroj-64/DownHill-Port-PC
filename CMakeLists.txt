@@ -47,3 +47,4 @@ add_test(NAME nga_test COMMAND nga_test)
 # Oráculo de vuelo libre: usa un volcado numérico fuera del repo (DH_AIR_REF); sin él, SKIP.
 add_executable(air_replay_check tests/air_replay_check.cpp)
 add_test(NAME air_replay_check COMMAND air_replay_check $ENV{DH_AIR_REF})
+add_executable(impact_replay_check tests/impact_replay_check.cpp)   # oráculo de impacto, solo manual (necesita nivel.col y volcado fuera del repo)
