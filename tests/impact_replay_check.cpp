@@ -8,7 +8,7 @@
 #include <cstdio>
 #include <vector>
 using namespace integ;
-struct Rec { float node[3], R[9], pos[3], P[3], L[3]; };
+struct Rec { float node[3], R[9], pos[3], P[3], L[3]; unsigned step = 0; };   // step = contador de pasos del módulo (+0x1D4)
 static bool rd(const char* p, std::vector<uint8_t>& r) { FILE* f = std::fopen(p, "rb"); if (!f) return false; std::fseek(f, 0, SEEK_END); r.resize(std::ftell(f)); std::rewind(f); bool ok = std::fread(r.data(), 1, r.size(), f) == r.size(); std::fclose(f); return ok; }
 static V3 toYup(const V4& v) { return {v.x, v.z, -v.y}; }                 // espacio del juego (z arriba) -> Ground (y arriba), como bike_demo
 static V4 fromYup(V3 v, float w = 0) { return {v.x, -v.z, v.y, w}; }
@@ -18,7 +18,7 @@ int main(int argc, char** argv) {
     FILE* f = std::fopen(argv[2], "r"); if (!f) return 2;
     float invm, com[3], d[3], e, mu; int np; if (std::fscanf(f, "%f %f %f %f %f %f %f %f %f %d", &invm, com, com + 1, com + 2, d, d + 1, d + 2, &e, &mu, &np) != 10) return 2;
     std::vector<V4> loc(np); std::vector<float> rad(np); for (int i = 0; i < np; i++) { float a, b, c, r; if (std::fscanf(f, "%f %f %f %f", &a, &b, &c, &r) != 4) return 2; loc[i] = {a, b, c, 0}; rad[i] = r; }
-    std::vector<Rec> T; for (;;) { Rec r; float* q = r.node; int n = 0; for (; n < 21; n++) { float* p = n < 3 ? r.node + n : n < 12 ? r.R + n - 3 : n < 15 ? r.pos + n - 12 : n < 18 ? r.P + n - 15 : r.L + n - 18; if (std::fscanf(f, "%f", p) != 1) break; } (void)q; if (n < 21) break; T.push_back(r); }
+    std::vector<Rec> T; for (;;) { Rec r; float* q = r.node; int n = 0; for (; n < 21; n++) { float* p = n < 3 ? r.node + n : n < 12 ? r.R + n - 3 : n < 15 ? r.pos + n - 12 : n < 18 ? r.P + n - 15 : r.L + n - 18; if (std::fscanf(f, "%f", p) != 1) break; } (void)q; if (n < 21 || std::fscanf(f, "%u", &r.step) != 1) break; T.push_back(r); }
     std::fclose(f); size_t k0 = argc > 3 ? std::atoi(argv[3]) : 0, k1 = argc > 4 ? std::atoi(argv[4]) : T.size() - 2;
     auto make = [&](const Rec& t) { Body b; b.invMass = invm; b.com = {com[0], com[1], com[2], 0}; b.invInertia = {d[0], d[1], d[2], 0}; b.pos = {t.pos[0], t.pos[1], t.pos[2], 1}; b.nodePos = {t.node[0], t.node[1], t.node[2], 1};
         for (int i = 0; i < 3; i++) for (int j = 0; j < 3; j++) at(b.nodeRot.r[i], j) = t.R[3 * i + j];
@@ -28,14 +28,16 @@ int main(int argc, char** argv) {
         V4 w; for (int j = 0; j < 3; j++) at(w, j) = (at(loc[i], 0) * at(b.nodeRot.r[0], j) + at(loc[i], 1) * at(b.nodeRot.r[1], j)) + at(loc[i], 2) * at(b.nodeRot.r[2], j);
         w.x += b.nodePos.x; w.y += b.nodePos.y; w.z += b.nodePos.z; out.push_back(toYup(w)); } };
     float maxPos = 0; for (const Rec& t : T) for (float v : t.pos) maxPos = std::fmax(maxPos, std::fabs(v));
-    const double ulpPos = std::nextafter(maxPos, 1e30f) - maxPos; int nImp = 0, nPass = 0; std::vector<size_t> failed;   // umbrales PROVISIONALES de impacto (aprobados 2026-10-04): |dpos| <= 3 ulp, |dR| <= 1e-3, relP <= 5e-4, relL <= 2e-3
+    const double ulpPos = std::nextafter(maxPos, 1e30f) - maxPos; int nImp = 0, nPass = 0, nBad = 0; std::vector<size_t> failed;   // umbrales PROVISIONALES de impacto (aprobados 2026-10-04): |dpos| <= 3 ulp, |dR| <= 1e-3, relP <= 5e-4, relL <= 2e-3
     std::printf("tick | contactos(inicio) iter hits | dpos  dnodo  dR  relP  relL | respuestas |J|\n");
     for (size_t k = k0; k <= k1 && k + 1 < T.size(); k++) {
         Body b = make(T[k]); engine::preStep(b); std::vector<std::vector<SweepHit>> L; std::vector<SweepHit> side; std::vector<float> jmag; int nhit = 0;
         auto sweep = [&](const Body& s, const Body& en) { std::vector<V3> p0, p1; worldPts(s, p0); worldPts(en, p1); L.assign(np, {}); for (int i = 0; i < np; i++) L[i] = g.sweepHits(p0[i], p1[i], rad[i]);
             if (std::getenv("DH_DEBUG")) for (int i = 0; i < np; i++) { std::printf("\n   sweep pt%d (%.1f %.1f %.1f)->(%.1f %.1f %.1f) r=%.2f:", i, p0[i].x, p0[i].y, p0[i].z, p1[i].x, p1[i].y, p1[i].z, rad[i]); for (const SweepHit& q : L[i]) std::printf(" [frac %.3f tri %u n=(%.2f %.2f %.2f) pen %.2f]", q.frac, q.tri, q.normal.x, q.normal.y, q.normal.z, q.pen); }
             std::vector<Hit> hs; side.clear(); HitRef r = nextHit(L); while (r.valid()) { SweepHit sh = L[r.point][r.index]; hs.push_back(Hit{sh.frac, r.point}); side.push_back(sh); r = nextHit(L, r); } nhit += (int)hs.size(); return hs; };
-        auto depen = [&](Body& bb, const std::vector<Hit>&) { Depenetration dp = depenetration(L); if (dp.apply) translate(bb, fromYup(dp.move)); };   // FUN_001344F0: solo si |mover| <= 1
+        auto depen = [&](Body& bb, const std::vector<Hit>& hs) {
+            if (!hs.empty() && hs[0].frac == -1.f && !side.empty() && side[0].frac != -1.f) for (SweepHit& q : L[hs[0].point]) if (q.tri == side[0].tri && q.frac == side[0].frac) { q.frac = -1.f; break; }   // FUN_001340D8 0x134340: en la 2.ª iteración escribe frac = -1 en el propio registro, que FUN_001344F0 luego lee
+            Depenetration dp = depenetration(L); if (dp.apply) translate(bb, fromYup(dp.move)); };   // FUN_001344F0: solo si |mover| <= 1
         auto respond = [&](Body& bb, const Hit& h) {
             const SweepHit* sh = nullptr; for (const SweepHit& c : side) if (c.frac == h.frac) { sh = &c; break; } if (!sh) return false;
             RigidBody rb; rb.invMass = bb.invMass; rb.com = {bb.pos.x, bb.pos.y, bb.pos.z}; rb.linMom = {bb.P.x, bb.P.y, bb.P.z}; rb.angMom = {bb.L.x, bb.L.y, bb.L.z}; rb.vel = {bb.vel.x, bb.vel.y, bb.vel.z}; rb.omega = {bb.omega.x, bb.omega.y, bb.omega.z};
@@ -50,9 +52,12 @@ int main(int argc, char** argv) {
             for (int i = 0; i < 3; i++) dR = std::fmax(dR, std::fabs(at(b.nodeRot.r[i], j) - t.R[3 * i + j])); }
         if (std::getenv("DH_DEBUG")) std::printf("\n   pos real-modelo=(%.3f %.3f %.3f) vel modelo=(%.1f %.1f %.1f) real=(%.1f %.1f %.1f)", t.pos[0] - b.pos.x, t.pos[1] - b.pos.y, t.pos[2] - b.pos.z, b.vel.x, b.vel.y, b.vel.z, t.P[0] * invm, t.P[1] * invm, t.P[2] * invm);
         if (std::getenv("DH_DEBUG")) std::printf("\n   P real(k)=(%.0f %.0f %.0f) real(k+1)=(%.0f %.0f %.0f) modelo=(%.0f %.0f %.0f) L real(k+1)=(%.0f %.0f %.0f) modelo=(%.0f %.0f %.0f)\n", T[k].P[0], T[k].P[1], T[k].P[2], t.P[0], t.P[1], t.P[2], b.P.x, b.P.y, b.P.z, t.L[0], t.L[1], t.L[2], b.L.x, b.L.y, b.L.z);
-        if (nhit > 0) { nImp++; bool ok = dpos <= 3 * ulpPos && dR <= 1e-3 && dP / mP <= 5e-4 && dL / mL <= 2e-3; if (ok) nPass++; else failed.push_back(k); }
+        bool badPair = T[k + 1].step - T[k].step != 1 || (k + 2 < T.size() && T[k + 2].step == T[k + 1].step);   // muestra perdida/duplicada o a medio paso: el par no es un paso físico completo
+        if (badPair) nBad++;
+        if (nhit > 0 && !badPair) { nImp++; bool ok = dpos <= 3 * ulpPos && dR <= 1e-3 && dP / mP <= 5e-4 && dL / mL <= 2e-3; if (ok) nPass++; else failed.push_back(k); }
+        if (badPair) std::printf("%4zu | PAR INVÁLIDO (contador de pasos %u -> %u)\n", k, T[k].step, T[k + 1].step);
         std::printf("%4zu | it=%d hits=%d | %.2e %.2e %.2e %.2e %.2e |", k, it, nhit, dpos, dnode, dR, dP / mP, dL / mL); for (float j : jmag) std::printf(" %.1f", j); std::printf("\n");
     }
-    std::printf("impactos (ticks con contacto): %d, bajo umbrales provisionales: %d", nImp, nPass); if (!failed.empty()) { std::printf("; fallan:"); for (size_t k : failed) std::printf(" %zu", k); } std::printf("\n");
+    std::printf("impactos válidos (ticks con contacto, pares completos): %d, bajo umbrales provisionales: %d; pares descartados por contador de pasos: %d", nImp, nPass, nBad); if (!failed.empty()) { std::printf("; fallan:"); for (size_t k : failed) std::printf(" %zu", k); } std::printf("\n");
     return std::getenv("DH_ASSERT") && nPass != nImp ? 1 : 0;
 }
