@@ -34,5 +34,11 @@ public:
         }
         glPopMatrix();
     }
+    void drawQuads2D(const std::vector<Quad>& q, int vw, int vh) override {
+        glDisable(GL_TEXTURE_2D); glDisable(GL_DEPTH_TEST); glDisable(GL_FOG); glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity(); glOrtho(0, vw, vh, 0, -1, 1); glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity();
+        glBegin(GL_QUADS); for (const Quad& r : q) { glColor4f(r.r, r.g, r.b, r.a); glVertex2f(r.x, r.y); glVertex2f(r.x + r.w, r.y); glVertex2f(r.x + r.w, r.y + r.h); glVertex2f(r.x, r.y + r.h); } glEnd();
+        glPopMatrix(); glMatrixMode(GL_PROJECTION); glPopMatrix(); glMatrixMode(GL_MODELVIEW); glEnable(GL_DEPTH_TEST); glDisable(GL_BLEND);
+    }
 };
 }  // namespace gfx

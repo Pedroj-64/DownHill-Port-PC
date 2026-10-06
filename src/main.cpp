@@ -18,6 +18,8 @@
 #include "ground.hpp"
 #include "ride.hpp"
 #include "race.hpp"
+#include "controls.hpp"
+#include "text.hpp"
 #include "gl_renderer.hpp"
 #include "rider.hpp"
 #include "rider_mesh.hpp"
@@ -236,6 +238,7 @@ int main(int argc, char** argv) {
         if (!gateOpened) { openStartGate(gcol); gateOpened = true; }   // la verja de salida (superficie 0x681D) está cerrada en la malla estática
         const Gate* g0 = gts.courseGate(0); float h0 = g0 ? std::atan2(g0->n.x, -g0->n.z) : yaw;
         race.load(gcol, &gts, haveStart ? startPt : V3{px, py, pz}, h0);   // cuenta atrás de 3 s con la moto en la parrilla y reloj a cero al «¡Ya!» (src/race.hpp) camHead = h0; leanVis = 0; finishedMsg = false;
+        if (std::getenv("DH_DEMO_RESULTS")) { race.res.finished = true; race.res.time = 430.98; race.res.gates = race.res.totalGates = gts.size(); race.res.respawns = 0; race.res.maxSpeed = 111.f; race.res.splits = {16.00f, 26.26f, 39.66f}; race.state = RaceState::Results; }   // solo para capturas de la maquetación (valores de muestra)
         V3 f = prun.bike.fwd; camPos = prun.bike.pos + V3{-f.x * 11.f, 4.5f, -f.z * 11.f}; play = true; ride = false; walk = false;
     };
     auto startRide = [&]() {
@@ -276,21 +279,34 @@ int main(int argc, char** argv) {
         float fx = std::sin(yaw) * std::cos(pitch), fy = std::sin(pitch), fz = -std::cos(yaw) * std::cos(pitch);
         float rx = std::cos(yaw), rz = std::sin(yaw);
         if (play) {
-            float ddt = std::fmin(dt, 0.05f); BikeInput in;
-            if (const char* pi = std::getenv("DH_PLAYIN")) std::sscanf(pi, "%f %f %f %f", &in.throttle, &in.brake, &in.steer, &in.lean);
-            else { in.throttle = k[SDL_SCANCODE_W] ? 1.f : 0.f; in.brake = k[SDL_SCANCODE_S] ? 1.f : 0.f; in.steer = (k[SDL_SCANCODE_D] ? 1.f : 0.f) - (k[SDL_SCANCODE_A] ? 1.f : 0.f); in.lean = (k[SDL_SCANCODE_Q] ? 1.f : 0.f) - (k[SDL_SCANCODE_E] ? 1.f : 0.f); }
-            in.hop = hopPressed; hopPressed = false;
-            int ev = 0;
-            if (replay.size() >= 12) {
-                size_t ns = replay.size() / 6, i = std::min(replayAt, ns - 1), j = std::min(i + 1, ns - 1); if (j == i && i > 0) j = i - 1; Bike& b0 = prun.bike;
-                b0.pos = {replay[6*i], replay[6*i+1], replay[6*i+2]}; b0.fwd = {replay[6*i+3], replay[6*i+4], replay[6*i+5]}; b0.grounded = true;
-                V3 dv{replay[6*j] - replay[6*i], replay[6*j+1] - replay[6*i+1], replay[6*j+2] - replay[6*i+2]}; if (j < i) dv = dv * -1.f; b0.rb.vel = dv * 10.f;
-                camHead = std::atan2(dv.x, -dv.z); camPos = b0.pos + V3{-std::sin(camHead) * 11.f, 4.5f, std::cos(camHead) * 11.f};
-            } else ev = race.update(gcol, in, ddt);
+            float ddt = std::fmin(dt, 0.05f); int ev = 0;
+            // Paso FIJO de 1/60 s (acumulador): la simulación no depende de los fps, así que las entradas por tick se pueden registrar (DH_INPUT_LOG=archivo, se guarda al salir)
+            // y repetir (DH_INPUT_REPLAY=archivo) con el mismo resultado. DH_PLAYIN="a b c d" fija las entradas analógicas (pruebas).
+            static std::vector<uint8_t> inLog, inReplay; static size_t inTick = 0; static bool inInit = false; static double acc = 0;
+            if (!inInit) { inInit = true; if (const char* rp = std::getenv("DH_INPUT_REPLAY")) { if (!loadInputs(rp, inReplay)) std::fprintf(stderr, "aviso: no se pudo leer %s\n", rp); } }
+            Keys ky; ky.up = k[SDL_SCANCODE_UP]; ky.down = k[SDL_SCANCODE_DOWN]; ky.left = k[SDL_SCANCODE_LEFT]; ky.right = k[SDL_SCANCODE_RIGHT]; ky.w = k[SDL_SCANCODE_W]; ky.s = k[SDL_SCANCODE_S]; ky.a = k[SDL_SCANCODE_A]; ky.d = k[SDL_SCANCODE_D];
+            ky.q = k[SDL_SCANCODE_Q]; ky.e = k[SDL_SCANCODE_E]; ky.space = k[SDL_SCANCODE_SPACE]; ky.shift = k[SDL_SCANCODE_LSHIFT] || k[SDL_SCANCODE_RSHIFT];
+            bool hopEdge = hopPressed; hopPressed = false; acc += ddt;
+            for (int n = 0; acc >= 1.0 / 60.0 && n < 6; n++, acc -= 1.0 / 60.0) {
+                BikeInput in; uint8_t bits = 0;
+                if (!inReplay.empty()) bits = inTick < inReplay.size() ? inReplay[inTick] : (uint8_t)0;      // repetición: se acabó el registro = sin mandos
+                else bits = packKeys(ky, hopEdge);
+                hopEdge = false; in = unpackInput(bits);
+                if (const char* pi = std::getenv("DH_PLAYIN")) std::sscanf(pi, "%f %f %f %f", &in.throttle, &in.brake, &in.steer, &in.lean);
+                if (std::getenv("DH_INPUT_LOG")) inLog.push_back(bits);
+                inTick++;
+                if (replay.size() >= 12) {
+                    size_t ns = replay.size() / 6, i = std::min(replayAt, ns - 1), j = std::min(i + 1, ns - 1); if (j == i && i > 0) j = i - 1; Bike& b0 = prun.bike;
+                    b0.pos = {replay[6*i], replay[6*i+1], replay[6*i+2]}; b0.fwd = {replay[6*i+3], replay[6*i+4], replay[6*i+5]}; b0.grounded = true;
+                    V3 dv{replay[6*j] - replay[6*i], replay[6*j+1] - replay[6*i+1], replay[6*j+2] - replay[6*i+2]}; if (j < i) dv = dv * -1.f; b0.rb.vel = dv * 10.f;
+                    camHead = std::atan2(dv.x, -dv.z); camPos = b0.pos + V3{-std::sin(camHead) * 11.f, 4.5f, std::cos(camHead) * 11.f};
+                } else { int e2 = race.update(gcol, in, 1.f / 60.f); if (e2 && !ev) ev = e2; }
+            }
+            { static bool saved = false; static const char* lp = std::getenv("DH_INPUT_LOG"); if (lp && !saved && race.state >= RaceState::Finished) { saved = saveInputs(lp, inLog); std::fprintf(stderr, "registro de entradas: %zu ticks -> %s (%s)\n", inLog.size(), lp, saved ? "ok" : "error"); } }
             if (ev > 0) std::printf("puerta %zu/%zu cruzada a los %.1f s\n", prun.gs.counter, gts.size(), prun.t);
             if (race.state >= RaceState::Finished && !finishedMsg) { finishedMsg = true; std::printf("META %s (%zu/%zu puertas, reinicios %u, máx %.0f km/h)\n", formatTime(race.res.time).c_str(), race.res.gates, race.res.totalGates, race.res.respawns, 1.0973f * race.res.maxSpeed); }
             Bike& bk = prun.bike; Axes ax = bk.axes(); V3 vv = bk.vel(); float hs = std::sqrt(vv.x * vv.x + vv.z * vv.z);
-            leanVis += (-in.steer * std::fmin(0.45f, bk.speed() * 0.012f) * (bk.grounded ? 1.f : 0.f) - leanVis) * std::fmin(1.f, 6.f * ddt);   // inclinación visual al girar (sólo dibujo)
+            static float lastSteer = 0; { uint8_t lb = packKeys(ky, false); lastSteer = unpackInput(lb).steer; } leanVis += (-lastSteer * std::fmin(0.45f, bk.speed() * 0.012f) * (bk.grounded ? 1.f : 0.f) - leanVis) * std::fmin(1.f, 6.f * ddt);   // inclinación visual al girar (sólo dibujo)
             float want = hs > 4.f ? std::atan2(vv.x, -vv.z) : bk.heading(), df = want - camHead; while (df > 3.14159f) df -= 6.28318f; while (df < -3.14159f) df += 6.28318f;
             camHead += df * std::fmin(1.f, 3.f * ddt);
             V3 tgt = bk.pos + ax.u * 0.5f, cp = tgt + V3{-std::sin(camHead) * 11.f, 4.5f, std::cos(camHead) * 11.f}; camPos = camPos + (cp - camPos) * std::fmin(1.f, 8.f * ddt);
@@ -472,6 +488,28 @@ int main(int argc, char** argv) {
             rect(x0 - 3, y0 - 3, bw + 6, bh + 6, 0, 0, 0, 0.55f); rect(x0, y0, bw * std::fmin(1.f, prun.bike.speed() / 100.f), bh, prun.gs.finished ? 0.2f : 0.95f, prun.gs.finished ? 0.9f : 0.8f, 0.15f, 0.95f);
             for (size_t i = 0; i < ng; i++) { float cw = bw / (float)ng; bool done = i < prun.gs.counter; rect(x0 + cw * i + 1, y0 + bh * 1.8f, cw - 2, bh * 0.7f, done ? 0.2f : 0.35f, done ? 0.9f : 0.35f, done ? 0.3f : 0.35f, 0.85f); }
             glPopMatrix(); glMatrixMode(GL_PROJECTION); glPopMatrix(); glMatrixMode(GL_MODELVIEW); glEnable(GL_DEPTH_TEST); glDisable(GL_BLEND);
+        }
+        if (play) {                                          // texto provisional (src/text.hpp): cronómetro, velocidad, puertas, cuenta atrás, aviso de meta y pantalla de resultados
+            std::vector<gfx::Quad> tq; const float S = std::fmax(2.f, std::floor(ww / 320.f)); char b[64];
+            auto line = [&](const std::string& t, float x, float y, float sc, float r, float g2, float b2) { gfx::textQuads(t, x + sc, y + sc, sc, 0, 0, 0, 0.7f, tq); gfx::textQuads(t, x, y, sc, r, g2, b2, 1.f, tq); };   // con sombra
+            auto mid = [&](const std::string& t, float y, float sc, float r, float g2, float b2) { float x = ww * 0.5f - gfx::textWidth(t, sc) * 0.5f; line(t, x, y, sc, r, g2, b2); };
+            if (race.state == RaceState::Results) {
+                tq.push_back({0, 0, (float)ww, (float)hh, 0, 0, 0, 0.6f});
+                mid("TIME TRIAL RESULTS", hh * 0.18f, S * 2.f, 1.f, 0.85f, 0.2f);                     // título: texto real del ELF (0x2774DC)
+                std::snprintf(b, sizeof b, "TIME  %s", formatTime(race.res.time).c_str()); mid(b, hh * 0.34f, S * 2.f, 1, 1, 1);               // etiquetas provisionales (no son del ELF)
+                std::snprintf(b, sizeof b, "TOP SPEED  %.0f KM/H", 1.0973f * race.res.maxSpeed); mid(b, hh * 0.46f, S * 1.5f, 1, 1, 1);
+                std::snprintf(b, sizeof b, "GATES  %zu/%zu", race.res.gates, race.res.totalGates); mid(b, hh * 0.54f, S * 1.5f, 1, 1, 1);
+                std::snprintf(b, sizeof b, "RESETS  %u", race.res.respawns); mid(b, hh * 0.62f, S * 1.5f, 1, 1, 1);
+                for (size_t i = 0; i < race.res.splits.size() && i < 3; i++) { std::snprintf(b, sizeof b, "SPLIT %zu  %s", i + 1, formatTime(race.res.splits[i]).c_str()); mid(b, hh * (0.72f + 0.05f * i), S, 0.8f, 0.8f, 0.8f); }
+            } else {
+                line(formatTime(race.displayTime()), ww * 0.03f, hh * 0.04f, S * 2.f, 1, 1, 1);
+                std::snprintf(b, sizeof b, "%.0f KM/H", 1.0973f * prun.bike.speed()); line(b, ww * 0.97f - gfx::textWidth(b, S * 1.5f), hh * 0.04f, S * 1.5f, 1, 0.85f, 0.2f);
+                std::snprintf(b, sizeof b, "GATES %zu/%zu", prun.gs.counter, gts.size()); line(b, ww * 0.03f, hh * 0.04f + 10 * S * 2.f, S, 0.8f, 1, 0.8f);
+                if (race.state == RaceState::Countdown) { std::snprintf(b, sizeof b, "%d", race.countdownDigit()); mid(b, hh * 0.3f, S * 8.f, 1, 0.85f, 0.2f); }
+                else if (race.state == RaceState::Riding && race.displayTime() < 1.0) mid("GO!", hh * 0.3f, S * 8.f, 0.3f, 1, 0.3f);                       // provisional (la cadena real del juego no está localizada)
+                else if (race.state == RaceState::Finished) mid("GREAT FINISH!", hh * 0.3f, S * 4.f, 1, 0.85f, 0.2f);                                       // texto real del ELF (0x277614); su uso aquí es hipótesis
+            }
+            gr.drawQuads2D(tq, (int)ww, (int)hh);
         }
         static const int shotFrame = std::getenv("DH_FRAMES") ? std::atoi(std::getenv("DH_FRAMES")) : 3;
         if (shot && frame == shotFrame - 1 && play) std::printf("play: estado=%s cuenta=%d reloj=%s velocidad=%.1f u/s puertas=%zu/%zu\n", raceStateName(race.state), race.countdownDigit(), formatTime(race.displayTime()).c_str(), prun.bike.speed(), prun.gs.counter, gts.size());

@@ -11,6 +11,7 @@ namespace gfx {
 using TextureId = int;      // -1 = sin textura
 using MeshId = int;
 struct Texture { int w = 0, h = 0; std::vector<uint8_t> rgba; };
+struct Quad { float x, y, w, h, r, g, b, a; };   // rectángulo 2D de interfaz: píxeles de pantalla, origen arriba a la izquierda, color RGBA
 class Renderer {
 public:
     virtual ~Renderer() = default;
@@ -20,5 +21,7 @@ public:
     virtual void updateVertices(MeshId m, const std::vector<float>& verts10) = 0;
     // `model` = 4x4 por columnas (convención OpenGL) aplicada a los vértices; `gain` = sobrebrillo PS2 (x2 en modelos que no son de nivel)
     virtual void draw(MeshId m, const float model[16], float gain) = 0;
+    // Rectángulos 2D de color plano (HUD, texto provisional de text.hpp) sobre la pantalla de viewW x viewH píxeles.
+    virtual void drawQuads2D(const std::vector<Quad>& quads, int viewW, int viewH) = 0;
 };
 }  // namespace gfx
