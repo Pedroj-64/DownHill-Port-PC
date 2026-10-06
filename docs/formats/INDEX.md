@@ -33,5 +33,6 @@ Coverage inferred from file names only (documents were not opened).
 | Formatos (resumen) / Formats (overview) | [formats](../es/formats.md) | [formats](../en/formats.md) |
 | Investigación / Research | [research](../es/research.md) | [research](../en/research.md) |
 | Savestates PS2 / PS2 savestates | [p2s-savestates](../p2s-savestates.md) | same |
+| Telemetría y fotos del juego para colaboradores / Contributor telemetry | [tools/telemetry/README.md](../../tools/telemetry/README.md) | same |
 | Plan del cargador nativo / Native loader plan | [native-loader-plan](../native-loader-plan.md) | same |
 | Decisiones / Decisions | [DECISIONS](../DECISIONS.md) | same |

@@ -67,3 +67,12 @@ decomp/
 *.p2s.backup
 *.cap
 SLES-*
+
+# Telemetría y fotos del juego (datos del juego: nunca al repo)
+dh-telemetry/
+*.dhtel
+*.dhtel.gz
+*.ram.gz
+*.p2s
+*.p2s.dhtel_backup
+dhtel_*
