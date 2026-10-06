@@ -50,7 +50,8 @@ int main(int argc, char** argv) {
         if (!bike.grounded) {                                                   // en el aire: cabeceo paralelo a la pendiente donde va a aterrizar (trayectoria balística); sin impacto previsto, con la trayectoria
             V3 v = bike.vel(); float hz = std::sqrt(v.x * v.x + v.z * v.z), want_p = std::atan2(v.y, hz), cur = std::asin(std::fmax(-1.f, std::fmin(1.f, bike.fwd.y)));
             SweepHit gq = predictLanding(g, bike);
-            if (gq.hit && gq.normal.y > 0.2f) { V3 fh = unit(V3{bike.fwd.x, 0, bike.fwd.z}); V3 t = fh - gq.normal * dot(fh, gq.normal); if (dot(t, t) > 1e-6f) want_p = std::asin(std::fmax(-1.f, std::fmin(1.f, unit(t).y))); }
+            if (gq.hit && gq.normal.y > 0.6f) { V3 fh = unit(V3{bike.fwd.x, 0, bike.fwd.z}); V3 t = fh - gq.normal * dot(fh, gq.normal); if (dot(t, t) > 1e-6f) want_p = std::asin(std::fmax(-1.f, std::fmin(1.f, unit(t).y))); }
+            want_p = std::fmax(want_p, -0.5f);   // pared o caída vertical por delante: no picar más de ~30° (picar a -76° engancha el borde de enfrente en el barranco de ALP2, punto 125)
             float wp = dot(bike.rb.omega, bike.axes().r);
             in.lean = std::fmax(-1.f, std::fmin(1.f, 3.f * (want_p - cur) - 0.5f * wp));
         }

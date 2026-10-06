@@ -45,7 +45,11 @@ struct BikeParams {
     // --- HIPÓTESIS (no salen del ELF; afinadas para que se conduzca, véase bike-physics.md) ---
     float pedalAccel = 60.f, pedalMax = 50.f;              // u/s^2 de pedaleo y velocidad a la que deja de empujar (hipótesis; reajustado: el amortiguamiento lineal del motor, 1.27/s, frena en llano: v_eq = a/(c + a/vmax) ~ 24 u/s)
     float brakeDecel = 28.f;                               // u/s^2 con el freno a fondo (nunca invierte el sentido)
-    float rolling = 0.03f;                                 // rodadura 1/s (hipótesis). La resistencia ya no es una hipótesis cuadrática: el amortiguamiento lineal del motor da velocidad terminal g/c = 96.6/1.27 = 76 u/s en caída (savestates hasta 85 u/s)
+    float rolling = 0.f;                                   // rodadura 1/s (hipótesis; 0: el término de suelo de abajo ya la cubre)
+    // Conducción (hito 3b, FUN_00136330; ride_force_check.py): el cuerpo de conducción NO usa el amortiguamiento lineal 0.975 de FUN_00134060 sino arrastre cuadrático -k|v|v (validado a 4.6e-7, k = ctrl+0x490 = 0.0063..0.0079).
+    // groundShare = 0.46 (con k = 0.0063 del motor) se AJUSTÓ a 191 ventanas de 50 ticks de rodadura sin entrada (ride_s1/s5, roll_s1/s5/s5b): 72 % dentro del 15 % de la velocidad capturada (mediana 10.3 %; sin término de suelo 12 %). HIPÓTESIS.
+    float dragK = 0.0063f, dragKAir = 0.0077f;             // 1/u: aceleración de arrastre = k·|v|²; valores del motor (ctrl+0x490): 0.00627/0.00632 con ctrl+0x4A4 = 0 (suelo), 0.00744/0.0079 con >= 2 (aire)
+    float groundShare = 0.46f;                             // fracción de la gravedad tangente a la pendiente que sobrevive en suelo (el resto lo anula la fuerza de suelo desconocida, origen abierto: physics-module.md "3b"). HIPÓTESIS empírica
     float comLift = 1.4f;                                  // sube todos los puntos locales (baja el centro de masas efectivo): el motor da los puntos respecto al nodo y el centro de masas está desplazado (+0x50), desplazamiento desconocido: hipótesis de estabilidad
     float rollConst = 0.8f;                                // u/s^2 de rodadura constante en el suelo: detiene la moto en llano (hipótesis)
     float pitchDamp = 0.975f;                              // HIPÓTESIS (no es del motor): amortiguación extra del cabeceo por tick de 1/50 s; era el único uso del 0.975 antes de localizar FUN_00134060, y sin ella el cabeceo oscila en las caídas largas de ALP2
@@ -110,9 +114,9 @@ private:
         Axes A = axes(); rb.com = pos; syncInertia(A);
         // --- mandos y fuerzas (hipótesis: ver BikeParams) ---
         // orden de FUN_00134060: primero el amortiguamiento de P/vel y L/omega (factor por tick de 1/50 s llevado al sub-paso h), luego las fuerzas (peso incluido)
-        float kl = std::pow(P.linDamp, engine::kTickHz * h), ka = std::pow(P.angDamp, engine::kTickHz * h);
+        float ka = std::pow(P.angDamp, engine::kTickHz * h);
         rb.omega = rb.omega * ka;
-        V3 v = rb.vel * kl; bool gr = coyote > 0.f;
+        bool gr = coyote > 0.f; V3 v = rb.vel; v = v * (1.f / (1.f + (gr ? P.dragK : P.dragKAir) * std::sqrt(dot(v, v)) * h));   // arrastre cuadrático implícito (estable a cualquier h)
         if (gr) {
             V3 f = unit(fwd - groundN * dot(fwd, groundN)); float sf = dot(v, f);
             if (in.throttle > 0) v = v + f * (P.pedalAccel * in.throttle * std::fmax(0.f, 1.f - sf / P.pedalMax) * h);
@@ -121,6 +125,7 @@ private:
             { float vs = std::sqrt(dot(v, v)); if (vs > 1e-6f) v = v * (std::fmax(0.f, vs - P.rollConst * h) / vs); }
         }
         v.y -= P.gravity * h;
+        if (gr) { V3 gt = V3{0, -P.gravity, 0}; gt = gt - groundN * dot(gt, groundN); v = v - gt * ((1.f - P.groundShare) * h); }   // fuerza de suelo empírica: anula (1-groundShare) de la gravedad tangente (hipótesis)
         if (in.hop && first && gr) { v = v + A.u * P.hop; coyote = 0; }
         rb.vel = v; rb.linMom = v * P.mass;
         float wp = dot(rb.omega, A.r), wy = rb.omega.y;

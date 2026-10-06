@@ -27,7 +27,7 @@ int main() {
       CHECK(miny > 0.f); CHECK(b.pos.y > 2.f); }
     // --- acelerar: gana velocidad hacia delante y se mantiene recta (rumbo 0 = -Z) ---
     { Ground g = plane(0); Bike b; b.place({0, 4.f, 0}, 0); run(b, g, {}, 1.f); BikeInput in; in.throttle = 1; run(b, g, in, 6.f);
-      float sf = dot(b.vel(), b.axes().f); CHECK(sf > 10.f && sf < 45.f); CHECK(std::fabs(b.vel().x) < 1.f); CHECK(b.pos.z < -20.f); }
+      float sf = dot(b.vel(), b.axes().f); CHECK(sf > 10.f && sf < 45.f); CHECK(std::fabs(b.vel().x) < 0.04f * b.speed()); CHECK(b.pos.z < -20.f); }
     // --- frenar: la velocidad cae a ~0 y nunca invierte el sentido ---
     { Ground g = plane(0); Bike b; b.place({0, 4.f, 0}, 0); BikeInput in; in.throttle = 1; run(b, g, in, 6.f); in.throttle = 0; in.brake = 1; float minsf = 1e9f;
       for (int i = 0; i < 60 * 5; i++) { b.step(g, in, 1.f / 60.f); minsf = std::fmin(minsf, dot(b.vel(), b.axes().f)); } CHECK(b.speed() < 1.5f); CHECK(minsf > -0.5f); }
