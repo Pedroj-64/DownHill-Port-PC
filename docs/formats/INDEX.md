@@ -17,6 +17,7 @@ Coverage inferred from file names only (documents were not opened).
 | Integrador (`FUN_00238818`) / Integrator | [integrator.md](integrator.md) |
 | Módulo físico de la bici / Bike physics module | [physics-module.md](physics-module.md) |
 | Operaciones macro VU0 / VU0 macro ops | [vu0-macro-ops.md](vu0-macro-ops.md) |
+| Capa de juego (audio, menús, resultados, guardado) / Game layer | [game-layer.md](game-layer.md) |
 | Piloto (malla, esqueleto, piel) / Rider (mesh, skeleton, skin) | [rider.md](rider.md) |
 | Piloto en vivo / Rider live | [rider-live.md](rider-live.md) |
 | Piernas del piloto / Rider legs | [rider-legs.md](rider-legs.md) |
