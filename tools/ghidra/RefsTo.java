@@ -12,10 +12,12 @@ public class RefsTo extends GhidraScript {
         PrintWriter w = new PrintWriter(new FileWriter(a[0]));
         for (int i = 1; i < a.length; i++) {
             w.println("== " + a[i]);
-            for (Reference r : getReferencesTo(toAddr(Long.parseLong(a[i], 16)))) {
-                Function f = getFunctionContaining(r.getFromAddress());
-                w.println("  from " + r.getFromAddress() + " in " + (f == null ? "?" : f.getName() + " @ " + f.getEntryPoint()));
-            }
+            try {
+                for (Reference r : getReferencesTo(toAddr(Long.parseLong(a[i], 16)))) {
+                    Function f = getFunctionContaining(r.getFromAddress());
+                    w.println("  from " + r.getFromAddress() + " in " + (f == null ? "?" : f.getName() + " @ " + f.getEntryPoint()));
+                }
+            } catch (Exception e) { w.println("  error " + e); }
         }
         w.close();
     }
