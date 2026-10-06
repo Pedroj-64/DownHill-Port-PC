@@ -30,7 +30,7 @@ inline void preStep(integ::Body& b, float kLin = linDamp(), float kAng = angDamp
 }
 }  // namespace engine
 
-struct BikeInput { float throttle = 0, brake = 0, steer = 0, lean = 0; bool hop = false; };   // steer > 0 = derecha; lean > 0 = morro arriba; hop = un solo paso
+struct BikeInput { float throttle = 0, brake = 0, steer = 0, lean = 0; bool hop = false, sprint = false; };   // steer > 0 = derecha; lean > 0 = morro arriba; hop = un solo paso
 
 struct BikeParams {
     // --- del savestate (rider+0x6420, docs/p2s-savestates.md y bike-physics.md) ---
@@ -43,6 +43,7 @@ struct BikeParams {
     float linDamp = engine::linDamp();                     // 0.975 por tick de 1/50 s sobre P y vel: módulo+0x120, FUN_00134060 / FUN_00237960
     float angDamp = engine::angDamp();                     // 0.987 por tick sobre L y omega: módulo+0x11C, FUN_00134060 / FUN_00237998
     // --- HIPÓTESIS (no salen del ELF; afinadas para que se conduzca, véase bike-physics.md) ---
+    float sprintMul = 1.5f;                                // esfuerzo extra: FUN_00136A88 multiplica la fuerza de pedaleo por 1.5 con el botón rider+0x7A69 (la hipótesis es la correspondencia con una tecla)
     float pedalAccel = 60.f, pedalMax = 50.f;              // u/s^2 de pedaleo y velocidad a la que deja de empujar (hipótesis; reajustado: el amortiguamiento lineal del motor, 1.27/s, frena en llano: v_eq = a/(c + a/vmax) ~ 24 u/s)
     float brakeDecel = 28.f;                               // u/s^2 con el freno a fondo (nunca invierte el sentido)
     float rolling = 0.f;                                   // rodadura 1/s (hipótesis; 0: el término de suelo de abajo ya la cubre)
@@ -119,7 +120,7 @@ private:
         bool gr = coyote > 0.f; V3 v = rb.vel; v = v * (1.f / (1.f + (gr ? P.dragK : P.dragKAir) * std::sqrt(dot(v, v)) * h));   // arrastre cuadrático implícito (estable a cualquier h)
         if (gr) {
             V3 f = unit(fwd - groundN * dot(fwd, groundN)); float sf = dot(v, f);
-            if (in.throttle > 0) v = v + f * (P.pedalAccel * in.throttle * std::fmax(0.f, 1.f - sf / P.pedalMax) * h);
+            if (in.throttle > 0) v = v + f * (P.pedalAccel * (in.sprint ? P.sprintMul : 1.f) * in.throttle * std::fmax(0.f, 1.f - sf / P.pedalMax) * h);
             if (in.brake > 0 && sf > 0) v = v - f * std::fmin(sf, P.brakeDecel * in.brake * h);
             v = v - A.r * (dot(v, A.r) * std::fmin(1.f, P.grip * h)); v = v * (1.f - P.rolling * h);
             { float vs = std::sqrt(dot(v, v)); if (vs > 1e-6f) v = v * (std::fmax(0.f, vs - P.rollConst * h) / vs); }
