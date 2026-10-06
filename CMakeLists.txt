@@ -30,6 +30,8 @@ add_executable(sweep_cli tests/sweep_cli.cpp)
 add_executable(ngp_col_check tests/ngp_col_check.cpp)
 add_executable(bike_test tests/bike_test.cpp)
 add_test(NAME bike_test COMMAND bike_test)
+add_executable(race_test tests/race_test.cpp)
+add_test(NAME race_test COMMAND race_test)
 add_executable(bike_demo tests/bike_demo.cpp)
 
 add_executable(integrator_test tests/integrator_test.cpp)

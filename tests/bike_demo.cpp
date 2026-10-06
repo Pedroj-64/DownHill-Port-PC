@@ -4,7 +4,7 @@
 // La moto de src/bike.hpp con un piloto automático de PRUEBAS (acelera, gira hacia el punto de la línea 5 por delante, frena en bajada fuerte, endereza el cabeceo en el aire) recorre el nivel
 // de la rejilla de salida a la meta (plano 8052). Con nivel.mdl cuenta los cruces de la rueda delantera con la malla visual (a doble cara), clasificados como en ride_demo.cpp.
 // linea.pts: f32 x,y,z en espacio NGP (Z arriba, tools/pts_path.py --chain); traza.pts (opcional): trayectoria en el mismo espacio para DH_PTS de dhview.
-#include "../src/bike.hpp"
+#include "../src/race.hpp"
 #include "../src/mdltris.hpp"
 #include <cstdio>
 static bool rd(const char* p, std::vector<uint8_t>& r) { FILE* f = std::fopen(p, "rb"); if (!f) return false; std::fseek(f, 0, SEEK_END); r.resize(std::ftell(f)); std::rewind(f); bool ok = std::fread(r.data(), 1, r.size(), f) == r.size(); std::fclose(f); return ok; }
@@ -28,8 +28,9 @@ int main(int argc, char** argv) {
         V3 a = line[i-1], b = line[i-2]; V3 d = unit(V3{a.x - b.x, 0, a.z - b.z}); line.resize(i); line.push_back(V3{a.x + d.x * 150.f, a.y - 20.f, a.z + d.z * 150.f}); n = line.size(); break; } }
     const float* s0 = (const float*)sp.data(); V3 start{s0[0], s0[2], -s0[1]};
     Ground vis; bool haveVis = false; if (argc > 5) { std::vector<uint8_t> m; std::vector<Ground::Tri> vt; if (rd(argv[5], m) && mdlTris(m, vt, true)) { vis.set(vt); haveVis = true; } }
-    Run run; run.gates = &gates; const Gate* g0 = gates.courseGate(0); float h0 = g0 ? std::atan2(g0->n.x, -g0->n.z) : 0.f;
-    run.start(g, start, h0); Bike& bike = run.bike;
+    Race race; Run& run = race.run; const Gate* g0 = gates.courseGate(0); float h0 = g0 ? std::atan2(g0->n.x, -g0->n.z) : 0.f;
+    race.settle = false;   // el salto del barranco del punto 125 sale con ~8 u de margen y es sensible al estado inicial; sin asentar se repite la trayectoria validada
+     race.load(g, &gates, start, h0); Bike& bike = run.bike;   // máquina de estados de la partida: cuenta atrás de 3 s y reloj a cero al «¡Ya!» (src/race.hpp)
     if (const char* e = std::getenv("DH_CONTACT_TRACE")) bike.trace = std::fopen(e, "w");   // con DH_TRACE_FROM=<punto> solo desde ese punto de la línea (por defecto 125)
     if (const char* e = std::getenv("DH_SUBSTEP")) bike.P.subStep = (float)std::atof(e);   // ablación: sub-paso máximo del integrador (el motor responde 1 vez por tick de 1/50 s)
     const float dt = 1.f / 60.f; size_t idx = 0, bestIdx = 0; for (size_t q = 0; q < n; q++) if ((line[q].x - start.x) * (line[q].x - start.x) + (line[q].z - start.z) * (line[q].z - start.z) < (line[idx].x - start.x) * (line[idx].x - start.x) + (line[idx].z - start.z) * (line[idx].z - start.z)) idx = q;
@@ -43,6 +44,7 @@ int main(int argc, char** argv) {
         for (size_t q = lo; q <= hi; q++) { float d = (line[q].x - bike.pos.x) * (line[q].x - bike.pos.x) + (line[q].z - bike.pos.z) * (line[q].z - bike.pos.z); if (d < bd) { bd = d; bi = q; } }
         idx = bi; bike.traceOn = idx >= (std::getenv("DH_TRACE_FROM") ? (size_t)std::atoi(std::getenv("DH_TRACE_FROM")) : 125); static const float look = std::getenv("DH_LOOK") ? (float)std::atof(std::getenv("DH_LOOK")) : 25.f;   // lookahead por DISTANCIA (no por índice): el tramo 187->188 de ALP2 mide 116 u y apuntar 5 puntos más allá hace salir del borde por otro sitio
         size_t ti = std::min(n - 1, idx + 1); while (ti + 1 < n && (line[ti].x - bike.pos.x) * (line[ti].x - bike.pos.x) + (line[ti].z - bike.pos.z) * (line[ti].z - bike.pos.z) < look * look) ti++; V3 tg = line[ti];
+        { static const float lat[7] = {0.f, -45.f, 45.f, -90.f, 90.f, -140.f, 140.f}; float off = std::getenv("DH_LAT") ? (float)std::atof(std::getenv("DH_LAT")) * (idx >= 118 && idx <= 126) : lat[(tries[std::min(tries.size() - 1, idx / 20)] / 6) % 7]; V3 d = unit(V3{line[ti].x - line[idx].x, 0, line[ti].z - line[idx].z}); tg.x += d.z * off; tg.z -= d.x * off; }   // PRUEBAS: tras probar las 6 velocidades de crucero en una zona se prueba un desvío lateral de la línea (ALP2 punto 125: una cresta rodea el barranco que la línea salta)
         BikeInput in; float want = std::atan2(tg.x - bike.pos.x, -(tg.z - bike.pos.z)); in.steer = std::fmax(-1.f, std::fmin(1.f, 2.f * wrap(want - bike.heading()))); in.throttle = 1.f;
         float sp2 = bike.speed(); static const float cruiseEnv = std::getenv("DH_CRUISE") ? (float)std::atof(std::getenv("DH_CRUISE")) : 0.f; float cruise0 = cruiseEnv > 0 ? cruiseEnv : cruiseTab[tries[std::min(tries.size() - 1, idx / 20)] % 6]; static const float dropV = std::getenv("DH_DROPV") ? (float)std::atof(std::getenv("DH_DROPV")) : 1e9f;   // DH_DROPV=u/s: velocidad de entrada a caídas fuertes (por defecto sin límite: las caídas de la línea son saltos que necesitan velocidad)
         float cruise = cruise0; { float dz = line[idx].y - line[std::min(n - 1, idx + 8)].y; if (dz > 40.f) cruise = std::fmin(cruise0, dropV); }   // caída fuerte por delante en la línea: entra despacio
@@ -56,13 +58,13 @@ int main(int argc, char** argv) {
             in.lean = std::fmax(-1.f, std::fmin(1.f, 3.f * (want_p - cur) - 0.5f * wp));
         }
         V3 wf0 = bike.point(0, bike.axes(), bike.pos);
-        int ev = run.update(g, in, dt);
+        int ev = race.update(g, in, dt);
         V3 wf1 = bike.point(0, bike.axes(), bike.pos);
         if (haveVis) { SweepHit vh = vis.sweep(wf0, wf1, 0.f); if (vh.hit) { auto hs = g.verticalHeights(wf1.x, wf1.z); float nb = -1e30f; for (float h : hs) if (h <= vh.point.y + 0.5f) nb = std::fmax(nb, h); crossings++;
             if (nb > -1e29f && vh.point.y - nb <= 20.f) decals++; else { deep++; if (firstDeepT < 0) { firstDeep = wf1; firstDeepT = run.t; } } } }
         if (std::getenv("DH_DEBUG") && (size_t)(run.t * 60) % 30 == 0 && run.t > (std::getenv("DH_T0") ? std::atof(std::getenv("DH_T0")) : 0.0)) std::printf("t=%.1f idx=%zu pos=(%.0f %.0f %.0f) vel=(%.0f %.0f %.0f) |v|=%.0f fwd=(%.2f %.2f %.2f) gr=%d F=%d R=%d steer=%.2f want=%.2f head=%.2f\n", run.t, idx, bike.pos.x, bike.pos.y, bike.pos.z, bike.vel().x, bike.vel().y, bike.vel().z, bike.speed(), bike.fwd.x, bike.fwd.y, bike.fwd.z, bike.grounded, bike.wheelF, bike.wheelR, in.steer, want, bike.heading());
         if (ev) std::printf("  t=%6.1f s  puerta %zu %s  (punto %zu, %.0f u/s)\n", run.t, ev > 0 ? run.gs.counter : run.gs.counter + 1, ev > 0 ? "cruzada" : "retrocedida", idx, bike.speed());
-        if (run.gs.finished) { std::printf("META (última puerta) en t=%.1f s tras %zu/%zu puertas\n", run.gs.finishTime, run.gs.counter, gates.size()); break; }
+        if (race.state >= RaceState::Finished) { const RaceResult& rr = race.res; std::printf("META (última puerta) en t=%.1f s tras %zu/%zu puertas\n", rr.time, rr.gates, gates.size()); std::printf("RESULTADOS: tiempo %s | puertas %zu/%zu | reinicios %u | velocidad máx %.0f u/s (%.0f km/h)\n", formatTime(rr.time).c_str(), rr.gates, rr.totalGates, rr.respawns, rr.maxSpeed, rr.maxSpeed * 1.0973f); for (size_t i = 0; i < rr.splits.size(); i++) std::printf("  parcial %zu: %s\n", i + 1, formatTime(rr.splits[i]).c_str()); break; }
         maxSpeed = std::fmax(maxSpeed, bike.speed()); (bike.grounded ? tGround : tAir) += dt;
         if (idx > bestIdx + 1) { bestIdx = idx; progressT = run.t; } else if (run.t - progressT > 8.0) {                      // sin progreso 8 s: el jugador reiniciaría desde el último punto bueno
             if (stuckResets >= 60) { std::printf("ATASCADO en el punto %zu/%zu (t=%.1f s) pos=(%.0f %.0f %.0f) tras %u reinicios\n", idx, n, run.t, bike.pos.x, bike.pos.y, bike.pos.z, stuckResets); break; }

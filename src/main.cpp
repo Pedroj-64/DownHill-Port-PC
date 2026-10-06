@@ -17,7 +17,7 @@
 #include "gates.hpp"
 #include "ground.hpp"
 #include "ride.hpp"
-#include "bike.hpp"
+#include "race.hpp"
 #include "gl_renderer.hpp"
 #include "rider.hpp"
 #include "rider_mesh.hpp"
@@ -225,7 +225,7 @@ int main(int argc, char** argv) {
     float worldMinY = 1e30f; for (size_t i = 1; i < v.size(); i += 3) worldMinY = std::fmin(worldMinY, v[i]);
     // --- Modo jugable (P, o DH_PLAY=1): la moto de src/bike.hpp con teclado. FÍSICA APROXIMADA (docs/formats/bike-physics.md). W acelerar, S frenar, A/D girar, Q/E inclinar (morro arriba/abajo),
     // Espacio saltar, Enter reiniciar en el último punto bueno, T volver a la rejilla de salida. DH_PLAYIN="acelerador freno giro inclinar" fija los mandos sin teclado (capturas DH_SHOT) ---
-    bool play = false, hopPressed = false, finishedMsg = false; Run prun; V3 camPos{}, startPt{}; float camHead = 0, leanVis = 0; bool haveStart = false, gateOpened = false;
+    bool play = false, hopPressed = false, finishedMsg = false; Race race; Run& prun = race.run; V3 camPos{}, startPt{}; float camHead = 0, leanVis = 0; bool haveStart = false, gateOpened = false;
     { std::vector<uint8_t> sraw; std::string sp0 = mdl ? std::string(argv[1]).substr(0, std::string(argv[1]).size() - 4) + ".start.pts" : std::string();   // primera plaza de la rejilla (tools/markers.py), espacio NGP -> Y arriba
       if (!sp0.empty() && readFile(sp0, sraw) && sraw.size() >= 12) { float f[3]; std::memcpy(f, sraw.data(), 12); startPt = {f[0], f[2], -f[1]}; haveStart = true; } }
     // DH_REPLAY=traza6.bin (tests/bike_demo.cpp, DH_TRACE6): reproduce la trayectoria del piloto automático de pruebas (6 f32 por muestra: posición y dirección, Y arriba) en el modo jugable, sin simular; DH_REPLAY_AT=i fija la muestra (capturas). Sólo para evidencia visual.
@@ -234,8 +234,8 @@ int main(int argc, char** argv) {
     auto startPlay = [&]() {
         if (!useCol) { std::fprintf(stderr, "modo jugable: hace falta la colisión (<modelo>.col o DH_COL)\n"); return; }
         if (!gateOpened) { openStartGate(gcol); gateOpened = true; }   // la verja de salida (superficie 0x681D) está cerrada en la malla estática
-        prun.gates = &gts; const Gate* g0 = gts.courseGate(0); float h0 = g0 ? std::atan2(g0->n.x, -g0->n.z) : yaw;
-        prun.start(gcol, haveStart ? startPt : V3{px, py, pz}, h0); camHead = h0; leanVis = 0; finishedMsg = false;
+        const Gate* g0 = gts.courseGate(0); float h0 = g0 ? std::atan2(g0->n.x, -g0->n.z) : yaw;
+        race.load(gcol, &gts, haveStart ? startPt : V3{px, py, pz}, h0);   // cuenta atrás de 3 s con la moto en la parrilla y reloj a cero al «¡Ya!» (src/race.hpp) camHead = h0; leanVis = 0; finishedMsg = false;
         V3 f = prun.bike.fwd; camPos = prun.bike.pos + V3{-f.x * 11.f, 4.5f, -f.z * 11.f}; play = true; ride = false; walk = false;
     };
     auto startRide = [&]() {
@@ -286,9 +286,9 @@ int main(int argc, char** argv) {
                 b0.pos = {replay[6*i], replay[6*i+1], replay[6*i+2]}; b0.fwd = {replay[6*i+3], replay[6*i+4], replay[6*i+5]}; b0.grounded = true;
                 V3 dv{replay[6*j] - replay[6*i], replay[6*j+1] - replay[6*i+1], replay[6*j+2] - replay[6*i+2]}; if (j < i) dv = dv * -1.f; b0.rb.vel = dv * 10.f;
                 camHead = std::atan2(dv.x, -dv.z); camPos = b0.pos + V3{-std::sin(camHead) * 11.f, 4.5f, std::cos(camHead) * 11.f};
-            } else ev = prun.update(gcol, in, ddt);
+            } else ev = race.update(gcol, in, ddt);
             if (ev > 0) std::printf("puerta %zu/%zu cruzada a los %.1f s\n", prun.gs.counter, gts.size(), prun.t);
-            if (prun.gs.finished && !finishedMsg) { finishedMsg = true; std::printf("META a los %.1f s (%zu/%zu puertas)\n", prun.gs.finishTime, prun.gs.counter, gts.size()); }
+            if (race.state >= RaceState::Finished && !finishedMsg) { finishedMsg = true; std::printf("META %s (%zu/%zu puertas, reinicios %u, máx %.0f km/h)\n", formatTime(race.res.time).c_str(), race.res.gates, race.res.totalGates, race.res.respawns, 1.0973f * race.res.maxSpeed); }
             Bike& bk = prun.bike; Axes ax = bk.axes(); V3 vv = bk.vel(); float hs = std::sqrt(vv.x * vv.x + vv.z * vv.z);
             leanVis += (-in.steer * std::fmin(0.45f, bk.speed() * 0.012f) * (bk.grounded ? 1.f : 0.f) - leanVis) * std::fmin(1.f, 6.f * ddt);   // inclinación visual al girar (sólo dibujo)
             float want = hs > 4.f ? std::atan2(vv.x, -vv.z) : bk.heading(), df = want - camHead; while (df > 3.14159f) df -= 6.28318f; while (df < -3.14159f) df += 6.28318f;
@@ -297,7 +297,7 @@ int main(int argc, char** argv) {
             { auto gq = gcol.groundQuery(camPos.x, camPos.y + 60.f, camPos.z, 0.f, 400.f); if (gq.hit && camPos.y < gq.height + 3.f) camPos.y = gq.height + 3.f; }   // la cámara no baja del suelo
             V3 d = tgt - camPos; px = camPos.x; py = camPos.y; pz = camPos.z; yaw = std::atan2(d.x, -d.z); pitch = std::atan2(d.y, std::sqrt(d.x * d.x + d.z * d.z));
             rx0 = bk.pos.x; ry0 = bk.pos.y - 2.05f; rz0 = bk.pos.z; rh = bk.heading();
-            if (frame % 10 == 0) { char t[200]; std::snprintf(t, sizeof t, "dhview JUGAR  %.0f km/h  puertas %zu/%zu%s  t=%.0f s  %s  reinicios %u", 1.0973f * bk.speed(), prun.gs.counter, gts.size(), prun.gs.finished ? " META" : "", prun.t, bk.grounded ? "suelo" : "aire", prun.respawns); SDL_SetWindowTitle(w, t); }
+            if (frame % 10 == 0) { char t[200]; std::snprintf(t, sizeof t, "dhview JUGAR  [%s%s]  %s  %.0f km/h  puertas %zu/%zu  %s  reinicios %u", raceStateName(race.state), race.state == RaceState::Countdown ? (" " + std::to_string(race.countdownDigit())).c_str() : "", formatTime(race.displayTime()).c_str(), 1.0973f * bk.speed(), prun.gs.counter, gts.size(), bk.grounded ? "suelo" : "aire", prun.respawns); SDL_SetWindowTitle(w, t); }
         } else if (ride && useCol && overlay.size() >= 6) {
             float ddt = std::fmin(dt, 0.05f); size_t n = overlay.size() / 3, best = 0; float bd = 1e30f; static size_t lastIdx = 0; if (rideT == 0) lastIdx = 0;
             for (size_t q = lastIdx > 30 ? lastIdx - 30 : 0; q < std::min(n, lastIdx + 60); q++) { float ex = overlay[3*q] - rb.pos.x, ez = overlay[3*q+2] - rb.pos.z, dd = ex*ex + ez*ez; if (dd < bd) { bd = dd; best = q; } }
@@ -474,6 +474,7 @@ int main(int argc, char** argv) {
             glPopMatrix(); glMatrixMode(GL_PROJECTION); glPopMatrix(); glMatrixMode(GL_MODELVIEW); glEnable(GL_DEPTH_TEST); glDisable(GL_BLEND);
         }
         static const int shotFrame = std::getenv("DH_FRAMES") ? std::atoi(std::getenv("DH_FRAMES")) : 3;
+        if (shot && frame == shotFrame - 1 && play) std::printf("play: estado=%s cuenta=%d reloj=%s velocidad=%.1f u/s puertas=%zu/%zu\n", raceStateName(race.state), race.countdownDigit(), formatTime(race.displayTime()).c_str(), prun.bike.speed(), prun.gs.counter, gts.size());
         if (shot && frame == shotFrame - 1 && walk) std::printf("walk: py=%.1f vy=%.2f\n", py, vy);
         if (shot && frame == shotFrame - 1 && ride) std::printf("ride: pos=(%.0f %.0f %.0f) vel=%.1f u/s (%.1f m/s) air=%d\n", rx0, ry0, rz0, rs, rs / U, (int)air);
         if (shot && ++frame == shotFrame) {
