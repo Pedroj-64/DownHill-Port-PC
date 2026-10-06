@@ -182,9 +182,11 @@ dome_owners = set()
 if OW and not os.environ.get('DH_NODOME') and OW.info:
     roots = {}
     for o in OW.info: roots.setdefault(OW.info[o]['root'], []).append(o)
-    for r, grp in roots.items():   # raíz pequeña, de radio enorme, sin celdas de terreno (capa 3) y con todas las hojas en el origen (traslación de la matriz ~0)
-        if len(grp) > 16 or max(OW.info[o]['rad'] for o in grp) <= 3000 or any(OW.layer.get(o) == 3 for o in grp): continue
-        if all(max(abs(x) for x in OW.info[o]['m'][12:15]) < 1500 for o in grp): dome_owners |= {o for o in grp if o in byown}
+    for R in (3000, 2000):    # radio mínimo; si ninguna raíz cumple con 3000 se prueba 2000 (PODARC, PODSUP: una sola hoja de 10 326 triángulos y radio 2360; PODSPE ya tiene domo con 3000 y no cambia)
+        for r, grp in roots.items():   # raíz pequeña, de radio enorme, sin celdas de terreno (capa 3) y con todas las hojas en el origen (traslación de la matriz ~0)
+            if len(grp) > 16 or max(OW.info[o]['rad'] for o in grp) <= R or any(OW.layer.get(o) == 3 for o in grp): continue
+            if all(max(abs(x) for x in OW.info[o]['m'][12:15]) < 1500 for o in grp): dome_owners |= {o for o in grp if o in byown}
+        if dome_owners: break
 if os.path.exists(dome_path): os.remove(dome_path)
 if dome_owners:
     save(dome_path, [(None, sorted(t for o in sorted(dome_owners) for t in byown[o]))])
