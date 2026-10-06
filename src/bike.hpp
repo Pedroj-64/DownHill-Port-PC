@@ -45,6 +45,12 @@ struct BikeParams {
     // --- HIPÓTESIS (no salen del ELF; afinadas para que se conduzca, véase bike-physics.md) ---
     float sprintMul = 1.5f;                                // esfuerzo extra: FUN_00136A88 multiplica la fuerza de pedaleo por 1.5 con el botón rider+0x7A69 (la hipótesis es la correspondencia con una tecla)
     float pedalAccel = 60.f, pedalMax = 50.f;              // u/s^2 de pedaleo y velocidad a la que deja de empujar (hipótesis; reajustado: el amortiguamiento lineal del motor, 1.27/s, frena en llano: v_eq = a/(c + a/vmax) ~ 24 u/s)
+    // Controlador de dirección DEL MOTOR (FUN_00137C48 giro, FUN_00137E68 cabeceo en el aire, FUN_00137F70 aplica la rotación; valores leídos de RAM en ctrl+0x438..0x470, ride_s1; unidades rad por tick de 1/50 s,
+    // el ángulo aplicado es estado·60/50 por tick): estado += aceleración·entrada, saturado al máximo; sin entrada decae (en suelo a 0 de golpe). FUN_0016C640 (factor por velocidad) y la tabla de superficies
+    // (0x77A3D8, no capturada) se toman como 1: HIPÓTESIS. Desactivado por defecto (el arnés de regresión usa steerRate/airYaw).
+    bool engineSteer = false;
+    float steerAccelGround = 0.00873f, steerMaxGround = 0.03316f, steerAccelAir = 0.00524f, steerMaxAir = 0.04608f, steerDecayAir = 0.675f;
+    float pitchAccelAir = 0.00873f, pitchMaxAir = 0.04608f, pitchDecayAir = 0.8f;
     float reverseAccel = 0.f, reverseMax = 0.f;            // marcha atrás al frenar parado (HIPÓTESIS; 0 = desactivada: el arnés de regresión y bike_test no la usan)
     float brakeDecel = 28.f;                               // u/s^2 con el freno a fondo (nunca invierte el sentido)
     float rolling = 0.f;                                   // rodadura 1/s (hipótesis; 0: el término de suelo de abajo ya la cubre)
@@ -80,6 +86,7 @@ inline float comp(V3 v, int i) { return i == 0 ? v.x : i == 1 ? v.y : v.z; }
 
 struct Bike {
     BikeParams P; RigidBody rb; V3 pos; V3 fwd{0, 0, -1};
+    float yawW = 0, pitchW = 0;                            // estados del controlador del motor (rad/tick)
     bool grounded = false, wheelF = false, wheelR = false; float coyote = 0, tF = 0, tR = 0;   // grounded/wheelF/wheelR = contacto en los últimos 0.1 s (en reposo el barrido a veces no llega a tocar en un sub-paso)
     V3 groundN{0, 1, 0}; uint16_t surface = 0;
     uint32_t sweeps = 0, hits = 0, overlaps = 0; double airTime = 0;
@@ -132,8 +139,17 @@ private:
         if (in.hop && first && gr) { v = v + A.u * P.hop; coyote = 0; }
         rb.vel = v; rb.linMom = v * P.mass;
         float wp = dot(rb.omega, A.r), wy = rb.omega.y;
+        if (P.engineSteer) {                                   // controlador del motor: estados de velocidad angular con aceleración, máximo y decaimiento
+            float nt = engine::kTickHz * h, acc = gr ? P.steerAccelGround : P.steerAccelAir, mx = gr ? P.steerMaxGround : P.steerMaxAir;
+            if (in.steer != 0.f) yawW = std::fmax(-mx, std::fmin(mx, yawW + acc * in.steer * nt)); else yawW *= gr ? 0.f : std::pow(P.steerDecayAir, nt);
+            float yawRate = -yawW * 1.2f * engine::kTickHz; wy = 0.f;   // derecha = giro negativo sobre Y; la guiñada se aplica directa a la orientación (FUN_00137F70), no como velocidad angular
+            const float ang = yawRate * h; const V3 yaxis{0, ang < 0.f ? -1.f : 1.f, 0};   // rotateAbout ignora ángulos negativos: se pasa el eje invertido
+            fwd = unit(rotateAbout(fwd, yaxis, std::fabs(ang)));
+            if (gr) { v = rotateAbout(v, yaxis, std::fabs(ang)); rb.vel = v; rb.linMom = v * P.mass; pitchW = 0; wp *= std::pow(P.pitchDamp, nt); }   // en suelo la velocidad gira con la moto
+            else { if (in.lean != 0.f) pitchW = std::fmax(-P.pitchMaxAir, std::fmin(P.pitchMaxAir, pitchW + P.pitchAccelAir * in.lean * nt)); else pitchW *= std::pow(P.pitchDecayAir, nt); wp = pitchW * 1.2f * engine::kTickHz; }
+        } else
         if (gr) wy = -in.steer * P.steerRate / (1.f + P.steerSpeedK * std::sqrt(dot(v, v))); else wy = std::fmax(-P.airYawMax, std::fmin(P.airYawMax, wy * (1.f - 0.3f * h) - in.steer * P.airYawAccel * h));   // derecha = giro negativo sobre Y
-        wp *= std::pow(P.pitchDamp, engine::kTickHz * h); wp += in.lean * P.leanAccel * h;
+        if (!P.engineSteer) { wp *= std::pow(P.pitchDamp, engine::kTickHz * h); wp += in.lean * P.leanAccel * h; }
         rb.omega = A.r * wp + V3{0, 1, 0} * wy; syncInertia(A);
 
         // --- barrido y respuesta: estructura de FUN_001340D8 (como mucho 2 impactos por paso) ---

@@ -17,6 +17,8 @@
 #include "gates.hpp"
 #include "ground.hpp"
 #include "ride.hpp"
+#include <map>
+#include <unordered_map>
 #include "race.hpp"
 #include "controls.hpp"
 #include "text.hpp"
@@ -240,7 +242,7 @@ int main(int argc, char** argv) {
         if (!useCol) { std::fprintf(stderr, "modo jugable: hace falta la colisión (<modelo>.col o DH_COL)\n"); return; }
         if (!gateOpened) { openStartGate(gcol); gateOpened = true; }   // la verja de salida (superficie 0x681D) está cerrada en la malla estática
         const Gate* g0 = gts.courseGate(0); float h0 = g0 ? std::atan2(g0->n.x, -g0->n.z) : yaw;
-        if (!std::getenv("DH_FEEL0")) { BikeParams& bp = prun.bike.P; bp.steerRate = 2.3f; bp.steerSpeedK = 0.012f; bp.grip = 5.f; bp.leanAccel = 12.f; bp.airYawAccel = 5.f; bp.reverseAccel = 18.f; bp.reverseMax = 7.f; }   // ajuste «para jugar a mano» (HIPÓTESIS de sensación; DH_FEEL0=1 usa los valores del arnés de regresión)
+        if (!std::getenv("DH_FEEL0")) { BikeParams& bp = prun.bike.P; bp.engineSteer = true; bp.hop = 32.f; bp.grip = 8.f; bp.reverseAccel = 18.f; bp.reverseMax = 7.f; }   // ajuste «para jugar a mano»: controlador de dirección del motor (leído de RAM) y salto de 2.45·13 = 32 u/s (FUN_00136330); agarre y marcha atrás = HIPÓTESIS. DH_FEEL0=1 usa los valores del arnés
         race.load(gcol, &gts, haveStart ? startPt : V3{px, py, pz}, h0);   // cuenta atrás de 3 s con la moto en la parrilla y reloj a cero al «¡Ya!» (src/race.hpp) camHead = h0; leanVis = 0; finishedMsg = false;
         if (std::getenv("DH_DEMO_RESULTS")) { race.res.finished = true; race.res.time = 430.98; race.res.gates = race.res.totalGates = gts.size(); race.res.respawns = 0; race.res.maxSpeed = 111.f; race.res.splits = {16.00f, 26.26f, 39.66f}; race.state = RaceState::Results; }   // solo para capturas de la maquetación (valores de muestra)
         V3 f = prun.bike.fwd; camPos = prun.bike.pos + V3{-f.x * 11.f, 4.5f, -f.z * 11.f}; play = true; ride = false; walk = false;
@@ -425,13 +427,34 @@ int main(int argc, char** argv) {
                     }
                 };
                 if (m.chunks.empty()) { drawRange(0, m.mi.size()); return; }
-                size_t shown = 0;
-                for (const Chunk& c : m.chunks) {                  // cada selector: visible si la cámara está dentro de (sqrt(dist2_max) + radio)
+                // Láminas superpuestas (casi coplanares, <0.25 u) de chunks distintos: en el juego gana la que se dibuja después; con el búfer de profundidad solo parpadean. Se marca como
+                // superpuesto el chunk posterior de cada par y se dibuja con sesgo de profundidad (se calcula una vez por modelo; DH_NOOVERLAP=1 lo desactiva).
+                static std::map<const Model*, std::vector<uint8_t>> ovCache;
+                if (!ovCache.count(&m)) {
+                    std::vector<uint8_t> ov(m.chunks.size(), 0);
+                    if (!std::getenv("DH_NOOVERLAP")) {
+                        std::unordered_map<int64_t, std::vector<std::pair<int, float>>> grid; const float cell = 3.f;
+                        for (size_t ci = 0; ci < m.chunks.size(); ci++) for (size_t t = m.chunks[ci].first; t + 2 < (size_t)m.chunks[ci].first + m.chunks[ci].count; t += 3) {
+                            const float* a = &m.mv[m.mi[t] * 10]; const float* b = &m.mv[m.mi[t + 1] * 10]; const float* c2 = &m.mv[m.mi[t + 2] * 10];
+                            float ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c2[0] - a[0], vy = c2[1] - a[1], vz = c2[2] - a[2];
+                            float nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx, len = std::sqrt(nx * nx + ny * ny + nz * nz);
+                            if (len < 1e-3f || std::fabs(ny) / len < 0.5f) continue;                                    // solo superficies casi horizontales
+                            float cx = (a[0] + b[0] + c2[0]) / 3, cy = (a[1] + b[1] + c2[1]) / 3, cz = (a[2] + b[2] + c2[2]) / 3;
+                            int64_t k = ((int64_t)std::floor(cx / cell) << 32) ^ (uint32_t)(int32_t)std::floor(cz / cell); auto& v = grid[k];
+                            for (auto& q : v) if ((size_t)q.first != ci && std::fabs(q.second - cy) < 0.25f) { ov[ci] = (uint8_t)std::min(8, std::max<int>(ov[ci], ov[q.first] + 1)); }   // nivel de apilamiento: encima de la lámina más alta que solapa
+                            if (v.size() < 8) v.push_back({(int)ci, cy});
+                        }
+                    }
+                    size_t n = 0, mx = 0; for (auto f : ov) { n += f != 0; mx = std::max<size_t>(mx, f); } std::fprintf(stderr, "láminas superpuestas: %zu de %zu chunks con sesgo de profundidad (apilamiento máx %zu)\n", n, m.chunks.size(), mx); ovCache[&m] = ov;
+                }
+                const std::vector<uint8_t>& ovf = ovCache[&m];
+                size_t shown = 0, ci = 0;
+                for (const Chunk& c : m.chunks) { int ovl = ci < ovf.size() ? ovf[ci] : 0; ci++; if (ovl) { glEnable(GL_POLYGON_OFFSET_FILL); glPolygonOffset(-1.f * ovl, -8.f * ovl); } else glDisable(GL_POLYGON_OFFSET_FILL);                  // cada selector: visible si la cámara está dentro de (sqrt(dist2_max) + radio)
                     bool vis = true;
                     for (auto& sl : c.sels) { float dx = px - sl[0], dy = py - sl[1], dz = pz - sl[2], lim = std::sqrt(sl[4]) + sl[3]; if (!noCull && dx*dx + dy*dy + dz*dz > lim*lim) { vis = false; break; } }
                     if (vis) { drawRange(c.first, c.first + c.count); shown++; }
                 }
-                drawnChunks = shown;
+                glDisable(GL_POLYGON_OFFSET_FILL); drawnChunks = shown;
             };
             if (!dome.mi.empty() && !std::getenv("DH_NOSKY")) {   // sigue a la cámara; DH_DOMEDY desplaza el centro en vertical (afinado)
                 static const float dy = std::getenv("DH_DOMEDY") ? (float)std::atof(std::getenv("DH_DOMEDY")) : 0.f;
