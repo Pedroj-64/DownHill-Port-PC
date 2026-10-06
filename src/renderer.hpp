@@ -11,7 +11,8 @@ namespace gfx {
 using TextureId = int;      // -1 = sin textura
 using MeshId = int;
 struct Texture { int w = 0, h = 0; std::vector<uint8_t> rgba; };
-struct Quad { float x, y, w, h, r, g, b, a; };   // rectángulo 2D de interfaz: píxeles de pantalla, origen arriba a la izquierda, color RGBA
+struct Quad { float x, y, w, h, r, g, b, a; };
+struct TexQuad { float x, y, w, h, u0, v0, u1, v1, r, g, b, a; };   // rectángulo 2D con textura: píxeles de pantalla (origen arriba a la izquierda), uv con v = 0 en la fila superior de la imagen, color que multiplica   // rectángulo 2D de interfaz: píxeles de pantalla, origen arriba a la izquierda, color RGBA
 class Renderer {
 public:
     virtual ~Renderer() = default;
@@ -23,5 +24,7 @@ public:
     virtual void draw(MeshId m, const float model[16], float gain) = 0;
     // Rectángulos 2D de color plano (HUD, texto provisional de text.hpp) sobre la pantalla de viewW x viewH píxeles.
     virtual void drawQuads2D(const std::vector<Quad>& quads, int viewW, int viewH) = 0;
+    // Igual con una textura (creada con createTexture con las filas de la imagen de arriba abajo); mezcla alfa.
+    virtual void drawTexQuads2D(TextureId tex, const std::vector<TexQuad>& quads, int viewW, int viewH) = 0;
 };
 }  // namespace gfx

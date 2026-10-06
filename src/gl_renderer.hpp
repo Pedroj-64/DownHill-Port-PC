@@ -40,5 +40,14 @@ public:
         glBegin(GL_QUADS); for (const Quad& r : q) { glColor4f(r.r, r.g, r.b, r.a); glVertex2f(r.x, r.y); glVertex2f(r.x + r.w, r.y); glVertex2f(r.x + r.w, r.y + r.h); glVertex2f(r.x, r.y + r.h); } glEnd();
         glPopMatrix(); glMatrixMode(GL_PROJECTION); glPopMatrix(); glMatrixMode(GL_MODELVIEW); glEnable(GL_DEPTH_TEST); glDisable(GL_BLEND);
     }
+    void drawTexQuads2D(TextureId tex, const std::vector<TexQuad>& q, int vw, int vh) override {
+        if (tex < 0 || (size_t)tex >= texs.size()) return;
+        glEnable(GL_TEXTURE_2D); glDisable(GL_DEPTH_TEST); glDisable(GL_FOG); glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE); glBindTexture(GL_TEXTURE_2D, texs[tex]);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity(); glOrtho(0, vw, vh, 0, -1, 1); glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity();
+        glBegin(GL_QUADS); for (const TexQuad& r : q) { glColor4f(r.r, r.g, r.b, r.a); glTexCoord2f(r.u0, r.v0); glVertex2f(r.x, r.y); glTexCoord2f(r.u1, r.v0); glVertex2f(r.x + r.w, r.y); glTexCoord2f(r.u1, r.v1); glVertex2f(r.x + r.w, r.y + r.h); glTexCoord2f(r.u0, r.v1); glVertex2f(r.x, r.y + r.h); } glEnd();
+        glPopMatrix(); glMatrixMode(GL_PROJECTION); glPopMatrix(); glMatrixMode(GL_MODELVIEW); glEnable(GL_DEPTH_TEST); glDisable(GL_BLEND); glDisable(GL_TEXTURE_2D);
+    }
 };
 }  // namespace gfx

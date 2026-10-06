@@ -20,6 +20,7 @@
 #include "race.hpp"
 #include "controls.hpp"
 #include "text.hpp"
+#include "hud.hpp"
 static std::vector<uint8_t> g_inLog; static bool g_inLogSaved = false;   // registro de entradas por tick (DH_INPUT_LOG): se guarda al llegar a meta o, si no, al cerrar el visor
 #include "gl_renderer.hpp"
 #include "rider.hpp"
@@ -491,6 +492,9 @@ int main(int argc, char** argv) {
             glPopMatrix(); glMatrixMode(GL_PROJECTION); glPopMatrix(); glMatrixMode(GL_MODELVIEW); glEnable(GL_DEPTH_TEST); glDisable(GL_BLEND);
         }
         if (play) {                                          // texto provisional (src/text.hpp): cronómetro, velocidad, puertas, cuenta atrás, aviso de meta y pantalla de resultados
+            static int hudTex[hud::kTexCount]; static int hudState = 0;   // 0 = sin intentar, 1 = cargado, -1 = no disponible (se usa el texto provisional)
+            if (hudState == 0) { std::vector<uint8_t> hd; std::vector<gfx::Texture> ht; const char* hp = std::getenv("DH_HUD") ? std::getenv("DH_HUD") : "out/hud/hud.dat";
+                if (readFile(hp, hd) && hud::load(hd, ht)) { for (int i = 0; i < hud::kTexCount; i++) hudTex[i] = gr.createTexture(ht[i]); hudState = 1; } else { hudState = -1; std::fprintf(stderr, "aviso: sin texturas de HUD (%s): python3 tools/hud_export.py unpacked/LVL/ALP2\n", hp); } }
             std::vector<gfx::Quad> tq; const float S = std::fmax(2.f, std::floor(ww / 320.f)); char b[64];
             auto line = [&](const std::string& t, float x, float y, float sc, float r, float g2, float b2) { gfx::textQuads(t, x + sc, y + sc, sc, 0, 0, 0, 0.7f, tq); gfx::textQuads(t, x, y, sc, r, g2, b2, 1.f, tq); };   // con sombra
             auto mid = [&](const std::string& t, float y, float sc, float r, float g2, float b2) { float x = ww * 0.5f - gfx::textWidth(t, sc) * 0.5f; line(t, x, y, sc, r, g2, b2); };
@@ -503,9 +507,16 @@ int main(int argc, char** argv) {
                 std::snprintf(b, sizeof b, "RESETS  %u", race.res.respawns); mid(b, hh * 0.62f, S * 1.5f, 1, 1, 1);
                 for (size_t i = 0; i < race.res.splits.size() && i < 3; i++) { std::snprintf(b, sizeof b, "SPLIT %zu  %s", i + 1, formatTime(race.res.splits[i]).c_str()); mid(b, hh * (0.72f + 0.05f * i), S, 0.8f, 0.8f, 0.8f); }
             } else {
-                line(formatTime(race.displayTime()), ww * 0.03f, hh * 0.04f, S * 2.f, 1, 1, 1);
-                std::snprintf(b, sizeof b, "%.0f KM/H", 1.0973f * prun.bike.speed()); line(b, ww * 0.97f - gfx::textWidth(b, S * 1.5f), hh * 0.04f, S * 1.5f, 1, 0.85f, 0.2f);
-                std::snprintf(b, sizeof b, "GATES %zu/%zu", prun.gs.counter, gts.size()); line(b, ww * 0.03f, hh * 0.04f + 10 * S * 2.f, S, 0.8f, 1, 0.8f);
+                if (hudState == 1) {                                                                      // ordenador de la bici con las texturas del juego (reloj mm:ss; tercera cifra = puertas: hipótesis)
+                    std::vector<gfx::TexQuad> hq, lq, kq; std::string clk = formatTime(race.displayTime()).substr(0, 5), third = std::to_string(prun.gs.counter);
+                    hud::bikeComputer((int)ww, (int)hh, (int)std::lround(1.0973f * prun.bike.speed()), clk, third, hq, lq, kq);
+                    gr.drawTexQuads2D(hudTex[hud::kHousing], hq, (int)ww, (int)hh); gr.drawTexQuads2D(hudTex[hud::kLcdFont], lq, (int)ww, (int)hh); gr.drawTexQuads2D(hudTex[hud::kKph], kq, (int)ww, (int)hh);
+                    { std::vector<gfx::Quad> ledq; hud::bikeComputerLeds((int)ww, (int)hh, (int)std::lround(1.0973f * prun.bike.speed()), ledq); gr.drawQuads2D(ledq, (int)ww, (int)hh); }
+                } else {
+                    line(formatTime(race.displayTime()), ww * 0.03f, hh * 0.04f, S * 2.f, 1, 1, 1);
+                    std::snprintf(b, sizeof b, "%.0f KM/H", 1.0973f * prun.bike.speed()); line(b, ww * 0.97f - gfx::textWidth(b, S * 1.5f), hh * 0.04f, S * 1.5f, 1, 0.85f, 0.2f);
+                    std::snprintf(b, sizeof b, "GATES %zu/%zu", prun.gs.counter, gts.size()); line(b, ww * 0.03f, hh * 0.04f + 10 * S * 2.f, S, 0.8f, 1, 0.8f);
+                }
                 if (race.state == RaceState::Countdown) { std::snprintf(b, sizeof b, "%d", race.countdownDigit()); mid(b, hh * 0.3f, S * 8.f, 1, 0.85f, 0.2f); }
                 else if (race.state == RaceState::Riding && race.displayTime() < 1.0) mid("GO!", hh * 0.3f, S * 8.f, 0.3f, 1, 0.3f);                       // provisional (la cadena real del juego no está localizada)
                 else if (race.state == RaceState::Finished) mid("GREAT FINISH!", hh * 0.3f, S * 4.f, 1, 0.85f, 0.2f);                                       // texto real del ELF (0x277614); su uso aquí es hipótesis

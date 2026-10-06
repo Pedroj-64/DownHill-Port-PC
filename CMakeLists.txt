@@ -36,6 +36,8 @@ add_executable(controls_test tests/controls_test.cpp)
 add_test(NAME controls_test COMMAND controls_test)
 add_executable(text_test tests/text_test.cpp)
 add_test(NAME text_test COMMAND text_test)
+add_executable(hud_test tests/hud_test.cpp)
+add_test(NAME hud_test COMMAND hud_test)
 add_executable(bike_demo tests/bike_demo.cpp)
 
 add_executable(integrator_test tests/integrator_test.cpp)
