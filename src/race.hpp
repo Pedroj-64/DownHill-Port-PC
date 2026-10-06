@@ -16,7 +16,8 @@ inline std::string formatTime(double t) {
     if (t < 0) t = 0; long c = (long)(t * 100.0 + 1e-9); char b[24]; std::snprintf(b, sizeof b, "%02ld:%02ld.%02ld", c / 6000, (c / 100) % 60, c % 100); return b;
 }
 
-struct RaceResult { bool finished = false; double time = 0; size_t gates = 0, totalGates = 0; unsigned respawns = 0; float maxSpeed = 0; std::vector<float> splits; };
+struct RaceResult { bool finished = false;   // gates cuenta la línea de salida; splits = parciales de las puertas siguientes
+    double time = 0; size_t gates = 0, totalGates = 0; unsigned respawns = 0; float maxSpeed = 0; std::vector<float> splits; };
 
 struct Race {
     Run run; const Gates* gates = nullptr; RaceState state = RaceState::Loading;
@@ -37,11 +38,11 @@ struct Race {
         case RaceState::Loading: break;
         case RaceState::Countdown:
             countdown -= dt;   // la moto espera parada en la parrilla (como la retiene el gestor de salida: hipótesis)
-            if (countdown <= 0.f) { run.gs = Gates::State(); run.t = 0; run.lastSave = 0; run.goodT = 0; run.goodPos = run.bike.pos; run.goodHeading = run.bike.heading(); state = RaceState::Riding; }   // «¡Ya!»: puertas y reloj a cero
+            if (countdown <= 0.f) { run.gs = Gates::State(); armStartLine(); run.t = 0; run.lastSave = 0; run.goodT = 0; run.goodPos = run.bike.pos; run.goodHeading = run.bike.heading(); state = RaceState::Riding; }   // «¡Ya!»: puertas y reloj a cero
             break;
         case RaceState::Riding:
             ev = run.update(g, in, dt); raceTime = run.t; maxSpeed = std::fmax(maxSpeed, run.bike.speed());
-            if (run.gs.finished) { raceTime = run.gs.finishTime; hold = finishHold; res.finished = true; res.time = run.gs.finishTime; res.gates = run.gs.counter; res.totalGates = gates ? gates->size() : 0; res.respawns = run.respawns; res.maxSpeed = maxSpeed; res.splits = run.gs.times; state = RaceState::Finished; }
+            if (run.gs.finished) { raceTime = run.gs.finishTime; hold = finishHold; res.finished = true; res.time = run.gs.finishTime; res.gates = run.gs.counter; res.totalGates = gates ? gates->size() : 0; res.respawns = run.respawns; res.maxSpeed = maxSpeed; res.splits.assign(run.gs.times.begin() + (run.gs.times.empty() ? 0 : 1), run.gs.times.end()); state = RaceState::Finished; }
             break;
         case RaceState::Finished:                          // la moto sigue rodando sin mandos mientras dura el aviso de meta
             run.bike.step(g, BikeInput{}, dt); hold -= dt; if (hold <= 0.f) state = RaceState::Results;
@@ -49,6 +50,12 @@ struct Race {
         case RaceState::Results: break;
         }
         return ev;
+    }
+    // La puerta 0 del recorrido es la LÍNEA DE SALIDA, no un parcial: se arma tras el «¡Ya!» y solo cuenta un cruce de detrás hacia delante del plano. Si la moto ya está delante
+    // del plano al arrancar (parrilla asentada pasada la línea) se da por cruzada en t = 0. times[0] es el instante de la línea de salida; los parciales son times[1..].
+    void armStartLine() {
+        const Gate* g0 = gates ? gates->courseGate(0) : nullptr;
+        if (g0 && gateDist(*g0, run.bike.pos) > 0.f) { run.gs.counter = 1; run.gs.times.push_back(0.f); }
     }
     double displayTime() const { return state == RaceState::Countdown || state == RaceState::Loading ? 0.0 : raceTime; }   // lo que muestra el cronómetro
     int countdownDigit() const { return state == RaceState::Countdown ? (int)std::ceil(countdown) : 0; }                    // 3, 2, 1 (0 fuera de la cuenta atrás)

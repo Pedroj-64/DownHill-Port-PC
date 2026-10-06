@@ -20,13 +20,18 @@ int main() {
     // conducción: el reloj corre, se cruzan las 3 puertas en orden y se llega a la meta (última puerta)
     double last = 0; guard = 0; size_t maxc = 0;
     while (r.state == RaceState::Riding && guard++ < 60 * 120) { r.update(g, go, 1.f / 60.f); CHECK(r.displayTime() >= last); last = r.displayTime(); maxc = std::fmax(maxc, r.run.gs.counter); }
-    CHECK(r.state == RaceState::Finished); CHECK(r.res.finished && r.res.gates == 3 && r.res.totalGates == 3 && r.res.splits.size() == 3);
-    CHECK(r.res.time > 5.0 && r.res.time < 90.0); CHECK(r.res.splits[0] < r.res.splits[1] && r.res.splits[1] < r.res.splits[2] && std::fabs(r.res.splits[2] - r.res.time) < 0.05);   // el tiempo de meta es el de la última puerta
+    CHECK(r.state == RaceState::Finished); CHECK(r.res.finished && r.res.gates == 3 && r.res.totalGates == 3 && r.res.splits.size() == 2);   // 3 puertas: la 0 es la salida, 2 parciales
+    CHECK(r.res.time > 5.0 && r.res.time < 90.0); CHECK(r.res.splits[0] > 0.f && r.res.splits[0] < r.res.splits[1] && std::fabs(r.res.splits[1] - r.res.time) < 0.05);   // el tiempo de meta es el de la última puerta
     CHECK(r.res.maxSpeed > 5.f); CHECK(r.res.respawns == 0);
     // meta -> resultados tras 2 s; el tiempo del resultado queda congelado
     double tf = r.res.time; guard = 0; while (r.state == RaceState::Finished && guard++ < 600) r.update(g, go, 1.f / 60.f);
     CHECK(r.state == RaceState::Results && guard >= 119 && guard <= 122); for (int i = 0; i < 120; i++) r.update(g, go, 1.f / 60.f); CHECK(r.displayTime() == tf && r.res.time == tf);
     // volver a cargar reinicia todo
     r.load(g, &gts, {0, 0, 0}, 0.f); CHECK(r.state == RaceState::Countdown && !r.res.finished && r.displayTime() == 0.0);
+    // moto ya delante de la línea de salida (puerta 0 en z = +50): se da por cruzada al «¡Ya!», sin parcial, y solo cuentan las siguientes; una puerta 0 por detrás no se cruza hacia atrás
+    { Gates g2; std::vector<Gate> c; for (int i = 0; i < 3; i++) { Gate q; q.kind = 8050; q.idx = i; q.n = {0, 0, -1}; q.d = i == 0 ? -50.f : 100.f * i; c.push_back(q); } g2.set(c, {});
+      Race q2; q2.settle = true; q2.load(g, &g2, {0, 0, 0}, 0.f); int k = 0; while (q2.state == RaceState::Countdown && k++ < 600) q2.update(g, go, 1.f / 60.f);
+      CHECK(q2.run.gs.counter == 1 && q2.run.gs.times.size() == 1 && q2.run.gs.times[0] == 0.f);
+      k = 0; while (q2.state == RaceState::Riding && k++ < 60 * 120) q2.update(g, go, 1.f / 60.f); CHECK(q2.state == RaceState::Finished && q2.res.splits.size() == 2 && q2.res.gates == 3); }
     std::printf("race_test OK (tiempo sintético %s, %zu puertas)\n", formatTime(tf).c_str(), (size_t)3); return 0;
 }
