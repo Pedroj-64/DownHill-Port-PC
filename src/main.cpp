@@ -20,6 +20,7 @@
 #include "race.hpp"
 #include "controls.hpp"
 #include "text.hpp"
+static std::vector<uint8_t> g_inLog; static bool g_inLogSaved = false;   // registro de entradas por tick (DH_INPUT_LOG): se guarda al llegar a meta o, si no, al cerrar el visor
 #include "gl_renderer.hpp"
 #include "rider.hpp"
 #include "rider_mesh.hpp"
@@ -282,7 +283,7 @@ int main(int argc, char** argv) {
             float ddt = std::fmin(dt, 0.05f); int ev = 0;
             // Paso FIJO de 1/60 s (acumulador): la simulación no depende de los fps, así que las entradas por tick se pueden registrar (DH_INPUT_LOG=archivo, se guarda al salir)
             // y repetir (DH_INPUT_REPLAY=archivo) con el mismo resultado. DH_PLAYIN="a b c d" fija las entradas analógicas (pruebas).
-            static std::vector<uint8_t> inLog, inReplay; static size_t inTick = 0; static bool inInit = false; static double acc = 0;
+            static std::vector<uint8_t> inReplay; std::vector<uint8_t>& inLog = g_inLog; static size_t inTick = 0; static bool inInit = false; static double acc = 0;
             if (!inInit) { inInit = true; if (const char* rp = std::getenv("DH_INPUT_REPLAY")) { if (!loadInputs(rp, inReplay)) std::fprintf(stderr, "aviso: no se pudo leer %s\n", rp); } }
             Keys ky; ky.up = k[SDL_SCANCODE_UP]; ky.down = k[SDL_SCANCODE_DOWN]; ky.left = k[SDL_SCANCODE_LEFT]; ky.right = k[SDL_SCANCODE_RIGHT]; ky.w = k[SDL_SCANCODE_W]; ky.s = k[SDL_SCANCODE_S]; ky.a = k[SDL_SCANCODE_A]; ky.d = k[SDL_SCANCODE_D];
             ky.q = k[SDL_SCANCODE_Q]; ky.e = k[SDL_SCANCODE_E]; ky.space = k[SDL_SCANCODE_SPACE]; ky.shift = k[SDL_SCANCODE_LSHIFT] || k[SDL_SCANCODE_RSHIFT];
@@ -302,7 +303,7 @@ int main(int argc, char** argv) {
                     camHead = std::atan2(dv.x, -dv.z); camPos = b0.pos + V3{-std::sin(camHead) * 11.f, 4.5f, std::cos(camHead) * 11.f};
                 } else { int e2 = race.update(gcol, in, 1.f / 60.f); if (e2 && !ev) ev = e2; }
             }
-            { static bool saved = false; static const char* lp = std::getenv("DH_INPUT_LOG"); if (lp && !saved && race.state >= RaceState::Finished) { saved = saveInputs(lp, inLog); std::fprintf(stderr, "registro de entradas: %zu ticks -> %s (%s)\n", inLog.size(), lp, saved ? "ok" : "error"); } }
+            { static const char* lp = std::getenv("DH_INPUT_LOG"); if (lp && !g_inLogSaved && race.state >= RaceState::Finished) { g_inLogSaved = saveInputs(lp, inLog); std::fprintf(stderr, "registro de entradas (meta): %zu ticks -> %s (%s)\n", inLog.size(), lp, g_inLogSaved ? "ok" : "error"); } }
             if (ev > 0) std::printf("puerta %zu/%zu cruzada a los %.1f s\n", prun.gs.counter, gts.size(), prun.t);
             if (race.state >= RaceState::Finished && !finishedMsg) { finishedMsg = true; std::printf("META %s (%zu/%zu puertas, reinicios %u, máx %.0f km/h)\n", formatTime(race.res.time).c_str(), race.res.gates, race.res.totalGates, race.res.respawns, 1.0973f * race.res.maxSpeed); }
             Bike& bk = prun.bike; Axes ax = bk.axes(); V3 vv = bk.vel(); float hs = std::sqrt(vv.x * vv.x + vv.z * vv.z);
@@ -525,5 +526,6 @@ int main(int argc, char** argv) {
         }
         SDL_GL_SwapWindow(w);
     }
+    if (const char* lp = std::getenv("DH_INPUT_LOG")) if (!g_inLogSaved && !g_inLog.empty()) { g_inLogSaved = saveInputs(lp, g_inLog); std::fprintf(stderr, "registro de entradas (al salir): %zu ticks -> %s (%s)\n", g_inLog.size(), lp, g_inLogSaved ? "ok" : "error"); }
     SDL_GL_DestroyContext(gl); SDL_DestroyWindow(w); SDL_Quit();
 }
