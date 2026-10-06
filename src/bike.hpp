@@ -45,6 +45,7 @@ struct BikeParams {
     // --- HIPÓTESIS (no salen del ELF; afinadas para que se conduzca, véase bike-physics.md) ---
     float sprintMul = 1.5f;                                // esfuerzo extra: FUN_00136A88 multiplica la fuerza de pedaleo por 1.5 con el botón rider+0x7A69 (la hipótesis es la correspondencia con una tecla)
     float pedalAccel = 60.f, pedalMax = 50.f;              // u/s^2 de pedaleo y velocidad a la que deja de empujar (hipótesis; reajustado: el amortiguamiento lineal del motor, 1.27/s, frena en llano: v_eq = a/(c + a/vmax) ~ 24 u/s)
+    float reverseAccel = 0.f, reverseMax = 0.f;            // marcha atrás al frenar parado (HIPÓTESIS; 0 = desactivada: el arnés de regresión y bike_test no la usan)
     float brakeDecel = 28.f;                               // u/s^2 con el freno a fondo (nunca invierte el sentido)
     float rolling = 0.f;                                   // rodadura 1/s (hipótesis; 0: el término de suelo de abajo ya la cubre)
     // Conducción (hito 3b, FUN_00136330; ride_force_check.py): el cuerpo de conducción NO usa el amortiguamiento lineal 0.975 de FUN_00134060 sino arrastre cuadrático -k|v|v (validado a 4.6e-7, k = ctrl+0x490 = 0.0063..0.0079).
@@ -122,6 +123,7 @@ private:
             V3 f = unit(fwd - groundN * dot(fwd, groundN)); float sf = dot(v, f);
             if (in.throttle > 0) v = v + f * (P.pedalAccel * (in.sprint ? P.sprintMul : 1.f) * in.throttle * std::fmax(0.f, 1.f - sf / P.pedalMax) * h);
             if (in.brake > 0 && sf > 0) v = v - f * std::fmin(sf, P.brakeDecel * in.brake * h);
+            else if (in.brake > 0 && in.throttle <= 0 && P.reverseAccel > 0 && sf > -P.reverseMax) v = v - f * std::fmin(P.reverseAccel * in.brake * h, sf + P.reverseMax);   // parado o casi: rueda hacia atrás despacio
             v = v - A.r * (dot(v, A.r) * std::fmin(1.f, P.grip * h)); v = v * (1.f - P.rolling * h);
             { float vs = std::sqrt(dot(v, v)); if (vs > 1e-6f) v = v * (std::fmax(0.f, vs - P.rollConst * h) / vs); }
         }

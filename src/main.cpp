@@ -110,6 +110,7 @@ int main(int argc, char** argv) {
     }
     if (!SDL_Init(SDL_INIT_VIDEO)) return 1;
     int winW = 1280, winH = 720; if (const char* ws = std::getenv("DH_SIZE")) std::sscanf(ws, "%d %d", &winW, &winH);   // DH_SIZE="640 480": ventana para comparar con capturas 4:3 del juego
+    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);   // profundidad de 24 bits explícita (el valor por defecto depende del controlador)
     SDL_Window* w = SDL_CreateWindow("dhview", winW, winH, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
     SDL_GLContext gl = SDL_GL_CreateContext(w);
     SDL_GL_SetSwapInterval(1);
@@ -239,6 +240,7 @@ int main(int argc, char** argv) {
         if (!useCol) { std::fprintf(stderr, "modo jugable: hace falta la colisión (<modelo>.col o DH_COL)\n"); return; }
         if (!gateOpened) { openStartGate(gcol); gateOpened = true; }   // la verja de salida (superficie 0x681D) está cerrada en la malla estática
         const Gate* g0 = gts.courseGate(0); float h0 = g0 ? std::atan2(g0->n.x, -g0->n.z) : yaw;
+        if (!std::getenv("DH_FEEL0")) { BikeParams& bp = prun.bike.P; bp.steerRate = 2.3f; bp.steerSpeedK = 0.012f; bp.grip = 5.f; bp.leanAccel = 12.f; bp.airYawAccel = 5.f; bp.reverseAccel = 18.f; bp.reverseMax = 7.f; }   // ajuste «para jugar a mano» (HIPÓTESIS de sensación; DH_FEEL0=1 usa los valores del arnés de regresión)
         race.load(gcol, &gts, haveStart ? startPt : V3{px, py, pz}, h0);   // cuenta atrás de 3 s con la moto en la parrilla y reloj a cero al «¡Ya!» (src/race.hpp) camHead = h0; leanVis = 0; finishedMsg = false;
         if (std::getenv("DH_DEMO_RESULTS")) { race.res.finished = true; race.res.time = 430.98; race.res.gates = race.res.totalGates = gts.size(); race.res.respawns = 0; race.res.maxSpeed = 111.f; race.res.splits = {16.00f, 26.26f, 39.66f}; race.state = RaceState::Results; }   // solo para capturas de la maquetación (valores de muestra)
         V3 f = prun.bike.fwd; camPos = prun.bike.pos + V3{-f.x * 11.f, 4.5f, -f.z * 11.f}; play = true; ride = false; walk = false;
@@ -269,7 +271,7 @@ int main(int argc, char** argv) {
             if (e.type == SDL_EVENT_QUIT || (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE)) run = false;
             if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_R && mdl) { static bool fromPlay = false; if (!ride) { fromPlay = play; ride = true; play = false; startRide(); } else { ride = false; if (fromPlay) startPlay(); } }   // R: bici automática y de vuelta al modo jugable (antes la segunda R dejaba la cámara libre sin bici)   // R: modo bici (demo cinemática)
             if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_P && mdl) { play = !play; if (play) startPlay(); }   // P: modo jugable
-            if (play && e.type == SDL_EVENT_KEY_DOWN) { if (e.key.key == SDLK_SPACE) hopPressed = true; if (e.key.key == SDLK_T) { startPlay(); std::fprintf(stderr, "T: salida (%.0f %.0f %.0f)\n", prun.bike.pos.x, prun.bike.pos.y, prun.bike.pos.z); } if (e.key.key == SDLK_RETURN) { prun.respawn(); std::fprintf(stderr, "Enter: reaparece en (%.0f %.0f %.0f), reapariciones %d\n", prun.bike.pos.x, prun.bike.pos.y, prun.bike.pos.z, (int)prun.respawns); } }
+            if (play && e.type == SDL_EVENT_KEY_DOWN) { if (e.key.key == SDLK_SPACE) hopPressed = true; if (e.key.key == SDLK_R && race.state == RaceState::Riding) { prun.respawn(); std::fprintf(stderr, "R: de vuelta al último punto bueno\n"); } if (e.key.key == SDLK_T) { startPlay(); std::fprintf(stderr, "T: salida (%.0f %.0f %.0f)\n", prun.bike.pos.x, prun.bike.pos.y, prun.bike.pos.z); } if (e.key.key == SDLK_RETURN) { prun.respawn(); std::fprintf(stderr, "Enter: reaparece en (%.0f %.0f %.0f), reapariciones %d\n", prun.bike.pos.x, prun.bike.pos.y, prun.bike.pos.z, (int)prun.respawns); } }
             if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_F && mdl) { walk = !walk; vy = 0; ride = false; play = false; }   // F: volar <-> caminar con gravedad
             if (e.type == SDL_EVENT_MOUSE_MOTION) { yaw += e.motion.xrel * 0.003f; pitch -= e.motion.yrel * 0.003f; }
         }
@@ -395,7 +397,8 @@ int main(int argc, char** argv) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);   // DH_BG="r g b": color de fondo (p. ej. magenta para ver huecos) glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glEnable(GL_DEPTH_TEST); glDepthFunc(GL_LEQUAL);   // LEQUAL: las capas superpuestas del juego comparten posición con el suelo
         glMatrixMode(GL_PROJECTION); glLoadIdentity();
-        float asp = (float)ww / hh, nr = mdl ? ((ride || play || walk || std::getenv("DH_CAM")) ? std::fmax(0.3f, 0.03f * U) : std::fmax(0.05f, 0.002f * scale)) : 5, fr = 60000, t = nr * std::tan(0.5f * (std::getenv("DH_FOV") ? (float)std::atof(std::getenv("DH_FOV")) : 1.1f));   // DH_FOV: ángulo vertical en rad
+        float asp = (float)ww / hh, nr = mdl ? (play ? 1.5f : (ride || walk || std::getenv("DH_CAM")) ? std::fmax(0.3f, 0.03f * U) : std::fmax(0.05f, 0.002f * scale)) : 5, fr = play ? 40000.f : 60000.f, t = nr * std::tan(0.5f * (std::getenv("DH_FOV") ? (float)std::atof(std::getenv("DH_FOV")) : 1.1f));   // DH_FOV: ángulo vertical en rad
+        if (const char* e = std::getenv("DH_NEAR")) { nr = (float)std::atof(e); t = nr * std::tan(0.5f * (std::getenv("DH_FOV") ? (float)std::atof(std::getenv("DH_FOV")) : 1.1f)); } if (const char* e = std::getenv("DH_FAR")) fr = (float)std::atof(e);   // pruebas de precisión de profundidad
         glFrustum(-t*asp, t*asp, -t, t, nr, fr);
         glMatrixMode(GL_MODELVIEW); glLoadIdentity();
         { static float fg[5]; static const bool fog = std::getenv("DH_FOG") && std::sscanf(std::getenv("DH_FOG"), "%f %f %f %f %f", fg, fg+1, fg+2, fg+3, fg+4) == 5;   // DH_FOG="r g b inicio fin" (unidades del mundo): niebla lineal, HIPÓTESIS sin evidencia del motor (FOGCOL del GS no localizado); el panorama (cielo) se dibuja sin niebla
