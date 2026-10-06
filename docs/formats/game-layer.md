@@ -21,7 +21,7 @@ Hallazgos de cadenas (verificables con `strings -a -t x`): hasta 4 jugadores (`P
 
 ### .REP y .ORB como oráculo de ruta y tiempo: DESCARTADO por ahora
 Evidencia (solo 256 B de `ALPINE.ORB` y `ALPINE.REP`):
-- `.ORB`: cabecera `54 30 00 00 | 20 00 | 0e 00 | 06 06 03 00 | <nombre ASCII de piloto>` y 11 256 = 60 + 2 799 × 4. El flujo posterior son grupos de 4 bytes; el cuarto byte solo toma los valores 0, 3 y 7 (máscara de 3 bits) y el tercero es un paseo irregular de 8 bits (`fe fc f5 ef f1 ee e7 e1 …`), sin la monotonía de una coordenada a lo largo de una bajada. Es la firma de un registro de **pulsaciones de mando** más que de posiciones.
+- `.ORB`: cabecera `54 30 00 00 | 20 00 | 0e 00 | 06 06 03 00 | <nombre ASCII de piloto>` y 11 256 = 60 + 2 799 × 4. El flujo posterior son grupos de 4 bytes; el cuarto byte solo toma los valores 0, 3 y 7 (máscara de 3 bits) y el tercero es un paseo irregular de 8 bits (`fe fc f5 ef f1 ee e7 e1 …`), sin la monotonía de una coordenada a lo largo de una bajada. Es la firma de un registro de **pulsaciones de mando** más que de posiciones. Medido en 3 niveles (`ALPINE`, `AUBERMX`, `FUJI`): el u32 de 0x18 vale 1586 / 381 / 1688 (el de 0x14 es 0); el flujo útil acaba en la muestra 2799 / 1399 / 2798 de 2799 (el resto, ceros); canales 1-3 suaves (autocorrelación 0,88-0,98, valores 0-255 con saltos) y 4.º byte en {0, 1…7, 64…70, 127, 128, 190…208}. Uso previsto: demos o fantasmas, no oráculo.
 - `.REP`: cabecera dispersa (`u32 0x4039`, `0xF615`, `0x11`, `0x04`, resto ceros).
 - El ELF habla de «Controller Removed, Replay Stopped» y «End of Recorded Replay»: las repeticiones son grabaciones de entrada (hipótesis).
 - Consecuencia: serviría de oráculo solo con una física fiel al motor, que no tenemos (hito 3b). No hay posiciones ni marcas de tiempo evidentes. Para cerrarlo hace falta decodificar el archivo completo (`tools/peek.sh` aún no autorizado) y comparar con la línea de ALP2.
@@ -29,7 +29,11 @@ Evidencia (solo 256 B de `ALPINE.ORB` y `ALPINE.REP`):
 ### Cómo reproducir
 `strings -a -t x SLES_522.02 | grep -iE 'results|pause|replay|options|\.skx|\.bnk'`; `tools/ghidra/run.sh StrXrefs.java '<regex>' salida.txt` (una apertura del proyecto, solo xrefs); `ls -l` de `REP SND VAG SKAT MOV MEMCRD RST SHELL` sobre la ISO extraída.
 
-## ES — Orden propuesto de la rebanada vertical en ALP2 (a la espera de OK)
+## ES — Rebanada vertical en ALP2 (APROBADA 2026-10-06)
+Alcance mínimo: contrarreloj en ALP2, una moto, sin rivales, teclado con SDL3 y asignación por defecto, sin pantalla de opciones. **Diferido** (documentado, no se hará ahora): los otros 6 modos, multijugador, idiomas y editor de pósters.
+**Fase 1 hecha** (`src/race.hpp`, `tests/race_test.cpp`): estados carga → cuenta atrás (3 s, **hipótesis**: no sale del ELF) → conducción → meta (aviso de 2 s, hipótesis) → resultados; reloj a cero al «¡Ya!»; meta = última puerta del recorrido (hipótesis); resultados con tiempo, parciales por puerta, reinicios y velocidad máxima. Evidencia: `ctest` 9/9 con terreno y puertas sintéticos; `bike_demo` en ALP2: **07:10.98, 28/28 puertas, 0 reinicios, 122 km/h máx**, 28 parciales; el visor (`dhview`, modo jugable) muestra estado, cuenta atrás y reloj en el título y la captura de la parrilla en la cuenta atrás. Fragilidad conocida: el salto del barranco del punto 125 de la línea sale con ~8 u de margen y depende del estado inicial; `bike_demo` no asienta la moto en la parrilla (`Race::settle = false`) para repetir la trayectoria validada; con asentado la moto se atasca ahí (desvíos laterales y salto en el borde probados sin éxito).
+
+### Orden propuesto (aprobado)
 1. Cronómetro, meta y pantalla de resultados (tiempo en pantalla con la puerta final ya existente).
 2. HUD mínimo (velocidad, tiempo, puertas).
 3. Menú mínimo con assets reales de SHELL (anillo UI, LOADBAR).
@@ -57,7 +61,7 @@ String findings (reproducible with `strings -a -t x`): up to 4 players (`PLAYER 
 
 ### .REP and .ORB as route and time oracle: DISCARDED for now
 Evidence (only 256 B of `ALPINE.ORB` and `ALPINE.REP`):
-- `.ORB`: header `54 30 00 00 | 20 00 | 0e 00 | 06 06 03 00 | <nombre ASCII de piloto>` and 11,256 = 60 + 2,799 × 4. The stream is 4-byte groups; the 4th byte only takes 0, 3 and 7 (a 3-bit mask) and the 3rd is an irregular 8-bit walk (`fe fc f5 ef f1 ee e7 e1 …`), without the monotonicity of a coordinate along a descent. This is the signature of recorded **controller presses** rather than positions.
+- `.ORB`: header `54 30 00 00 | 20 00 | 0e 00 | 06 06 03 00 | <ASCII rider name>` and 11,256 = 60 + 2,799 × 4. The stream is 4-byte groups; the 4th byte only takes 0, 3 and 7 (a 3-bit mask) and the 3rd is an irregular 8-bit walk (`fe fc f5 ef f1 ee e7 e1 …`), without the monotonicity of a coordinate along a descent. This is the signature of recorded **controller presses** rather than positions. Measured on 3 levels (`ALPINE`, `AUBERMX`, `FUJI`): the u32 at 0x18 is 1586 / 381 / 1688 (0x14 is 0); the useful stream ends at sample 2799 / 1399 / 2798 of 2799 (rest zeros); channels 1-3 smooth (autocorrelation 0.88-0.98, values 0-255 with jumps), 4th byte in {0, 1…7, 64…70, 127, 128, 190…208}. Intended use: demos or ghosts, not an oracle.
 - `.REP`: sparse header (`u32 0x4039`, `0xF615`, `0x11`, `0x04`, rest zeros).
 - The ELF says "Controller Removed, Replay Stopped" and "End of Recorded Replay": replays are input recordings (hypothesis).
 - Consequence: usable as an oracle only with a physics faithful to the engine, which we do not have (milestone 3b). No evident positions or timestamps. Closing this needs the full file decoded (`tools/peek.sh` not yet authorised) and a comparison with the ALP2 line.
@@ -65,7 +69,11 @@ Evidence (only 256 B of `ALPINE.ORB` and `ALPINE.REP`):
 ### How to reproduce
 `strings -a -t x SLES_522.02 | grep -iE 'results|pause|replay|options|\.skx|\.bnk'`; `tools/ghidra/run.sh StrXrefs.java '<regex>' out.txt` (one project open, xrefs only); `ls -l` of `REP SND VAG SKAT MOV MEMCRD RST SHELL` on the extracted ISO.
 
-## EN — Proposed vertical-slice order in ALP2 (awaiting OK)
+## EN — Vertical slice in ALP2 (APPROVED 2026-10-06)
+Minimum scope: time trial in ALP2, one bike, no rivals, SDL3 keyboard with default mapping, no options screen. **Deferred** (documented, not done now): the other 6 modes, multiplayer, languages and poster editor.
+**Phase 1 done** (`src/race.hpp`, `tests/race_test.cpp`): states loading → countdown (3 s, **hypothesis**: not from the ELF) → riding → finish (2 s banner, hypothesis) → results; clock at zero on GO; finish = last course gate (hypothesis); results with time, per-gate splits, resets and top speed. Evidence: `ctest` 9/9 with synthetic ground and gates; `bike_demo` on ALP2: **07:10.98, 28/28 gates, 0 resets, 122 km/h max**, 28 splits; the viewer (`dhview` play mode) shows state, countdown and clock in the title, plus a grid capture during the countdown. Known fragility: the canyon jump at line point 125 clears by ~8 u and depends on the initial state; `bike_demo` does not settle the bike on the grid (`Race::settle = false`) to repeat the validated trajectory; with settling the bike gets stuck there (lateral detours and a hop at the lip tried without success).
+
+### Proposed order (approved)
 1. Timer, finish and results screen (on-screen time with the existing final gate).
 2. Minimal HUD (speed, time, gates).
 3. Minimal menu with real SHELL assets (UI ring, LOADBAR).
