@@ -3,7 +3,12 @@
 """Telemetría (tools/telemetry): formato, grabación contra una memoria simulada (sin PCSX2 ni datos del juego), comprobación, empaquetado y salvaguardas."""
 import gzip, os, struct, sys, tempfile, types, unittest, zipfile
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'tools', 'telemetry'))
-import schema as S, record as R, check as C, bundle as B, snapshots as SN
+import schema as S, record as R, check as C, bundle as B, snapshots as SN, detect as D
+
+def _pad(b, n): return b + bytes(n - len(b))
+LEVEL_BLOCK = _pad(bytes(4) + b'ALPINE\0'.ljust(9, b'\0') + b'\\LVL\\ALPINE.NGP;1\0', D.LEVEL_WIN[1])
+ROSTER_BLOCK = _pad(b'ALPINE'.ljust(10, b'\0') + b''.join(c.ljust(6, b'\0') + b'GTIDRV4\0\0\0\0ROXPS100\0\0ENTRWH\0\0\0\0BIKESKEL\0\0' for c in (b'TNOS', b'CNOS', b'MNOS')), D.ROSTER_WIN[1])
+LEVELS_BLOCK = _pad(b''.join(n.ljust(8, b'\0') for n in (b'ALPINE', b'MOAB', b'JUNGLE', b'ALP2', b'ALP', b'MOA')), D.LEVELS_WIN[1])
 
 class FakeLink:
     """Memoria simulada: el 'juego' avanza un paso en cada lectura de la ventana SYNC impar (la de antes de la muestra)."""
@@ -21,6 +26,7 @@ class FakeLink:
             if a <= addr and addr + len(data) <= a + ln: b[addr - a:addr - a + len(data)] = data
         put(S.RIDER_COUNT_ADDR, struct.pack('<I', self.riders))
         for i in range(self.riders): put(S.rb(i) + 0x7928 + 4, struct.pack('<I', 0x500000 + 0x1000 * i))
+        put(D.LEVEL_WIN[0], LEVEL_BLOCK); put(D.ROSTER_WIN[0], ROSTER_BLOCK); put(D.LEVELS_WIN[0], LEVELS_BLOCK)
         t = self.tick
         # SYNC window (ctrl+0x50, 0x40): posición y momento que cambian cada paso
         put(S.CTRL + 0x50, struct.pack('<16f', *[t * 0.5 + k for k in range(16)]))

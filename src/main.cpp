@@ -23,6 +23,7 @@
 #include "controls.hpp"
 #include "text.hpp"
 #include "hud.hpp"
+#include "loadscreen.hpp"
 static std::vector<uint8_t> g_inLog; static bool g_inLogSaved = false;   // registro de entradas por tick (DH_INPUT_LOG): se guarda al llegar a meta o, si no, al cerrar el visor
 #include "gl_renderer.hpp"
 #include "rider.hpp"
@@ -243,6 +244,7 @@ int main(int argc, char** argv) {
         if (!gateOpened) { openStartGate(gcol); gateOpened = true; }   // la verja de salida (superficie 0x681D) está cerrada en la malla estática
         const Gate* g0 = gts.courseGate(0); float h0 = g0 ? std::atan2(g0->n.x, -g0->n.z) : yaw;
         if (!std::getenv("DH_FEEL0")) { BikeParams& bp = prun.bike.P; bp.engineSteer = true; bp.hop = 32.f; bp.grip = 8.f; bp.reverseAccel = 18.f; bp.reverseMax = 7.f; }   // ajuste «para jugar a mano»: controlador de dirección del motor (leído de RAM) y salto de 2.45·13 = 32 u/s (FUN_00136330); agarre y marcha atrás = HIPÓTESIS. DH_FEEL0=1 usa los valores del arnés
+        race.loadLen = std::getenv("DH_LOADHOLD") ? (float)std::atof(std::getenv("DH_LOADHOLD")) : (shot ? 0.f : 1.5f);   // pantalla de carga: duración mínima provisional (no sale del ELF); 0 en capturas DH_SHOT
         race.load(gcol, &gts, haveStart ? startPt : V3{px, py, pz}, h0);   // cuenta atrás de 3 s con la moto en la parrilla y reloj a cero al «¡Ya!» (src/race.hpp) camHead = h0; leanVis = 0; finishedMsg = false;
         if (std::getenv("DH_DEMO_RESULTS")) { race.res.finished = true; race.res.time = 430.98; race.res.gates = race.res.totalGates = gts.size(); race.res.respawns = 0; race.res.maxSpeed = 111.f; race.res.splits = {16.00f, 26.26f, 39.66f}; race.state = RaceState::Results; }   // solo para capturas de la maquetación (valores de muestra)
         V3 f = prun.bike.fwd; camPos = prun.bike.pos + V3{-f.x * 11.f, 4.5f, -f.z * 11.f}; play = true; ride = false; walk = false;
@@ -524,7 +526,15 @@ int main(int argc, char** argv) {
             std::vector<gfx::Quad> tq; const float S = std::fmax(2.f, std::floor(ww / 320.f)); char b[64];
             auto line = [&](const std::string& t, float x, float y, float sc, float r, float g2, float b2) { gfx::textQuads(t, x + sc, y + sc, sc, 0, 0, 0, 0.7f, tq); gfx::textQuads(t, x, y, sc, r, g2, b2, 1.f, tq); };   // con sombra
             auto mid = [&](const std::string& t, float y, float sc, float r, float g2, float b2) { float x = ww * 0.5f - gfx::textWidth(t, sc) * 0.5f; line(t, x, y, sc, r, g2, b2); };
-            if (race.state == RaceState::Results) {
+            if (race.state == RaceState::Loading) {                                                   // pantalla de carga con la imagen real (src/loadscreen.hpp); sin datos, texto provisional
+                static int lsState = 0, lsId = -1; static gfx::Texture lsTex;
+                if (lsState == 0) { std::string a1 = argv[1], lvl = a1.substr(a1.find_last_of("/\\") == std::string::npos ? 0 : a1.find_last_of("/\\") + 1); lvl = lvl.substr(0, lvl.find('.'));
+                    std::string lp = std::getenv("DH_LOADSCREEN") ? std::getenv("DH_LOADSCREEN") : loadscreen::find("out/loadbar", lvl); std::vector<uint8_t> ld;
+                    if (!lp.empty() && readFile(lp.c_str(), ld) && loadscreen::load(ld, lsTex)) { lsId = gr.createTexture(lsTex); lsState = 1; } else { lsState = -1; std::fprintf(stderr, "aviso: sin pantalla de carga (python3 tools/loadbar_export.py unpacked/LOADBAR out/loadbar)\n"); } }
+                tq.push_back({0, 0, (float)ww, (float)hh, 0, 0, 0, 1.f});
+                if (lsState == 1) { auto L = loadscreen::layout(lsTex, (int)ww, (int)hh, race.loadProgress()); gr.drawQuads2D(tq, (int)ww, (int)hh); tq.clear(); gr.drawTexQuads2D(lsId, {L.pic}, (int)ww, (int)hh); tq = L.bar; }
+                else mid("LOADING", hh * 0.45f, S * 3.f, 1, 1, 1);
+            } else if (race.state == RaceState::Results) {
                 tq.push_back({0, 0, (float)ww, (float)hh, 0, 0, 0, 0.6f});
                 mid("TIME TRIAL RESULTS", hh * 0.18f, S * 2.f, 1.f, 0.85f, 0.2f);                     // título: texto real del ELF (0x2774DC)
                 std::snprintf(b, sizeof b, "TIME  %s", formatTime(race.res.time).c_str()); mid(b, hh * 0.34f, S * 2.f, 1, 1, 1);               // etiquetas provisionales (no son del ELF)
@@ -543,6 +553,9 @@ int main(int argc, char** argv) {
                     std::snprintf(b, sizeof b, "%.0f KM/H", 1.0973f * prun.bike.speed()); line(b, ww * 0.97f - gfx::textWidth(b, S * 1.5f), hh * 0.04f, S * 1.5f, 1, 0.85f, 0.2f);
                     std::snprintf(b, sizeof b, "GATES %zu/%zu", prun.gs.counter, gts.size()); line(b, ww * 0.03f, hh * 0.04f + 10 * S * 2.f, S, 0.8f, 1, 0.8f);
                 }
+                { static std::vector<float> course = hud::fitCourse(overlay); std::vector<gfx::Quad> pq; hud::Rect lb;               // panel de progreso (HIPÓTESIS de contenido, src/hud.hpp); sin rivales: posición 1/1
+                  hud::progressPanel((int)ww, (int)hh, course, gts.size() ? (float)prun.gs.counter / (float)gts.size() : 0.f, pq, lb); gr.drawQuads2D(pq, (int)ww, (int)hh);
+                  const float sc = std::fmax(2.f, lb.h / 10.f); line("1/1", lb.x + (lb.w - gfx::textWidth("1/1", sc)) * 0.5f, lb.y, sc, 1, 1, 1); }
                 if (race.state == RaceState::Countdown) { std::snprintf(b, sizeof b, "%d", race.countdownDigit()); mid(b, hh * 0.3f, S * 8.f, 1, 0.85f, 0.2f); }
                 else if (race.state == RaceState::Riding && race.displayTime() < 1.0) mid("GO!", hh * 0.3f, S * 8.f, 0.3f, 1, 0.3f);                       // provisional (la cadena real del juego no está localizada)
                 else if (race.state == RaceState::Finished) mid("GREAT FINISH!", hh * 0.3f, S * 4.f, 1, 0.85f, 0.2f);                                       // texto real del ELF (0x277614); su uso aquí es hipótesis

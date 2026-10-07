@@ -3,8 +3,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Exporta la imagen de cada pantalla de carga (unpacked/LOADBAR/L<NIVEL><IDIOMA>) como PNG, ya con el volteo vertical corregido
 (la textura se guarda boca abajo respecto a como la usa el juego: PSMT8 lineal 512x512 + CLUT, ver extract_model.py).
-Uso: loadbar_export.py unpacked/LOADBAR outdir   (outdir fuera del repo: los PNG son material del juego)"""
-import sys, os, glob, io, contextlib, runpy
+Además escribe <NOMBRE>.lbr para src/loadscreen.hpp: 'DLBR', u32 w, u32 h, RGBA con las filas de ARRIBA a ABAJO.
+Uso: loadbar_export.py unpacked/LOADBAR outdir   (outdir fuera del repo: los PNG y .lbr son material del juego; out/loadbar está en .gitignore)"""
+import sys, os, glob, io, contextlib, runpy, struct
 from PIL import Image
 src, out = sys.argv[1], sys.argv[2]; os.makedirs(out, exist_ok=True); n = 0
 for f in sorted(glob.glob(os.path.join(src, '*.NGP'))):
@@ -15,6 +16,7 @@ for f in sorted(glob.glob(os.path.join(src, '*.NGP'))):
     if not big: print('sin imagen:', base); continue
     t = g['make_texture'](big[0][1], big[0][2], big[0][3], big[0][4], big[0][5])
     if t is None: print('no decodificable:', base); continue
-    w, h, rgba = t; Image.frombytes('RGBA', (w, h), rgba).transpose(Image.FLIP_TOP_BOTTOM).save(os.path.join(out, os.path.basename(base) + '.png')); n += 1
+    w, h, rgba = t; im = Image.frombytes('RGBA', (w, h), rgba).transpose(Image.FLIP_TOP_BOTTOM); im.save(os.path.join(out, os.path.basename(base) + '.png')); n += 1
+    with open(os.path.join(out, os.path.basename(base) + '.lbr'), 'wb') as lf: lf.write(b'DLBR' + struct.pack('<II', w, h) + im.tobytes())
 if os.path.exists(os.path.join(out, 'tmp.mdl')): os.remove(os.path.join(out, 'tmp.mdl'))
 print(n, 'pantallas ->', out)

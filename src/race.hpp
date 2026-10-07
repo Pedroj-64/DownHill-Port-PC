@@ -23,19 +23,20 @@ struct Race {
     Run run; const Gates* gates = nullptr; RaceState state = RaceState::Loading;
     bool settle = true;                                   // asienta la moto en la parrilla al cargar (false = deja la caída de 3.8 u de Run::start: reproduce la trayectoria validada de bike_demo)
     float countdownLen = 3.f, finishHold = 2.f;           // HIPÓTESIS (véase arriba)
+    float loadLen = 0.f, loading = 0.f;                   // duración mínima de la pantalla de carga (0 = sin pantalla: load() pasa directo a la cuenta atrás); no sale del ELF, es un parámetro
     float countdown = 0, hold = 0; double raceTime = 0; float maxSpeed = 0; RaceResult res;
 
     void load(const Ground& g, const Gates* gts, V3 start, float heading) {   // Carga -> Cuenta atrás: coloca la moto en la parrilla
         gates = gts; run.gates = gts; run.start(g, start, heading);
         if (settle) { for (int i = 0; i < 300; i++) run.bike.step(g, BikeInput{}, 1.f / 60.f);   // asienta la moto en la parrilla (Run::start la deja 3.8 u sobre el suelo) y la para
             run.bike.rb.vel = run.bike.rb.omega = run.bike.rb.linMom = run.bike.rb.angMom = V3{}; }
-        countdown = countdownLen; hold = 0; raceTime = 0; maxSpeed = 0; res = RaceResult(); state = RaceState::Countdown;
+        countdown = countdownLen; hold = 0; raceTime = 0; maxSpeed = 0; res = RaceResult(); loading = loadLen; state = loadLen > 0.f ? RaceState::Loading : RaceState::Countdown;
     }
     // Un paso de dt segundos. Devuelve el evento de puerta (+1/-1/0) como Run::update. Durante la cuenta atrás la moto se asienta sin mandos y el cronómetro no corre.
     int update(const Ground& g, const BikeInput& in, float dt) {
         int ev = 0;
         switch (state) {
-        case RaceState::Loading: break;
+        case RaceState::Loading: loading -= dt; if (loading <= 0.f) state = RaceState::Countdown; break;   // la moto ya está asentada en la parrilla
         case RaceState::Countdown:
             countdown -= dt;   // la moto espera parada en la parrilla (como la retiene el gestor de salida: hipótesis)
             if (countdown <= 0.f) { run.gs = Gates::State(); armStartLine(); run.t = 0; run.lastSave = 0; run.goodT = 0; run.goodPos = run.bike.pos; run.goodHeading = run.bike.heading(); state = RaceState::Riding; }   // «¡Ya!»: puertas y reloj a cero
@@ -58,5 +59,6 @@ struct Race {
         if (g0 && gateDist(*g0, run.bike.pos) > 0.f) { run.gs.counter = 1; run.gs.times.push_back(0.f); }
     }
     double displayTime() const { return state == RaceState::Countdown || state == RaceState::Loading ? 0.0 : raceTime; }   // lo que muestra el cronómetro
+    float loadProgress() const { return state != RaceState::Loading || loadLen <= 0.f ? 1.f : 1.f - std::fmax(0.f, loading) / loadLen; }   // 0..1 para la barra de carga
     int countdownDigit() const { return state == RaceState::Countdown ? (int)std::ceil(countdown) : 0; }                    // 3, 2, 1 (0 fuera de la cuenta atrás)
 };

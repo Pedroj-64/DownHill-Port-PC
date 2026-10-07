@@ -20,6 +20,8 @@ def locate(path):
 def analyse(folder):
     tp = os.path.join(folder, 'ticks.dhtel.gz')
     table, samples = S.read_file(tp if os.path.exists(tp) else os.path.join(folder, 'ticks.dhtel')); r = dict(samples=len(samples), problems=[], notes=[])
+    try: tour = json.load(open(os.path.join(folder, 'meta.json'), encoding='utf-8')).get('mode') == 'tour'
+    except Exception: tour = False
     if not samples: r['problems'].append('sin muestras / no samples'); return r
     ts = [t for t, _, _ in samples]; r['seconds'] = ts[-1] - ts[0]; r['rate'] = (len(ts) - 1) / r['seconds'] if r['seconds'] > 0 else 0.0
     gaps = [b - a for a, b in zip(ts, ts[1:])]; r['gaps_over_80ms'] = sum(1 for g in gaps if g > 0.08); r['forced'] = sum(1 for _, fl, _ in samples if fl & 1)
@@ -47,6 +49,9 @@ def analyse(folder):
     r['others'] = ai; r.update(speed_max=max(speeds) if speeds else 0.0, speed_mean=sum(speeds) / len(speeds) if speeds else 0.0, air_fraction=air / len(samples), surfaces=surf, inputs=inp)
     if not snaps: r['problems'].append('sin fotos completas (snapshots/) / no full snapshots (snapshots/)')
     elif not any(fn.endswith('.ram.gz') and sz > 100000 for fn, sz in r['snapshots']): r['notes'].append('las fotos de RAM están vacías o no hay / RAM snapshots empty or missing')
+    if tour:                                                          # recorrido de menús: lo que vale son las fotos, no la moto
+        if not any(fn.endswith('.ram.gz') and sz > 100000 for fn, sz in r['snapshots']): r['problems'].append('el recorrido no tiene fotos de RAM / the tour has no RAM snapshots')
+        return r
     if r['seconds'] < 20: r['problems'].append('muy corta (<20 s) / too short (<20 s)')
     if r['rate'] < 30: r['problems'].append(f'frecuencia baja ({r["rate"]:.0f}/s; esperable ~50/s) / low sample rate')
     if r['speed_max'] < 5: r['problems'].append('la moto casi no se movió / the bike barely moved')
@@ -69,6 +74,10 @@ def main(argv=None):
         print('  entradas vistas (muestras) / inputs seen (samples):', r['inputs'])
         print('  fotos / snapshots:', [(fn, round(sz / 1e6, 1)) for fn, sz in r['snapshots']] or 'ninguna / none')
         if r['others']: print('  otros pilotos / other riders (vel. máx, media):', r['others'])
+    cov = meta.get('coverage')
+    if cov: print('  guion cubierto / script covered:', ', '.join(f'{k}{"" if v["done"] else "(-)"}' for k, v in cov.items()))
+    d = meta.get('detected') or {}
+    if d.get('level') or d.get('player'): print(f'  detectado / detected: nivel/level {d.get("level") or "?"}  piloto/rider {d.get("player") or "?"}  coherente/consistent {d.get("consistent")}')
     for n in r['notes']: print('  nota / note:', n)
     for p in r['problems']: print('  PROBLEMA / PROBLEM:', p)
     ok = not r['problems']; print('RESULTADO / RESULT:', 'OK - envía el .zip / send the .zip' if ok else 'REVISAR / CHECK - vuelve a grabar / record again')

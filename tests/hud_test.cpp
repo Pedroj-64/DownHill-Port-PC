@@ -29,5 +29,14 @@ int main() {
         CHECK(h.size() == 1 && !l.empty() && k.size() == 1 && leds.size() >= 6);
         auto in = [&](float x, float y, float w, float hh) { return x >= -0.5f && y >= -0.5f && x + w <= vw + 0.5f && y + hh <= vh + 0.5f; };
         for (auto& q : h) CHECK(in(q.x, q.y, q.w, q.h)); for (auto& q : l) CHECK(in(q.x, q.y, q.w, q.h)); for (auto& q : k) CHECK(in(q.x, q.y, q.w, q.h)); for (auto& q : leds) CHECK(in(q.x, q.y, q.w, q.h)); }
+    // panel de progreso: recorrido normalizado, puntos dentro de la caja, jugador dentro del panel y avance monótono a lo largo del trazado
+    { std::vector<float> pts; for (int i = 0; i < 300; i++) { float a = i * 0.05f; pts.push_back(100.f * std::cos(a)); pts.push_back(-5.f * i); pts.push_back(40.f * i + 30.f * std::sin(a * 3)); }
+      auto c = hud::fitCourse(pts, 64); CHECK(c.size() >= 4 && c.size() / 2 <= 65 + 1); for (float f : c) CHECK(f >= -1e-4f && f <= 1.0001f);
+      CHECK(c[1] < c[c.size() - 1]);                                                                                        // la salida arriba, la meta abajo
+      CHECK(hud::fitCourse({}).empty() && hud::fitCourse({1, 2, 3}).empty() && hud::fitCourse({5, 0, 5, 5, 9, 5}).empty());  // degenerados: ningún trazado
+      float lastY = -1; for (float fr : {-1.f, 0.f, 0.3f, 0.7f, 1.f, 2.f}) for (int vw : {640, 1920}) { int vh = vw == 640 ? 480 : 1080; std::vector<gfx::Quad> q; hud::Rect lb; hud::progressPanel(vw, vh, c, fr, q, lb);
+        CHECK(q.size() > 10); for (auto& r : q) CHECK(r.x >= 0 && r.y >= 0 && r.x + r.w <= vw * 0.2f + 1 && r.y + r.h <= vh + 1); CHECK(lb.y + lb.h <= vh + 1 && lb.x >= 0);
+        if (vw == 640 && fr >= 0.f && fr <= 1.f) { float py = q.back().y; CHECK(py >= lastY - 1e-3f); lastY = py; } }   // el punto del jugador (último rectángulo) baja con el avance
+      std::vector<gfx::Quad> q; hud::Rect lb; hud::progressPanel(640, 480, {}, 0.5f, q, lb); CHECK(q.size() > 10); }          // sin recorrido: línea recta
     std::puts("hud_test OK"); return 0;
 }

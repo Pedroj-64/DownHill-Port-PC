@@ -1,76 +1,46 @@
 # Telemetría y fotos del juego / Game telemetry and snapshots
 
-**ES · Para colaboradores.** Este script graba, mientras juegas a *Downhill Domination* en PCSX2, lo que hace el juego por dentro (entradas, física, pilotos, objetos, menús) para que el proyecto pueda reconstruirlo. No necesitas saber programar: son 4 pasos.
-**EN · For contributors.** While you play *Downhill Domination* in PCSX2, this script records what the game does internally (inputs, physics, riders, objects, menus) so the project can rebuild it. No programming needed: 4 steps.
+**ES · Para colaboradores (no hace falta saber programar).** Mientras juegas a *Downhill Domination* en PCSX2, este programa graba lo que hace el juego por dentro para que el proyecto pueda reconstruirlo. **Tú solo juegas**: él detecta el nivel y el piloto, te dice qué te falta jugar, hace las fotos de menús y pantallas de carga, comprueba que la grabación sirve y empaqueta todo.
+**EN · For contributors (no programming needed).** While you play *Downhill Domination* in PCSX2 this program records what the game does internally so the project can rebuild it. **You only play**: it detects the level and rider, tells you what is still missing, snapshots menus and loading screens, checks the recording and packs everything.
 
----
+## Pasos / Steps
+1. **Una sola vez / Once:** *PCSX2 → Ajustes → Avanzado → Activar PINE* (y reinicia PCSX2). Necesitas tu copia del juego **PAL (SLES-52202)** y **Python 3.8+** (sin instalar paquetes). / *Settings → Advanced → Enable PINE* (restart PCSX2). You need your own **PAL (SLES-52202)** copy and **Python 3.8+** (no packages).
+2. **Descarga el repo y haz doble clic en / Get the repo and double-click:** `tools/telemetry/GRABAR.bat` (Windows) o / or `tools/telemetry/grabar.sh` (Linux/macOS). Sin doble clic / without double-click: `python3 tools/telemetry/record.py`.
+3. **Juega** (abre PCSX2 y el juego antes o después: el programa espera). Navega por los menús, elige un nivel, corre. Verás líneas `[OK] ...` según cubres cosas del guion y `Te falta: ...` con lo siguiente.
+   / **Play** (open PCSX2 and the game before or after: it waits). Browse the menus, pick a level, race. You will see `[OK] ...` lines as you cover the script and `Still missing: ...`.
+4. **Cuando termines pulsa Ctrl+C.** El programa guarda, comprueba y dice al final **`>>> ENVÍA ESTE ARCHIVO: ...`**. Mándalo solo a quien te lo pidió, por un canal privado. / **When done press Ctrl+C.** It saves, checks and ends with **`>>> SEND THIS FILE: ...`**. Send it only to whoever asked, over a private channel.
 
-## 1. Qué necesitas / What you need
-- **ES:** tu propia copia del juego **PAL (SLES-52202)** funcionando en **PCSX2**, y **Python 3.8+** (no hay que instalar paquetes). Unos 2 GB libres en disco por sesión larga.
-- **EN:** your own copy of the **PAL (SLES-52202)** game running in **PCSX2**, and **Python 3.8+** (no packages to install). About 2 GB free disk per long session.
-- **ES:** descarga el repo (`git clone https://github.com/Pedroj-64/DownHill-Port-PC.git` o el .zip del repo) y abre una terminal en esa carpeta. **EN:** get the repo (clone or zip) and open a terminal in that folder.
+> **ES:** **no** lee tu teclado/mando del sistema, **no** captura tu pantalla y **no** mira nada de tu equipo: solo memoria del juego por PINE. Todo queda en `~/dh-telemetry/` (Windows: `C:\Users\TU_USUARIO\dh-telemetry\`), nunca dentro del repo.
+> **EN:** it does **not** read your keyboard/gamepad, **not** capture your screen, nothing on your computer: only game memory through PINE. Everything stays in `~/dh-telemetry/`, never inside the repo.
+> ⚠ **NO lo subas a GitHub ni a sitios públicos / do NOT upload it to GitHub or anywhere public**: contiene memoria del juego (material con copyright). / it contains game memory (copyrighted).
 
-## 2. Una sola vez: activar PINE en PCSX2 / Once: enable PINE in PCSX2
-- **ES:** en PCSX2: *Ajustes → Avanzado → Activar PINE* (puerto/ranura por defecto 28011). Reinicia PCSX2.
-- **EN:** in PCSX2: *Settings → Advanced → Enable PINE* (default slot/port 28011). Restart PCSX2.
-- Linux (nativo o Flatpak) y macOS: el script busca solo el socket. **Windows:** usa TCP automáticamente (127.0.0.1:28011). Si falla: `--socket RUTA` o `--tcp 127.0.0.1:28011`.
+## Qué hace solo / What it does by itself
+| ES | EN |
+|---|---|
+| Espera a PCSX2 y al juego si aún no están abiertos y te dice qué activar | Waits for PCSX2 and the game and tells you what to enable |
+| Detecta **nivel y piloto** leyendo el juego (no escribes nada; `--level/--rider` son opcionales) | Detects **level and rider** from the game (you type nothing; `--level/--rider` optional) |
+| Mide tu PC y elige cuántos pilotos grabar (modo ligero si va justo) | Measures your PC and picks how many riders to record (light mode if tight) |
+| **Menús → carrera → menús…** en continuo: cada carrera y cada tramo de menús es una grabación; fotos en cada cambio de nivel/carga y cada 15 s en menús | **Menus → race → menus…** continuously: each race and menu stretch is a recording; snapshots at each level change/loading and every 15 s in menus |
+| Guion en vivo: marca `[OK]` giros, frenadas, saltos cortos y cargados, vuelo largo, terrenos, choque, 3 min | Live script: ticks turns, braking, short/charged jumps, long flight, terrains, crash, 3 min |
+| Al final comprueba la grabación, te sugiere el nivel/piloto que falta y empaqueta (un solo `.zip` si hay varias) | At the end checks the recording, suggests the missing level/rider and packs (a single `.zip` if several) |
+| Respalda y devuelve tu savestate de la ranura 10; avisa si queda poco disco | Backs up and restores your slot-10 savestate; warns on low disk |
 
-## 3. Cada sesión / Each session
-1. Abre PCSX2 con el juego (PAL). / Open PCSX2 with the game (PAL).
-2. En la terminal, en la carpeta del repo / In the terminal, in the repo folder:
-   - **Carreras / Races:** `python3 tools/telemetry/record.py --level ALP2 --rider Cosmo`
-     (cambia `ALP2` por el nivel y `Cosmo` por tu piloto; si no sabes el nombre, escribe lo que veas). El script espera a que empieces la carrera.
-   - **Menús y pantallas (sin carrera) / Menus and screens (no race):** `python3 tools/telemetry/record.py --tour --label menus`
-3. **Juega con normalidad.** Mientras grabas puedes **escribir una nota y pulsar Enter** (p. ej. `derrape fuerte`, `salto cargado`, `estoy sobre hierba`): queda guardada con su hora, y ayuda mucho.
-   Escribe `snap nombre` + Enter (p. ej. `snap menu_principal`) para sacar una **foto completa** del juego en ese instante (se queda unos segundos parado: es normal).
-4. Termina con **Ctrl+C**. El script comprueba y empaqueta todo y te dice al final: **`>>> ENVÍA: <carpeta SEND>`**.
+**Opcional / Optional:** escribe `snap nombre` + Enter para una foto completa en ese instante (se queda unos segundos parado); o una nota (`derrape fuerte`) + Enter. / type `snap name` + Enter for a full snapshot now (freezes a few seconds); or a note + Enter.
+**Variedad que más ayuda / Variety that helps most:** otros niveles y pilotos, otros modos (contrarreloj, freeride, slalom, combate…), pausar en carrera y ver resultados, la pantalla de carga de cada nivel. El programa te sugiere el siguiente al acabar. / other levels and riders, other modes, pausing in a race and the results, each level's loading screen; the program suggests the next one.
 
-> **ES:** el script **no** lee tu teclado/mando del sistema, **no** captura tu pantalla y **no** mira nada de tu equipo: solo lee memoria del juego a través de PINE.
-> **EN:** the script does **not** read your keyboard/gamepad, **does not** capture your screen and does not look at anything on your computer: it only reads game memory through PINE.
+## Opciones (casi nunca hacen falta) / Options (rarely needed)
+`--once` una carrera y salir · `--tour` solo menús · `--light` PC lento · `--riders 1` solo tú · `--no-states` sin savestates · `--no-coach` sin guion · `--out RUTA` otra carpeta · `--sstates RUTA` carpeta de savestates de PCSX2 · `--tcp 127.0.0.1:28011` / `--socket RUTA` si PINE no se encuentra · `--label texto`. `python3 tools/telemetry/check.py "<carpeta o .zip>"` revisa una grabación; `bundle.py` junta los `.zip`.
 
-## 4. Qué jugar (guion) / What to play (script)
-**ES — queremos variedad: distintos mapas, distintos pilotos/bicis, distintos modos.** Para cada combinación nivel + piloto, una sesión de 3–5 minutos con esto (en cualquier orden):
-1. Salida: deja la cuenta atrás completa; luego **20 s en línea recta pedaleando** a tope.
-2. **Giros:** izquierda y derecha a fondo, suaves y bruscos, a poca y a mucha velocidad; zigzag.
-3. **Freno:** frenadas cortas y largas; parar del todo y arrancar.
-4. **Saltos:** pulsación corta y **carga larga** del salto; rampas grandes y pequeñas; aterrizajes limpios y malos; cabeceo en el aire (inclinar adelante/atrás).
-5. **Superficies:** tierra, hierba, roca, nieve, madera/puentes, barro (lo que haya).
-6. **Caídas y choques:** estrellarse contra un árbol/roca, caer por un barranco, volcar; reaparecer.
-7. Acabar la carrera hasta la meta y **ver la pantalla de resultados** (escribe `snap resultados` ahí).
-8. Si hay otros modos (contrarreloj, freeride, truco, slalom, replays), **un rato en cada uno** con `--label` que lo diga.
-**Recorrido (`--tour`)**, una sola sesión: menú principal, opciones, taller de bicis, selección de nivel, selección de piloto, pantallas de carga, cuenta atrás, pausa, resultados, repetición, créditos. En cada pantalla escribe `snap <nombre>` + Enter. Se gestiona bien con teclado y mando de PCSX2.
-**EN — we want variety: different maps, riders/bikes and modes.** For each level + rider, a 3–5 minute session with the same list: straight-line pedalling, turns, braking, short and **long-charged** jumps, surfaces, crashes, finishing and the results screen (`snap results`), other modes with `--label`, and one `--tour` session through all menus and screens using `snap <name>`.
-
-## 5. Cómo enviarlo / How to send it
-- **ES:** todo queda en `~/dh-telemetry/` (en Windows `C:\Users\TU_USUARIO\dh-telemetry\`). **Envía la carpeta `SEND`** (contiene un `.zip` por grabación) — o ejecuta `python3 tools/telemetry/bundle.py` para juntar todo en **un solo `.zip`** (`dhtel_bundle_…zip`) y envía ese. Mándalo **solo a quien te lo pidió**, por un canal privado.
-- **EN:** everything is in `~/dh-telemetry/`. **Send the `SEND` folder** (one `.zip` per recording), or run `python3 tools/telemetry/bundle.py` to merge everything into **one `.zip`** and send that one — **only to whoever asked**, over a private channel.
-- ⚠ **ES: NO lo subas a GitHub ni a ningún sitio público.** Contiene memoria del juego (material con copyright). El script se niega a escribir dentro de un repositorio git. **EN: do NOT upload it to GitHub or anywhere public.** It contains game memory (copyrighted material). The script refuses to write inside a git repository.
-- Para comprobar que tu grabación sirve / To check your recording is usable: `python3 tools/telemetry/check.py "~/dh-telemetry/sessions/<carpeta>"` → debe acabar en **RESULTADO: OK**.
-
-## 6. Qué contiene cada sesión / What each session contains
-`sessions/dhtel_<fecha>_<nivel>_<piloto>/`
-| Archivo | ES | EN |
-|---|---|---|
-| `ticks.dhtel.gz` | cada paso de física (~50/s): entradas, estado de tu moto y de los demás pilotos, nodos; cada ~0,5 s los pilotos y el gestor de carrera **enteros** | every physics step (~50/s): inputs, state of your bike and the other riders, nodes; every ~0.5 s the riders and race manager **in full** |
-| `static.dhtel`, `static_end.dhtel` | tablas y constantes del juego y tu piloto entero, al empezar y al acabar | game tables/constants and your rider in full, at start and end |
-| `snapshots/*.ram.gz` | **fotos completas de la RAM** (32 MB comprimidos): al empezar, al acabar, cada 60 s, en cada cambio carrera/menú y con `snap` | **full RAM snapshots**: at start, end, every 60 s, at each race/menu change and on `snap` |
-| `snapshots/*.p2s` | **savestates de PCSX2** (RAM + vídeo + audio + IOP + captura), si se encontró la carpeta de savestates | **PCSX2 savestates** (RAM + video + audio + IOP + screenshot) when the savestate folder is found |
-| `notes.jsonl` | tus notas con su hora | your notes with time |
-| `meta.json` | versión, juego, PCSX2, nivel, piloto, recuentos, lista de fotos | version, game, PCSX2, level, rider, counts, snapshot list |
-- **ES — savestates:** usan la **ranura 10** (`--state-slot N` para otra). Si ya tenías un savestate ahí, el script **lo copia aparte antes y lo restaura al terminar**. Si no quieres tocar savestates: `--no-states` (solo RAM). **EN:** they use **slot 10**; any savestate you already had there is copied aside and restored afterwards; `--no-states` to avoid it.
-- **ES — carga:** si el juego va a tirones, usa `--riders 1` o `--light`. **EN:** if the game stutters, use `--riders 1` or `--light`.
-
-## 7. Problemas frecuentes / Troubleshooting
+## Problemas frecuentes / Troubleshooting
 | Síntoma / Symptom | ES | EN |
 |---|---|---|
-| «No puedo conectar con PCSX2» | PCSX2 abierto + PINE activado + juego en marcha; en Windows prueba `--tcp 127.0.0.1:28011`; en Linux `--socket RUTA` | PCSX2 open + PINE on + game running; Windows `--tcp 127.0.0.1:28011`; Linux `--socket PATH` |
+| «Esperando a PCSX2» | abre PCSX2, activa PINE y reinicia PCSX2; en Windows prueba `--tcp 127.0.0.1:28011` | open PCSX2, enable PINE and restart it; on Windows try `--tcp 127.0.0.1:28011` |
 | «El juego cargado es …» | solo el PAL SLES-52202 | only the PAL SLES-52202 |
 | No encuentra savestates | `--sstates RUTA` (carpeta `sstates` de PCSX2) o `--no-states` | `--sstates PATH` or `--no-states` |
-| «Esperando a que empieces una carrera» | llega a la salida de un nivel (o usa `--tour`) | get to a level's start (or use `--tour`) |
-| `check.py` dice PROBLEMA | graba otra vez, más larga y con más movimiento | record again, longer and with more movement |
-| Se cerró PCSX2 / se cortó | se guarda lo grabado; sube igualmente la carpeta `SEND` | what was recorded is saved; send `SEND` anyway |
+| `REVISAR` al final | graba otra vez, más larga y con más movimiento | record again, longer and with more movement |
+| Se cerró PCSX2 / se cortó | se guarda lo grabado; envía igualmente el archivo | what was recorded is saved; send it anyway |
 
-## 8. Para el proyecto / For the project
-- Formato y regiones: `schema.py` (DHTEL1, direcciones de SLES-52202, documentadas). Lector: `schema.read_file(ruta)`. Comprobador: `check.py`. Pruebas: `python3 -m unittest tests.test_telemetry`.
-- **Lo recibido se guarda fuera del repo** (p. ej. `~/dh-states/telemetry/`). Lo que sí se versiona son los **resúmenes derivados** (curvas, tablas, parámetros ajustados, vectores de prueba), nunca los volcados, savestates ni `.dhtel`.
-- Received data stays **outside the repo**; only **derived summaries** (curves, tables, fitted parameters, test vectors) are versioned.
+## Para el proyecto / For the project
+- Formato: `schema.py` (DHTEL1, direcciones de SLES-52202). Detección y guion: `detect.py` (direcciones del nivel, lista de pilotos y tabla de niveles: hipótesis, ver `docs/p2s-savestates.md`). Pruebas: `python3 -m unittest tests.test_telemetry tests.test_telemetry_auto`.
+- `meta.json` guarda `detected` (nivel, piloto, lista completa, coherencia), `coverage` (guion) y `riders_in_race` (separa modos: 10 pilotos vs 6). La variante (ALP2 vs ALPINE) **no** está en RAM del nivel: se resuelve al analizar con las puertas de `race_mgr`.
+- Lo recibido se guarda **fuera del repo** (p. ej. `~/dh-states/telemetry/`); solo se versionan resúmenes derivados, nunca volcados, savestates ni `.dhtel`. / Received data stays **outside the repo**; only derived summaries are versioned.
