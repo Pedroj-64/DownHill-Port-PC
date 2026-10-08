@@ -43,5 +43,6 @@ int main() {
       run(b, g, std::vector<uint8_t>(60, kInThrottle | kInRight)); float dh = b.heading() - h0; CHECK(dh > 1.2f && dh < 1.7f);      // ~1.5 rad/s (0.024871 rad/tick · 1.2 · 50; antes 0.03316 sin el factor 0.75 medido)
       float h1 = b.heading(); run(b, g, std::vector<uint8_t>(6, kInThrottle)); CHECK(std::fabs(b.heading() - h1) < 0.05f); }          // sin entrada: la guiñada se para
     { Bike b = settled(g); b.P.engineSteer = true; b.P.hop = 32.f; float y0 = b.pos.y; b.step(g, unpackInput(kInHop), 1.f / 60.f); float maxy = b.pos.y; for (int i = 0; i < 120; i++) { b.step(g, BikeInput{}, 1.f / 60.f); maxy = std::fmax(maxy, b.pos.y); } CHECK(maxy - y0 > 3.5f && maxy - y0 < 9.f); }   // salto de ~32 u/s: 4-8 u de altura
+    CHECK(std::fabs(hopSpeed(0) - 32.11f) < 0.01f && std::fabs(hopSpeed(25) - 47.5475f) < 0.01f && std::fabs(hopSpeed(99) - hopSpeed(25)) < 1e-4f);   // 2.47·13 .. 2.47·19.25, satura a los 25 ticks
     std::puts("controls_test OK"); return 0;
 }

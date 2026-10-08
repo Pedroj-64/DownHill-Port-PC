@@ -30,6 +30,9 @@ inline void preStep(integ::Body& b, float kLin = linDamp(), float kAng = angDamp
 }
 }  // namespace engine
 
+// Impulso del salto del motor (FUN_00136330, validado contra 89 saltos de telemetría: pred - |dv| = 2.3..3.7 u/s = un tick de gravedad y resistencia): carga = min(ticks mantenidos, 25)·0.04,
+// J = 13 + carga·6.25 (·(1 - 0.08·ticks_en_aire) si ya se ha despegado, solo con < 12.5), Δv = 2.47·J a lo largo del eje de la moto: 32.1 (toque) .. 47.55 u/s (≥ 25 ticks = 0.5 s).
+inline float hopSpeed(int heldTicks, int airTicks = 0) { float c = std::fmin((float)heldTicks, 25.f) * 0.04f; return 2.47f * (13.f + c * (1.f - (float)airTicks * 0.08f) * 6.25f); }
 struct BikeInput { float throttle = 0, brake = 0, steer = 0, lean = 0; bool hop = false, sprint = false; };   // steer > 0 = derecha; lean > 0 = morro arriba; hop = un solo paso
 
 struct BikeParams {
