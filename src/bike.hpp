@@ -48,8 +48,8 @@ struct BikeParams {
     // Controlador de dirección DEL MOTOR (FUN_00137C48 giro, FUN_00137E68 cabeceo en el aire, FUN_00137F70 aplica la rotación; valores leídos de RAM en ctrl+0x438..0x470, ride_s1; unidades rad por tick de 1/50 s,
     // el ángulo aplicado es estado·60/50 por tick): estado += aceleración·entrada, saturado al máximo; sin entrada decae (en suelo a 0 de golpe). FUN_0016C640 (factor por velocidad) y la tabla de superficies
     // (0x77A3D8, no capturada) se toman como 1: HIPÓTESIS. Desactivado por defecto (el arnés de regresión usa steerRate/airYaw).
-    bool engineSteer = false;
-    float steerAccelGround = 0.00873f, steerMaxGround = 0.03316f, steerAccelAir = 0.00524f, steerMaxAir = 0.04608f, steerDecayAir = 0.675f;
+    bool engineSteer = false; // suelo = 0.75 * (0.00873, 0.03316) medido en telemetría (docs/telemetry-awiiwa.md); aire y cabeceo coinciden con los de RAM
+    float steerAccelGround = 0.006545f, steerMaxGround = 0.024871f, steerAccelAir = 0.00524f, steerMaxAir = 0.04608f, steerDecayAir = 0.675f;
     float pitchAccelAir = 0.00873f, pitchMaxAir = 0.04608f, pitchDecayAir = 0.8f;
     float reverseAccel = 0.f, reverseMax = 0.f;            // marcha atrás al frenar parado (HIPÓTESIS; 0 = desactivada: el arnés de regresión y bike_test no la usan)
     float brakeDecel = 28.f;                               // u/s^2 con el freno a fondo (nunca invierte el sentido)

@@ -40,7 +40,7 @@ int main() {
       Bike a = settled(g), b = settled(g); run(a, g, seq); run(b, g, seq); CHECK(std::memcmp(&a.pos, &b.pos, sizeof a.pos) == 0 && std::memcmp(&a.rb.vel, &b.rb.vel, sizeof a.rb.vel) == 0); }
     // controlador de dirección del motor (valores de RAM): satura a ~2 rad/s en pocos ticks, se detiene al instante al soltar (suelo) y el rumbo gira ~2 rad en 1 s
     { Bike b = settled(g); b.P.engineSteer = true; run(b, g, std::vector<uint8_t>(60 * 3, kInThrottle)); float h0 = b.heading();
-      run(b, g, std::vector<uint8_t>(60, kInThrottle | kInRight)); float dh = b.heading() - h0; CHECK(dh > 1.6f && dh < 2.2f);      // ~2.0 rad/s (0.03316 rad/tick · 1.2 · 50)
+      run(b, g, std::vector<uint8_t>(60, kInThrottle | kInRight)); float dh = b.heading() - h0; CHECK(dh > 1.2f && dh < 1.7f);      // ~1.5 rad/s (0.024871 rad/tick · 1.2 · 50; antes 0.03316 sin el factor 0.75 medido)
       float h1 = b.heading(); run(b, g, std::vector<uint8_t>(6, kInThrottle)); CHECK(std::fabs(b.heading() - h1) < 0.05f); }          // sin entrada: la guiñada se para
     { Bike b = settled(g); b.P.engineSteer = true; b.P.hop = 32.f; float y0 = b.pos.y; b.step(g, unpackInput(kInHop), 1.f / 60.f); float maxy = b.pos.y; for (int i = 0; i < 120; i++) { b.step(g, BikeInput{}, 1.f / 60.f); maxy = std::fmax(maxy, b.pos.y); } CHECK(maxy - y0 > 3.5f && maxy - y0 < 9.f); }   // salto de ~32 u/s: 4-8 u de altura
     std::puts("controls_test OK"); return 0;
