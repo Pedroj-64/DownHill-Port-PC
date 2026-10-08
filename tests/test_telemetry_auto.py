@@ -59,7 +59,7 @@ class CoachTest(unittest.TestCase):
         self.assertEqual(c.update(sig(), 5.0), []); self.assertAlmostEqual(c.t, c.t)                                                  # una pausa larga no cuenta como tiempo de juego (dt acotado)
 
     def test_signals_decode_from_fake_memory(self):
-        link = FakeLink(); link.tick = 5; regs = dict(zip(['ctrl', 'rider_input', 'rider_misc'], link.read_windows([(S.CTRL, 0x720), (S.RB + 0x1180, 0x1F0), (S.RB + 0x7900, 0x300)])))
+        link = FakeLink(); link.tick = 5; regs = dict(zip(['ctrl', 'rider_input', 'rider_misc', 'jump_obj'], link.read_windows([(S.CTRL, 0x720), (S.RB + 0x1180, 0x1F0), (S.RB + 0x7900, 0x300), (S.RB + 0x5E40, 0x80)])))
         s = D.signals(regs, bytes(0x80)); self.assertAlmostEqual(s['speed'], (25.0 ** 2 + 9) ** 0.5, places=3); self.assertEqual(s['pos'], (0.0, 0.0, 0.0))
 
 class FlowTest(unittest.TestCase):

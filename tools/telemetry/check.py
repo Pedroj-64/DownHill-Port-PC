@@ -25,7 +25,7 @@ def analyse(folder):
     if not samples: r['problems'].append('sin muestras / no samples'); return r
     ts = [t for t, _, _ in samples]; r['seconds'] = ts[-1] - ts[0]; r['rate'] = (len(ts) - 1) / r['seconds'] if r['seconds'] > 0 else 0.0
     gaps = [b - a for a, b in zip(ts, ts[1:])]; r['gaps_over_80ms'] = sum(1 for g in gaps if g > 0.08); r['forced'] = sum(1 for _, fl, _ in samples if fl & 1)
-    speeds = []; air = 0; surf = {}; inp = dict(derecha_right=0, izquierda_left=0, cabeceo_arriba_leanup=0, cabeceo_abajo_leandown=0, boton_button=0, pedal_7A6A=0, analog_7A78=0)
+    speeds = []; air = 0; surf = {}; inp = dict(derecha_right=0, izquierda_left=0, cabeceo_arriba_leanup=0, cabeceo_abajo_leandown=0, boton_button=0, salto_carga_jump_charge=0, pedal_7A6A=0, analog_7A78=0)
     for t, fl, p in samples:
         c = p['ctrl']; vx, vy, vz = struct.unpack_from('<3f', c, 0xC0); v = math.sqrt(vx * vx + vy * vy + vz * vz)
         if math.isfinite(v): speeds.append(v)
@@ -37,6 +37,7 @@ def analyse(folder):
         if struct.unpack_from('<i', ri, 0x18)[0] != 0: inp['cabeceo_arriba_leanup'] += 1
         if struct.unpack_from('<i', ri, 0x1C)[0] != 0: inp['cabeceo_abajo_leandown'] += 1
         if struct.unpack_from('<i', ri, 0x38)[0] != 0: inp['boton_button'] += 1
+        if struct.unpack_from('<I', p['jump_obj'], 0x0C)[0] == 1: inp['salto_carga_jump_charge'] += 1
         if rm[0x6A] != 0: inp['pedal_7A6A'] += 1
         if struct.unpack_from('<f', rm, 0x78)[0] != 0.0: inp['analog_7A78'] += 1
     ai = {}

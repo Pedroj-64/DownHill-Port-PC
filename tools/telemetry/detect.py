@@ -48,7 +48,7 @@ def session_info(link, n_riders=None):
     try: lv, ro = link.read_windows([LEVEL_WIN, ROSTER_WIN])
     except Exception: return dict(level='', player='', roster=[], consistent=False)
     level = parse_level(lv); rname, roster = parse_roster(ro)
-    ok = bool(level) and rname == level and bool(roster) and (n_riders is None or len(roster) == n_riders)
+    ok = bool(level) and rname == level and bool(roster) and (n_riders is None or 1 <= n_riders <= len(roster))
     return dict(level=level, player=roster[0][0] if roster else '', roster=roster, consistent=ok)
 
 def level_table(link):
@@ -57,16 +57,16 @@ def level_table(link):
 
 # ---------------------------------------------------------------- señales y entrenador
 def signals(regs, node=None):
-    """Muestra (regiones por nombre) -> dict de señales. Offsets de schema.py / check.py (entradas: rider+0x1180: +0x10 der., +0x14 izq., +0x18/+0x1C cabeceo, +0x38 botón; pedal rider+0x7900+0x6A)."""
+    """Muestra (regiones por nombre) -> dict de señales. Offsets de schema.py / check.py (entradas: rider+0x1180: +0x10 der., +0x14 izq., +0x18/+0x1C cabeceo; salto: jump_obj+0x0C == 1 mientras se carga, 2 al soltar, independiente del mando/teclado (el +0x38 de la entrada es otro botón); pedal rider+0x7900+0x6A)."""
     c, ri, rm = regs['ctrl'], regs['rider_input'], regs['rider_misc']
     vx, vy, vz = struct.unpack_from('<3f', c, 0xC0); v = math.sqrt(vx * vx + vy * vy + vz * vz)
     i = lambda o: struct.unpack_from('<i', ri, o)[0] != 0
     pos = struct.unpack_from('<3f', node, 0x10) if node and len(node) >= 0x1C else None
     return dict(speed=v if math.isfinite(v) else 0.0, air=struct.unpack_from('<h', c, 0x4A4)[0] >= 2, surf=struct.unpack_from('<H', c, 0x396)[0] & 0x1F,
-                right=i(0x10), left=i(0x14), up=i(0x18), down=i(0x1C), btn=i(0x38), pedal=rm[0x6A] != 0, pos=pos)
+                right=i(0x10), left=i(0x14), up=i(0x18), down=i(0x1C), btn=struct.unpack_from('<I', regs['jump_obj'], 0x0C)[0] == 1, pedal=rm[0x6A] != 0, pos=pos)
 
 ITEMS = [   # clave, objetivo, texto es, texto en
-    ('pedal', 10.0, 'Pedalea a tope en línea recta durante 10 s', 'Pedal flat out in a straight line for 10 s'),
+    ('pedal', 5.0, 'Pedalea a tope en línea recta durante 5 s (suma, no hace falta seguidos)', 'Pedal flat out in a straight line for 5 s (cumulative, not necessarily in a row)'),
     ('right', 3.0, 'Gira a la derecha a fondo (3 s en total)', 'Steer hard right (3 s in total)'),
     ('left', 3.0, 'Gira a la izquierda a fondo (3 s en total)', 'Steer hard left (3 s in total)'),
     ('lean', 4, 'Inclínate hacia delante y hacia atrás varias veces (también en el aire)', 'Lean forward and back several times (also in the air)'),
@@ -76,7 +76,7 @@ ITEMS = [   # clave, objetivo, texto es, texto en
     ('air', 1, 'Consigue un vuelo largo (más de 1 s en el aire): rampa grande o barranco', 'Get a long flight (over 1 s in the air): big ramp or drop'),
     ('surfaces', 3, 'Pasa por 3 tipos de terreno distintos (tierra, hierba, roca, nieve, puente...)', 'Ride over 3 different ground types (dirt, grass, rock, snow, bridge...)'),
     ('crash', 1, 'Estréllate una vez a propósito (árbol, roca o caída) y deja que reaparezca', 'Crash once on purpose (tree, rock or fall) and let it respawn'),
-    ('time', 180.0, 'Aguanta al menos 3 minutos de carrera, o llega a la meta', 'Stay in the race at least 3 minutes, or reach the finish'),
+    ('time', 150.0, 'Aguanta al menos 2,5 minutos de carrera, o llega a la meta', 'Stay in the race at least 2.5 minutes, or reach the finish'),
 ]
 KEYS = [k for k, _, _, _ in ITEMS]
 
@@ -99,7 +99,7 @@ class Coach:
         if not sig['btn'] and p.get('btn') and self.t_btn is not None:
             held = t - self.t_btn; self.t_btn = None
             if held < 0.4: self._add('jump_short')
-            elif held >= 0.8: self._add('jump_long')
+            elif held >= 0.6: self._add('jump_long')
         if sig['air']:
             self.air_run += dt
             if self.air_run >= 1.0 and not self.air_counted: self.air_counted = True; self._add('air')
