@@ -7,6 +7,8 @@
 #include "markers.hpp"
 #include "bikeasm.hpp"
 #include "iso9660.hpp"
+#include "uiextract.hpp"
+#include "loadscreen.hpp"
 #include "ie.hpp"
 #include <functional>
 #include <map>
@@ -33,6 +35,11 @@ inline bool loadFrom(const Reader& rd, const std::string& lvlDir, const std::str
     out.files[b + ".col"] = std::move(col);
     out.files[b + ".gates"] = markers::gatesFile(n); out.files[b + ".start.pts"] = markers::startPointsFile(n);
     std::vector<uint8_t> pts; if (rd("PTS/" + name + ".PTS", pts)) out.files[b + ".chain0.pts"] = markers::ptsChainFile(pts, 0);
+    std::vector<uint8_t> hud; if (uiextract::hudDat(L, hud)) out.files["native:hud.dat"] = std::move(hud);   // bloque de texturas del HUD de este nivel (idéntico en todos)
+    for (const std::string& c : loadscreen::candidates(name)) {   // pantalla de carga: la primera candidata de LOADBAR que se pueda decodificar
+        std::vector<uint8_t> ln, lp, lt, lc; if (!rd("LOADBAR/" + c + ".NGP", ln) || !rd("LOADBAR/" + c + ".PTR", lp) || !rd("LOADBAR/" + c + ".TEX", lt) || !rd("LOADBAR/" + c + ".RTX", lc)) continue;
+        tex::Level LL; std::vector<uint8_t> lbr; if (tex::load(ln, lp, lt, lc, LL) && uiextract::loadbarLbr(LL, lbr)) { out.files["native:loadscreen.lbr"] = std::move(lbr); break; }
+    }
     return true;
 }
 // Lector sobre una carpeta extraída (raíz del juego).

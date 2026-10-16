@@ -559,7 +559,7 @@ int main(int argc, char** argv) {
         }
         if (play) {                                          // texto provisional (src/text.hpp): cronómetro, velocidad, puertas, cuenta atrás, aviso de meta y pantalla de resultados
             static int hudTex[hud::kTexCount]; static int hudState = 0;   // 0 = sin intentar, 1 = cargado, -1 = no disponible (se usa el texto provisional)
-            if (hudState == 0) { std::vector<uint8_t> hd; std::vector<gfx::Texture> ht; const char* hp = std::getenv("DH_HUD") ? std::getenv("DH_HUD") : "out/hud/hud.dat";
+            if (hudState == 0) { std::vector<uint8_t> hd; std::vector<gfx::Texture> ht; const char* hp = std::getenv("DH_HUD") ? std::getenv("DH_HUD") : (vfs.count("native:hud.dat") ? "native:hud.dat" : "out/hud/hud.dat");
                 if (readFile(hp, hd) && hud::load(hd, ht)) { for (int i = 0; i < hud::kTexCount; i++) hudTex[i] = gr.createTexture(ht[i]); hudState = 1; } else { hudState = -1; std::fprintf(stderr, "aviso: sin texturas de HUD (%s): python3 tools/hud_export.py unpacked/LVL/ALP2\n", hp); } }
             std::vector<gfx::Quad> tq; const float S = std::fmax(2.f, std::floor(ww / 320.f)); char b[64];
             auto line = [&](const std::string& t, float x, float y, float sc, float r, float g2, float b2) { gfx::textQuads(t, x + sc, y + sc, sc, 0, 0, 0, 0.7f, tq); gfx::textQuads(t, x, y, sc, r, g2, b2, 1.f, tq); };   // con sombra
@@ -567,7 +567,7 @@ int main(int argc, char** argv) {
             if (race.state == RaceState::Loading) {                                                   // pantalla de carga con la imagen real (src/loadscreen.hpp); sin datos, texto provisional
                 static int lsState = 0, lsId = -1; static gfx::Texture lsTex;
                 if (lsState == 0) { std::string a1 = argv[1], lvl = a1.substr(a1.find_last_of("/\\") == std::string::npos ? 0 : a1.find_last_of("/\\") + 1); lvl = lvl.substr(0, lvl.find('.'));
-                    std::string lp = std::getenv("DH_LOADSCREEN") ? std::getenv("DH_LOADSCREEN") : loadscreen::find("out/loadbar", lvl); std::vector<uint8_t> ld;
+                    std::string lp = std::getenv("DH_LOADSCREEN") ? std::getenv("DH_LOADSCREEN") : (vfs.count("native:loadscreen.lbr") ? std::string("native:loadscreen.lbr") : loadscreen::find("out/loadbar", lvl)); std::vector<uint8_t> ld;
                     if (!lp.empty() && readFile(lp.c_str(), ld) && loadscreen::load(ld, lsTex)) { lsId = gr.createTexture(lsTex); lsState = 1; } else { lsState = -1; std::fprintf(stderr, "aviso: sin pantalla de carga (python3 tools/loadbar_export.py unpacked/LOADBAR out/loadbar)\n"); } }
                 tq.push_back({0, 0, (float)ww, (float)hh, 0, 0, 0, 1.f});
                 if (lsState == 1) { auto L = loadscreen::layout(lsTex, (int)ww, (int)hh, race.loadProgress()); gr.drawQuads2D(tq, (int)ww, (int)hh); tq.clear(); gr.drawTexQuads2D(lsId, {L.pic}, (int)ww, (int)hh); tq = L.bar; }
