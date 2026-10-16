@@ -29,16 +29,19 @@ static std::vector<uint8_t> g_inLog; static bool g_inLogSaved = false;   // regi
 #include "rider.hpp"
 #include "rider_mesh.hpp"
 #include "nativelevel.hpp"
+#include "audio.hpp"
 
 int main(int argc, char** argv) {
     if (argc < 2) { std::fprintf(stderr, "uso: dhview archivo.pts|.msh|.mdl|NIVEL.NGP  (mdl/NGP: F = volar/caminar, R = bici, Espacio = saltar; .NGP = carga nativa sin herramientas Python)\n"); return 1; }
     std::vector<float> v, col;
     std::map<std::string, std::vector<uint8_t>> vfs;   // archivos virtuales de la carga nativa (<nivel>.NGP -> .mdl, .sky.mdl, .dome.mdl, .col, .gates, .start.pts, .chain0.pts): readFile los sirve antes que el disco
+    nativelevel::Reader assetRd;   // lector de la raíz del juego (imagen ISO o carpeta extraída) para música y otros recursos
     nativelevel::IsoSource isoSrc;   // imagen ISO del jugador: dhview "juego.iso" NIVEL  (p. ej. ALP2): lee, descomprime los contenedores IE y construye el nivel y la bici sin carpetas extraídas
     { const std::string a1 = argv[1]; if (a1.size() > 4 && (a1.ends_with(".iso") || a1.ends_with(".ISO"))) {
         std::string lvl = argc > 2 ? argv[2] : "ALP2"; for (char& ch : lvl) ch = (char)std::toupper((unsigned char)ch);
         if (!isoSrc.open(a1)) { std::fprintf(stderr, "no se puede abrir la imagen ISO9660 %s\n", a1.c_str()); return 1; }
         nativelevel::Level nl; std::string err; if (!nativelevel::loadFrom(isoSrc.reader(), "LVL", lvl, lvl, nl, err)) { std::fprintf(stderr, "carga nativa de %s desde la ISO: %s\n", lvl.c_str(), err.c_str()); return 1; }
+        assetRd = isoSrc.reader();
         vfs = std::move(nl.files); static std::string mdlName0; mdlName0 = lvl + ".mdl"; argv[1] = mdlName0.data();
         auto setEnv = [](const char* k, const char* v) {
 #ifdef _WIN32
@@ -52,6 +55,7 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "carga nativa desde la ISO: %s (%zu archivos virtuales)\n", lvl.c_str(), vfs.size()); } }
     { const std::string a1 = argv[1]; if (a1.size() > 4 && (a1.ends_with(".NGP") || a1.ends_with(".ngp"))) {
         nativelevel::Level nl; std::string err; if (!nativelevel::load(a1, nl, err)) { std::fprintf(stderr, "carga nativa de %s: %s\n", a1.c_str(), err.c_str()); return 1; }
+        { const std::string b0 = nl.base; const size_t sl = b0.find_last_of("/\\"); const std::string d0 = sl == std::string::npos ? "." : b0.substr(0, sl); const size_t up0 = d0.find_last_of("/\\"); assetRd = nativelevel::dirReader(up0 == std::string::npos ? "." : d0.substr(0, up0)); }
         vfs = std::move(nl.files); static std::string mdlName; mdlName = nl.base + ".mdl"; argv[1] = mdlName.data();
         if (!std::getenv("DH_PTS") && vfs.count(nl.base + ".chain0.pts")) { static std::string pn; pn = nl.base + ".chain0.pts";
 #ifdef _WIN32
@@ -305,6 +309,17 @@ int main(int argc, char** argv) {
     };
     if (std::getenv("DH_RIDE")) { ride = true; startRide(); }
     if (std::getenv("DH_PLAY")) startPlay();
+    audio::Music music;   // música: DH_MUSIC=OFF la desactiva, DH_MUSIC=NN_LIC.VPK|CMX.VPK|... elige pista (VAG/ de la imagen), DH_MUSIC_VOL = volumen 0..1 (0.5). Solo en modo juego, sin DH_SHOT.
+    if (std::getenv("DH_PLAY") && !shot && assetRd) {
+        std::string want = std::getenv("DH_MUSIC") ? std::getenv("DH_MUSIC") : "";
+        for (char& ch : want) ch = (char)std::toupper((unsigned char)ch);
+        if (want != "OFF" && want != "NONE") {
+            if (want.empty()) { const std::string a1 = argv[1]; const size_t sl = a1.find_last_of("/\\"); unsigned h = 0; for (char ch : a1.substr(sl == std::string::npos ? 0 : sl + 1, a1.find('.', sl == std::string::npos ? 0 : sl) - (sl == std::string::npos ? 0 : sl + 1))) h = h * 31 + (unsigned char)ch;
+                char nm[16]; std::snprintf(nm, sizeof nm, "%02u_LIC.VPK", h % 20 + 1); want = nm; }   // HIPÓTESIS: el juego toca la lista del jugador (editor de listas con las 20 canciones licenciadas); aquí una por nivel
+            std::vector<uint8_t> mf; const float vol = std::getenv("DH_MUSIC_VOL") ? (float)std::atof(std::getenv("DH_MUSIC_VOL")) : 0.5f;
+            if (assetRd("VAG/" + want, mf) && music.play(mf, vol)) std::fprintf(stderr, "música: %s (%.0f s)\n", want.c_str(), music.seconds()); else std::fprintf(stderr, "aviso: sin música (%s)\n", want.c_str());
+        }
+    }
     int frame = 0;
     Uint64 last = SDL_GetTicks();
     for (bool run = true; run;) {
@@ -612,6 +627,7 @@ int main(int argc, char** argv) {
             SDL_Surface* sf = SDL_CreateSurfaceFrom(ww, hh, SDL_PIXELFORMAT_RGBA32, flip.data(), ww * 4);
             SDL_SaveBMP(sf, shot); SDL_DestroySurface(sf); run = false;
         }
+        music.update();
         SDL_GL_SwapWindow(w);
     }
     if (const char* lp = std::getenv("DH_INPUT_LOG")) if (!g_inLogSaved && !g_inLog.empty()) { g_inLogSaved = saveInputs(lp, g_inLog); std::fprintf(stderr, "registro de entradas (al salir): %zu ticks -> %s (%s)\n", g_inLog.size(), lp, g_inLogSaved ? "ok" : "error"); }
