@@ -41,6 +41,7 @@ add_test(NAME hud_test COMMAND hud_test)
 add_executable(loadscreen_test tests/loadscreen_test.cpp)
 add_test(NAME loadscreen_test COMMAND loadscreen_test)
 add_executable(bike_demo tests/bike_demo.cpp)
+add_executable(replay_demo tests/replay_demo.cpp)
 
 add_executable(integrator_test tests/integrator_test.cpp)
 add_test(NAME integrator_test COMMAND integrator_test)

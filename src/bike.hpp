@@ -72,6 +72,12 @@ struct BikeParams {
     float subStep = 1.f / 120.f;                           // paso máximo del integrador
 };
 
+// Perfil «motor» (controlador de giro del motor + fuerzas de suelo ajustadas): el de la conducción jugable y el de tests/replay_demo.cpp. dragK de suelo 0.0063 -> 0.001 y groundShare 0.46 -> 0.6 salen de ese oráculo
+// (entradas grabadas de ALPINE/ALPINEMX/ALPINET/MOAB, ventanas de 0.5 s en suelo): error de posición mediano 6.0 -> 2.7 u y de |v| 21.8 -> 5.5 u/s, en cada nivel por separado. El motor sí calcula -m·0.0063·|v|²·v̂ (ctrl+0x110)
+// pero hay una fuerza de suelo de signo contrario sin identificar que lo compensa casi por completo: son valores de AJUSTE (HIPÓTESIS). Los de BikeParams (arnés de regresión, engineSteer = false) no cambian: con ellos y dragK bajo la moto
+// vuelca de morro al acelerar en llano (el arnés es frágil), con este perfil no.
+inline void useEngineProfile(BikeParams& P) { P.engineSteer = true; P.dragK = 0.001f; P.groundShare = 0.6f; }
+
 struct Axes { V3 r, f, u; };                               // lateral, adelante, arriba (derecha)
 inline V3 unit(V3 a) { float l = std::sqrt(dot(a, a)); return l > 1e-9f ? a * (1.f / l) : V3{}; }
 // Orientación con balanceo bloqueado: sólo `f` (rumbo + cabeceo) es estado; r = f x Yarriba, u = r x f. (El motor mantiene la moto en pie con otro controlador; los puntos de contacto
