@@ -1,4 +1,4 @@
-# Native level loader — plan / Plan del loader nativo (hechos: pasos 1 y 2)
+# Native level loader — plan / Plan del loader nativo (hechos: pasos 1, 2 y 3)
 Goal: `dhview`/the game read the user's ISO (or extracted files) and the level `.NGP/.PTR/.RTX/.TEX` + `PTS/*` directly in C++, with no Python step. Python tools stay as the byte-exact oracle (every native parser is checked against them on all 54 levels, as done for step 1).
 Language note: the runtime is C++20 (decided 2026-10-02; Rust was considered and dropped, `docs/en/architecture.md`); the parsers below are written as small, bounds-checked, allocation-light readers so they can be ported.
 
@@ -28,7 +28,7 @@ Language note: the runtime is C++20 (decided 2026-10-02; Rust was considered and
 0. **ISO9660 reader** (list + extract a file; sector size 2048 — the `;1` version suffix and name level were not checked) — small, unblocks "no manual extraction"; needs the ISO only, no game data in the repo.
 1. ✔ `ngp::Reader` + **0x2A collision** (done: 54/54 identical).
 2. ✔ Root table + node walker (done 2026-10-16: `ngp::sceneStats` in `src/ngp.hpp`; roots, node types and kinds identical to `scene.py` on 54/54 levels, `python3 tools/ngp_scene_check.py --assert`). Pending: `Owners`/layers.
-3. Markers/gates/start grid + PTS chain (compare with `markers.py`, `pts_path.py`).
+3. ✔ Markers/gates/start grid + PTS chain (done 2026-10-16: `src/markers.hpp`; `.gates`, start-grid points and PTS chain 0 byte-identical to `markers.py` / `pts_path.py --chain 0` on the 51 levels that have a `.PTS`; `python3 tools/ngp_markers_check.py --assert`).
 4. TEX/RTX/GS swizzle → RGBA textures (compare PNG hashes with `extract_model.py` output).
 5. VIF/GIF leaf decode → vertex/index buffers (compare triangle sets; this is the largest step).
 6. Materials/vertex colour/alpha, selectors/LOD, sky; then GL upload replacing the `.mdl` path in `dhview`.
@@ -44,3 +44,5 @@ Language note: the runtime is C++20 (decided 2026-10-02; Rust was considered and
 * **Legal/hygiene**: the loader reads the user's ISO at runtime; nothing derived from it is committed or packaged (guard hooks stay).
 
 **ES.** Paso 2 hecho (2026-10-16): `ngp::sceneChildren/sceneWalk/sceneStats` en `src/ngp.hpp` reproducen el recorrido de `tools/scene.py` (raíces, tipos de nodo, «kinds»), con los contadores de hijos acotados por el tamaño del archivo; `tests/ngp_scene_check.cpp` + `tools/ngp_scene_check.py --assert`: 54/54 niveles idénticos. Quedan `Owners`/capas y los pasos 3-6. **EN.** Step 2 done (2026-10-16): `ngp::sceneChildren/sceneWalk/sceneStats` in `src/ngp.hpp` reproduce the walk of `tools/scene.py` (roots, node types, kinds), with child counts bounded by the file size; `tests/ngp_scene_check.cpp` + `tools/ngp_scene_check.py --assert`: 54/54 levels identical. `Owners`/layers and steps 3-6 remain.
+
+**ES.** Paso 3 hecho (2026-10-16): `src/markers.hpp` (`gatesFile`, `startPointsFile`, `ptsChainFile`) produce los mismos bytes que `tools/markers.py` y `tools/pts_path.py --chain 0` en los 51 niveles con `.PTS` (los otros 3 no tienen línea de carrera); las posiciones de la rejilla se calculan en doble y se redondean a f32 como Python. `tests/ngp_markers_check.cpp` + `tools/ngp_markers_check.py --assert`. **EN.** Step 3 done (2026-10-16): `src/markers.hpp` (`gatesFile`, `startPointsFile`, `ptsChainFile`) produces the same bytes as `tools/markers.py` and `tools/pts_path.py --chain 0` on the 51 levels with a `.PTS` (the other 3 have no racing line); grid positions are computed in double and rounded to f32 like Python. `tests/ngp_markers_check.cpp` + `tools/ngp_markers_check.py --assert`.
