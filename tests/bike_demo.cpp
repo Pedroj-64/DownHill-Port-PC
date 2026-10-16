@@ -56,6 +56,7 @@ int main(int argc, char** argv) {
             want_p = std::fmax(want_p, -0.5f);   // pared o caída vertical por delante: no picar más de ~30° (picar a -76° engancha el borde de enfrente en el barranco de ALP2, punto 125)
             float wp = dot(bike.rb.omega, bike.axes().r);
             in.lean = std::fmax(-1.f, std::fmin(1.f, 3.f * (want_p - cur) - 0.5f * wp));
+            if (std::getenv("DH_AIRDBG") && run.t > std::atof(std::getenv("DH_AIRDBG")) && run.t < std::atof(std::getenv("DH_AIRDBG")) + 3.0 && (int)(run.t * 60) % 6 == 0) std::printf("  aire t=%.2f want_p=%.2f cur=%.2f wp=%.2f lean=%.2f land=%d n.y=%.2f pitchW=%.4f\n", run.t, want_p, cur, wp, in.lean, (int)gq.hit, gq.normal.y, bike.pitchW);
         }
         V3 wf0 = bike.point(0, bike.axes(), bike.pos);
         int ev = race.update(g, in, dt);

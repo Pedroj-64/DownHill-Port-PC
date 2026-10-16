@@ -7,6 +7,7 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <map>
 #include <set>
 #include <utility>
 #include <vector>
@@ -112,6 +113,38 @@ inline bool collisionTrisInstanced(const std::vector<uint8_t>& data, std::vector
         for (double& v : c) v /= (double)tmp.size();
         if (std::sqrt(c[0] * c[0] + c[1] * c[1] + c[2] * c[2]) >= 50.0) out.insert(out.end(), tmp.begin(), tmp.end());
     }
+    return true;
+}
+
+// --- Paso 2 del loader (docs/native-loader-plan.md): tabla de raíces y recorrido del grafo de escena. Mismo algoritmo que tools/scene.py (Scene.children / walk). ---
+// Hijos del nodo en o según su tipo (bits 0-5 de la primera palabra): 1 grupo (+0x20, u16 @+8), 2 selector (+0x28 paso 8, u32 @+4), 3 traslación (+0x1C, u32 @+8), 4 matriz (+0x50, u32 @+8),
+// 6 lista (+0xC, byte @+0xB), 8 enlace (+4). Los punteros fuera del archivo se omiten (Python devuelve None y el recorrido los ignora). Los contadores se acotan por el tamaño del archivo (entrada no fiable).
+inline void sceneChildren(const Reader& r, size_t o, std::vector<size_t>& out) {
+    const uint32_t t = r.u32(o) & 0x3f; size_t base = 0, step = 4, n = 0;
+    switch (t) {
+    case 1: base = 0x20; n = r.u16(o + 8); break;
+    case 2: base = 0x28; step = 8; n = r.u32(o + 4); break;
+    case 3: base = 0x1c; n = r.u32(o + 8); break;
+    case 4: base = 0x50; n = r.u32(o + 8); break;
+    case 6: base = 0xc; n = o + 0xb < r.d.size() ? r.d[o + 0xb] : 0; break;
+    case 8: base = 4; n = 1; break;
+    default: return;
+    }
+    const size_t room = o + base < r.d.size() ? (r.d.size() - (o + base)) / step + 1 : 0; if (n > room) n = room;
+    for (size_t i = 0; i < n; i++) { size_t c; if (r.ptr(o + base + step * i, c)) out.push_back(c); }
+}
+struct SceneStats { std::vector<size_t> roots; std::map<uint32_t, uint32_t> types; std::map<std::pair<uint32_t, uint32_t>, uint32_t> kinds; size_t visited = 0; };
+inline void sceneWalk(const Reader& r, size_t o, int depth, std::set<size_t>& seen, SceneStats& st) {
+    if (depth > 40 || !seen.insert(o).second) return;
+    const uint32_t h = r.u32(o); st.types[h & 0x3f]++; st.visited++; if (h >> 18) st.kinds[{h & 0x3f, h >> 18}]++;
+    std::vector<size_t> ch; sceneChildren(r, o, ch);
+    for (size_t c : ch) sceneWalk(r, c, depth + 1, seen, st);
+}
+// Raíces (u32 n + ptr[n] en el offset 0) y estadística del recorrido (las raíces de tipo 7 = tabla de nodos no se recorren, como en scene.py).
+inline bool sceneStats(const std::vector<uint8_t>& data, SceneStats& st) {
+    Reader r{data}; if (data.size() < 8) return false; const uint32_t n = r.u32(0); if (n > (data.size() - 4) / 4) return false;
+    std::set<size_t> seen;
+    for (uint32_t i = 0; i < n; i++) { size_t o; if (!r.ptr(4 + 4 * i, o)) continue; st.roots.push_back(o); if ((r.u32(o) & 0x3f) == 7) continue; sceneWalk(r, o, 0, seen, st); }
     return true;
 }
 }  // namespace ngp

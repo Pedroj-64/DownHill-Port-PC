@@ -1,4 +1,4 @@
-# Native level loader — plan / Plan del loader nativo (no implementado salvo el paso 1)
+# Native level loader — plan / Plan del loader nativo (hechos: pasos 1 y 2)
 Goal: `dhview`/the game read the user's ISO (or extracted files) and the level `.NGP/.PTR/.RTX/.TEX` + `PTS/*` directly in C++, with no Python step. Python tools stay as the byte-exact oracle (every native parser is checked against them on all 54 levels, as done for step 1).
 Language note: the runtime is C++20 (decided 2026-10-02; Rust was considered and dropped, `docs/en/architecture.md`); the parsers below are written as small, bounds-checked, allocation-light readers so they can be ported.
 
@@ -27,7 +27,7 @@ Language note: the runtime is C++20 (decided 2026-10-02; Rust was considered and
 ## Implementation order (each step ends with a byte/number-exact check against the Python oracle on all 54 levels)
 0. **ISO9660 reader** (list + extract a file; sector size 2048 — the `;1` version suffix and name level were not checked) — small, unblocks "no manual extraction"; needs the ISO only, no game data in the repo.
 1. ✔ `ngp::Reader` + **0x2A collision** (done: 54/54 identical).
-2. Root table + node walker + `Owners`/layers (compare node counts per type with `scene.py`).
+2. ✔ Root table + node walker (done 2026-10-16: `ngp::sceneStats` in `src/ngp.hpp`; roots, node types and kinds identical to `scene.py` on 54/54 levels, `python3 tools/ngp_scene_check.py --assert`). Pending: `Owners`/layers.
 3. Markers/gates/start grid + PTS chain (compare with `markers.py`, `pts_path.py`).
 4. TEX/RTX/GS swizzle → RGBA textures (compare PNG hashes with `extract_model.py` output).
 5. VIF/GIF leaf decode → vertex/index buffers (compare triangle sets; this is the largest step).
@@ -42,3 +42,5 @@ Language note: the runtime is C++20 (decided 2026-10-02; Rust was considered and
 * **Instance transforms of collision nodes** are ignored (identity assumed, collision.md); moving/rotated instances will need the 0x4C-byte instance records decoded before dynamic props collide.
 * **Unit/axis conventions** (coordinates.md): Z-up in the NGP, 10 u = 1 m is a hypothesis. Keep conversion in one place (`Ground::load`, `toYUp`).
 * **Legal/hygiene**: the loader reads the user's ISO at runtime; nothing derived from it is committed or packaged (guard hooks stay).
+
+**ES.** Paso 2 hecho (2026-10-16): `ngp::sceneChildren/sceneWalk/sceneStats` en `src/ngp.hpp` reproducen el recorrido de `tools/scene.py` (raíces, tipos de nodo, «kinds»), con los contadores de hijos acotados por el tamaño del archivo; `tests/ngp_scene_check.cpp` + `tools/ngp_scene_check.py --assert`: 54/54 niveles idénticos. Quedan `Owners`/capas y los pasos 3-6. **EN.** Step 2 done (2026-10-16): `ngp::sceneChildren/sceneWalk/sceneStats` in `src/ngp.hpp` reproduce the walk of `tools/scene.py` (roots, node types, kinds), with child counts bounded by the file size; `tests/ngp_scene_check.cpp` + `tools/ngp_scene_check.py --assert`: 54/54 levels identical. `Owners`/layers and steps 3-6 remain.
