@@ -34,6 +34,22 @@ int main(int argc, char** argv) {
     if (argc < 2) { std::fprintf(stderr, "uso: dhview archivo.pts|.msh|.mdl|NIVEL.NGP  (mdl/NGP: F = volar/caminar, R = bici, Espacio = saltar; .NGP = carga nativa sin herramientas Python)\n"); return 1; }
     std::vector<float> v, col;
     std::map<std::string, std::vector<uint8_t>> vfs;   // archivos virtuales de la carga nativa (<nivel>.NGP -> .mdl, .sky.mdl, .dome.mdl, .col, .gates, .start.pts, .chain0.pts): readFile los sirve antes que el disco
+    nativelevel::IsoSource isoSrc;   // imagen ISO del jugador: dhview "juego.iso" NIVEL  (p. ej. ALP2): lee, descomprime los contenedores IE y construye el nivel y la bici sin carpetas extraídas
+    { const std::string a1 = argv[1]; if (a1.size() > 4 && (a1.ends_with(".iso") || a1.ends_with(".ISO"))) {
+        std::string lvl = argc > 2 ? argv[2] : "ALP2"; for (char& ch : lvl) ch = (char)std::toupper((unsigned char)ch);
+        if (!isoSrc.open(a1)) { std::fprintf(stderr, "no se puede abrir la imagen ISO9660 %s\n", a1.c_str()); return 1; }
+        nativelevel::Level nl; std::string err; if (!nativelevel::loadFrom(isoSrc.reader(), "LVL", lvl, lvl, nl, err)) { std::fprintf(stderr, "carga nativa de %s desde la ISO: %s\n", lvl.c_str(), err.c_str()); return 1; }
+        vfs = std::move(nl.files); static std::string mdlName0; mdlName0 = lvl + ".mdl"; argv[1] = mdlName0.data();
+        auto setEnv = [](const char* k, const char* v) {
+#ifdef _WIN32
+            _putenv_s(k, v);
+#else
+            setenv(k, v, 1);
+#endif
+        };
+        if (!std::getenv("DH_PTS") && vfs.count(lvl + ".chain0.pts")) { static std::string pn0; pn0 = lvl + ".chain0.pts"; setEnv("DH_PTS", pn0.c_str()); }
+        if (!std::getenv("DH_BIKE")) { std::vector<uint8_t> bk; if (nativelevel::loadBikeFrom(isoSrc.reader(), bk)) { vfs["native:bike1.mdl"] = std::move(bk); setEnv("DH_BIKE", "native:bike1.mdl"); } }
+        std::fprintf(stderr, "carga nativa desde la ISO: %s (%zu archivos virtuales)\n", lvl.c_str(), vfs.size()); } }
     { const std::string a1 = argv[1]; if (a1.size() > 4 && (a1.ends_with(".NGP") || a1.ends_with(".ngp"))) {
         nativelevel::Level nl; std::string err; if (!nativelevel::load(a1, nl, err)) { std::fprintf(stderr, "carga nativa de %s: %s\n", a1.c_str(), err.c_str()); return 1; }
         vfs = std::move(nl.files); static std::string mdlName; mdlName = nl.base + ".mdl"; argv[1] = mdlName.data();

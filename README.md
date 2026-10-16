@@ -22,7 +22,7 @@ A native engine reimplementation (not an emulator wrapper) that loads the game's
 ## Progress
 
 <!-- progress:start -->
-**Downhill Domination: 47.4% verified, 60.1% implemented**
+**Downhill Domination: 48.0% verified, 60.7% implemented**
 
 Average of all rows. Verified = checked against evidence from the game (savestates, the game's own camera, bit-identical reference). Implemented = works but unverified or based on hypotheses. Counted rows show real units; the rest are rough maintainer estimates.
 
@@ -51,7 +51,7 @@ Average of all rows. Verified = checked against evidence from the game (savestat
 | Viewer (dhview) | Free camera, walk mode, camera-centred sky, play mode. |
 | Bike physics | Rigid body on the ported sweep and contact response, exact air steering/pitch, validated jump impulse; ground force terms are a fit checked by the replay oracle (hypothesis). |
 | Levels ridden start to finish | ALP2 only (28/28 gates, test autopilot, 0 resets); keyboard riding works. |
-| Native C++ modules | Collision, scene graph, textures, models/meshes (levels and standalone), course data (gates, start grid, racing line), animations (NGA) and the bike assembly are native and byte-identical to the Python reference (54 levels, 352 models); the level loads in ~1 s with `dhview LEVEL.NGP`. Only the ISO reader (an external extractor today) is missing. |
+| Native C++ modules | ISO9660 reader, IE containers (own inflate), collision, scene graph, textures, models/meshes, course data, animations (NGA) and bike assembly are native and byte-identical to the Python reference (2385 ISO files, 54 levels, 352 models); `dhview game.iso LEVEL` loads a level straight from the image in ~1 s. |
 | Menus and loading screens | 78 loading screens render; no menu logic. |
 | Audio | VAG files located; nothing decoded in the engine. |
 | AI and rivals | Not started. |

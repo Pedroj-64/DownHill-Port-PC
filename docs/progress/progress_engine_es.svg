@@ -12,8 +12,8 @@
 <rect class="v" x="330" y="94" width="5.0" height="14" rx="3"/>
 <text class="d" x="612" y="105">1 / 54 niveles</text>
 <text x="0" y="133">Módulos nativos en C++</text><rect class="t" x="330" y="122" width="270" height="14" rx="3"/>
-<rect class="v" x="330" y="122" width="236.2" height="14" rx="3"/>
-<text class="d" x="612" y="133">7 / 8 módulos</text>
+<rect class="v" x="330" y="122" width="270.0" height="14" rx="3"/>
+<text class="d" x="612" y="133">8 / 8 módulos</text>
 <text x="0" y="161">Menús y pantallas de carga</text><rect class="t" x="330" y="150" width="270" height="14" rx="3"/>
 <rect class="v" x="330" y="150" width="40.5" height="14" rx="3"/>
 <text class="d" x="612" y="161">15% est.</text>
