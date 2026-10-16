@@ -28,16 +28,30 @@ static std::vector<uint8_t> g_inLog; static bool g_inLogSaved = false;   // regi
 #include "gl_renderer.hpp"
 #include "rider.hpp"
 #include "rider_mesh.hpp"
+#include "nativelevel.hpp"
 
 int main(int argc, char** argv) {
-    if (argc < 2) { std::fprintf(stderr, "uso: dhview archivo.pts|.msh|.mdl  (mdl: F = volar/caminar, R = bici, Espacio = saltar)\n"); return 1; }
+    if (argc < 2) { std::fprintf(stderr, "uso: dhview archivo.pts|.msh|.mdl|NIVEL.NGP  (mdl/NGP: F = volar/caminar, R = bici, Espacio = saltar; .NGP = carga nativa sin herramientas Python)\n"); return 1; }
     std::vector<float> v, col;
+    std::map<std::string, std::vector<uint8_t>> vfs;   // archivos virtuales de la carga nativa (<nivel>.NGP -> .mdl, .sky.mdl, .dome.mdl, .col, .gates, .start.pts, .chain0.pts): readFile los sirve antes que el disco
+    { const std::string a1 = argv[1]; if (a1.size() > 4 && (a1.ends_with(".NGP") || a1.ends_with(".ngp"))) {
+        nativelevel::Level nl; std::string err; if (!nativelevel::load(a1, nl, err)) { std::fprintf(stderr, "carga nativa de %s: %s\n", a1.c_str(), err.c_str()); return 1; }
+        vfs = std::move(nl.files); static std::string mdlName; mdlName = nl.base + ".mdl"; argv[1] = mdlName.data();
+        if (!std::getenv("DH_PTS") && vfs.count(nl.base + ".chain0.pts")) { static std::string pn; pn = nl.base + ".chain0.pts";
+#ifdef _WIN32
+            _putenv_s("DH_PTS", pn.c_str());
+#else
+            setenv("DH_PTS", pn.c_str(), 1);
+#endif
+        }
+        std::fprintf(stderr, "carga nativa: %s (%zu archivos virtuales)\n", a1.c_str(), vfs.size()); } }
     bool tris = std::string(argv[1]).ends_with(".msh");
     bool mdl = std::string(argv[1]).ends_with(".mdl");
     struct Tex { int w, h; std::vector<unsigned char> px; GLuint id = 0; };
     struct Chunk { uint32_t first, count; std::vector<std::array<float, 5>> sels; };   // rango de índices + selectores de distancia (cx cy cz radio dist2_max)
     struct Model { std::vector<Tex> texs; std::vector<float> mv; std::vector<uint32_t> mi; std::vector<Chunk> chunks; };   // .mdl: 10 f32 por vértice (x y z u v r g b a tex)
-    auto readFile = [](const std::string& path, std::vector<uint8_t>& raw) {
+    auto readFile = [&vfs](const std::string& path, std::vector<uint8_t>& raw) {
+        if (auto it = vfs.find(path); it != vfs.end()) { raw = it->second; return true; }
         FILE* f = std::fopen(path.c_str(), "rb"); if (!f) return false;
         std::fseek(f, 0, SEEK_END); raw.resize(std::ftell(f)); std::rewind(f);
         bool ok = std::fread(raw.data(), 1, raw.size(), f) == raw.size(); std::fclose(f); return ok;
