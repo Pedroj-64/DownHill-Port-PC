@@ -22,7 +22,7 @@ Una reimplementación nativa del motor (no un envoltorio de emulador) que carga 
 ## Progreso
 
 <!-- progress:start -->
-**Downhill Domination: 46.9% verificado, 59.5% implementado**
+**Downhill Domination: 47.4% verificado, 60.1% implementado**
 
 Promedio de todas las filas. Verificado = comprobado con evidencia del juego (savestates, la cámara del propio juego, referencia idéntica bit a bit). Implementado = funciona pero sin verificar o basado en hipótesis. Las filas con unidades muestran cifras reales; el resto son estimaciones aproximadas de los mantenedores.
 
@@ -51,7 +51,7 @@ Promedio de todas las filas. Verificado = comprobado con evidencia del juego (sa
 | Visor (dhview) | Cámara libre, modo caminar, cielo centrado en la cámara, modo de juego. |
 | Física de la bici | Cuerpo rígido sobre el barrido y la respuesta de contacto portados, giro y cabeceo exactos en el aire, impulso de salto validado; los términos de fuerza de suelo son un ajuste comprobado con el oráculo por repetición (hipótesis). |
 | Niveles recorridos de salida a meta | Solo ALP2 (28/28 puertas, autopiloto de pruebas, 0 reinicios); se puede conducir con el teclado. |
-| Módulos nativos en C++ | Colisión, grafo de escena, texturas, modelos/mallas (niveles y sueltos), datos del recorrido (puertas, rejilla, línea de carrera) y animaciones (NGA) son nativos e idénticos byte a byte a la referencia Python en los 54 niveles; el ensamblado de la bici y la lectura del ISO/orquestación de niveles aún pasan por las herramientas Python. |
+| Módulos nativos en C++ | Colisión, grafo de escena, texturas, modelos/mallas (niveles y sueltos), datos del recorrido (puertas, rejilla, línea de carrera), animaciones (NGA) y el ensamblado de la bici son nativos e idénticos byte a byte a la referencia Python (54 niveles, 352 modelos); el nivel carga en ~1 s con `dhview NIVEL.NGP`. Solo falta el lector del ISO (hoy un extractor externo). |
 | Menús y pantallas de carga | Las 78 pantallas de carga se renderizan; no hay lógica de menús. |
 | Audio | Archivos VAG localizados; nada decodificado en el motor. |
 | IA y rivales | Sin empezar. |

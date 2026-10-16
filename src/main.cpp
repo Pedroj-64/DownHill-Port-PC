@@ -44,6 +44,13 @@ int main(int argc, char** argv) {
             setenv("DH_PTS", pn.c_str(), 1);
 #endif
         }
+        if (!std::getenv("DH_BIKE")) { std::vector<uint8_t> bk; if (nativelevel::loadBike(nl.base, bk)) { static std::string bn; bn = "native:bike1.mdl"; vfs[bn] = std::move(bk);
+#ifdef _WIN32
+            _putenv_s("DH_BIKE", bn.c_str());
+#else
+            setenv("DH_BIKE", bn.c_str(), 1);
+#endif
+        } }
         std::fprintf(stderr, "carga nativa: %s (%zu archivos virtuales)\n", a1.c_str(), vfs.size()); } }
     bool tris = std::string(argv[1]).ends_with(".msh");
     bool mdl = std::string(argv[1]).ends_with(".mdl");
@@ -520,7 +527,8 @@ int main(int argc, char** argv) {
             glEnd(); glPopMatrix();
         }
         if (!colLines.empty() && std::getenv("DH_COLDRAW")) { glEnableClientState(GL_VERTEX_ARRAY); glColor3f(0.1f, 1.f, 0.3f); glVertexPointer(3, GL_FLOAT, 0, colLines.data()); glDrawArrays(GL_LINES, 0, (GLsizei)(colLines.size() / 3)); }
-        if (!overlay.empty()) {
+        if (!overlay.empty() && (!play || std::getenv("DH_SHOWLINE"))) {   // en modo juego la línea de carrera solo alimenta el minimapa; DH_SHOWLINE=1 la dibuja en 3D
+            
             glDisable(GL_DEPTH_TEST); glEnableClientState(GL_VERTEX_ARRAY); glColor3f(1, 0.2f, 0.9f); glPointSize(5);
             glVertexPointer(3, GL_FLOAT, 0, overlay.data()); glDrawArrays(GL_POINTS, 0, (GLsizei)(overlay.size() / 3)); glEnable(GL_DEPTH_TEST);
         }

@@ -5,6 +5,7 @@
 #pragma once
 #include "mesh.hpp"
 #include "markers.hpp"
+#include "bikeasm.hpp"
 #include <cstdio>
 #include <string>
 
@@ -31,5 +32,16 @@ inline bool load(const std::string& ngpPath, Level& out, std::string& err) {
     const std::string dir = slash == std::string::npos ? "." : b.substr(0, slash); const size_t up = dir.find_last_of("/\\"); const std::string root = up == std::string::npos ? "." : dir.substr(0, up);
     std::vector<uint8_t> pts; if (readAll(root + "/PTS/" + stem + ".PTS", pts)) out.files[b + ".chain0.pts"] = markers::ptsChainFile(pts, 0);
     return true;
+}
+
+// Bici ensamblada (cuadro + manillar + rueda, las de tools/dh.py) desde <raíz>/BIKE/*.NGP; `levelBase` = base del nivel (.../LVL/N). false si no hay datos de BIKE.
+inline bool loadBike(const std::string& levelBase, std::vector<uint8_t>& mdl) {
+    const size_t slash = levelBase.find_last_of("/\\"); if (slash == std::string::npos) return false; const std::string dir = levelBase.substr(0, slash); const size_t up = dir.find_last_of("/\\"); const std::string root = up == std::string::npos ? "." : dir.substr(0, up);
+    std::vector<uint8_t> parts[3]; const char* names[3] = {"CANFIELD", "MAN100", "WHBRIAN"};
+    for (int k = 0; k < 3; k++) {
+        const std::string b = root + "/BIKE/" + names[k]; std::vector<uint8_t> n, p, t, c; if (!readAll(b + ".NGP", n) || !readAll(b + ".PTR", p) || !readAll(b + ".TEX", t) || !readAll(b + ".RTX", c)) return false;
+        tex::Level L; if (!tex::load(n, p, t, c, L) || !mesh::extractStatic(n, L, parts[k])) return false;
+    }
+    return bikeasm::assemble(parts[0], parts[1], parts[2], {}, mdl);
 }
 }  // namespace nativelevel
