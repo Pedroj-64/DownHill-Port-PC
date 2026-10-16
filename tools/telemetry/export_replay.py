@@ -11,8 +11,8 @@ Uso / Usage:  python3 tools/telemetry/export_replay.py <carpeta o ticks.dhtel[.g
 Formato / Format:  'DHRPL1\\0\\0' | u32 nfloats por registro | u32 nregistros | registros de f32.
 Registro / record (NF = 24 floats), coordenadas del port (Y arriba: x, z, -y del espacio NGP):
   0 t(s)  1-3 P  4-6 v  7-9 adelante / forward  10-12 arriba / up  13 giro / steer (+ = derecha, der.-izq. normalizado, FUN_0012DFF0)
-  14 cabeceo / lean (+1 abajo-dpad, -1 arriba-dpad, ctrl_oracle)  15 pedal  16 carga del salto (ticks, jump_obj+0x24)  17 suelta el salto (jump_obj+0x0C == 2)
-  18 aire (ctrl+0x4A4 >= 2)  19 superficie (ctrl+0x206 & 0x1F)  20 ctrl+0x49C (truco)  21-23 reservado / reserved"""
+  14 cabeceo / lean (+1 abajo-dpad, -1 arriba-dpad, ctrl_oracle)  15 pedal / pedal (rider+0x7A78, float 0..1; FUN_00136A88)  16 carga del salto (ticks, jump_obj+0x24)  17 suelta el salto (jump_obj+0x0C == 2)
+  18 aire (ctrl+0x4A4 >= 2)  19 superficie (ctrl+0x206 & 0x1F)  20 ctrl+0x49C (truco)  21 esfuerzo extra / sprint (rider+0x7A69)  22 rider+0x796A (complementario del pedal; ¿freno?)  23 columna 2 de la tabla de superficies de la clase actual (rodadura, FUN_001380E0; x0.025 = 1/s)"""
 import argparse, math, os, struct, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import schema as S
@@ -27,7 +27,17 @@ def v3(b, o):
 def steer_of(inp):
     return 0.0 if inp == 0 else float(inp) if abs(inp) == 1 else inp / 128.0   # igual que ctrl_oracle.u_of
 
+def surf_roll(path):
+    """Columna 2 (rodadura, FUN_001380E0) de la tabla de superficies de esa grabación (static.dhtel), 32 valores; la tabla cambia de un nivel a otro."""
+    d = path if os.path.isdir(path) else os.path.dirname(path)
+    for r, _, fs in os.walk(d):
+        if 'static.dhtel' in fs:
+            tb = S.read_file(os.path.join(r, 'static.dhtel'))[1][0][2]['surf_table']
+            return [struct.unpack_from('<f', tb, k * 32 + 8)[0] for k in range(32)]
+    return [0.0] * 32
+
 def export(path):
+    roll = surf_roll(path)
     if os.path.isdir(path):
         for r, _, fs in os.walk(path):
             for f in fs:
@@ -41,8 +51,8 @@ def export(path):
         inp = struct.unpack_from('<i', ri, 0x10)[0] - struct.unpack_from('<i', ri, 0x14)[0]
         lean = (struct.unpack_from('<i', ri, 0x1C)[0] != 0) - (struct.unpack_from('<i', ri, 0x18)[0] != 0)
         air = struct.unpack_from('<h', c, 0x4A4)[0] >= 2
-        rec = [t, *P, *v3(c, 0xC0), *v3(c, 0x190), *v3(c, 0x170), steer_of(inp), float(lean), float(misc[0x6A] != 0),
-               float(S.u32(jo, 0x24)), float(S.u32(jo, 0x0C) == 2), float(air), float(struct.unpack_from('<H', c, 0x206)[0] & 0x1F), S.f32(c, 0x49C)]
+        rec = [t, *P, *v3(c, 0xC0), *v3(c, 0x190), *v3(c, 0x170), steer_of(inp), float(lean), S.f32(misc, 0x178),
+               float(S.u32(jo, 0x24)), float(S.u32(jo, 0x0C) == 2), float(air), float(struct.unpack_from('<H', c, 0x206)[0] & 0x1F), S.f32(c, 0x49C), float(misc[0x169] != 0), float(misc[0x6A] != 0), roll[struct.unpack_from('<H', c, 0x206)[0] & 0x1F]]
         recs.append(rec + [0.0] * (NF - len(rec)))
     return recs
 

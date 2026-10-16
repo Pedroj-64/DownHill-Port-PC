@@ -42,6 +42,7 @@ struct BikeParams {
     float mass = 100.f;                                    // body+0x00 invMass = 0.01
     float invI[3] = {0.0023f, 0.00474f, 0.00382f};         // body+0x80/0x90/0xA0 diagonal; asignación a (lateral, adelante, arriba): hipótesis
     float restitution = 0.2f, friction = 0.28f;            // módulo +0x114 / +0x118
+    float gravityGround = 0.f;                             // 0 = igual que `gravity`; >0 = peso en suelo (el controlador de conducción pesa m·2.47·32.2 = 79.53 u/s², FUN_00136330, no el 96.6 del módulo de cuerpo rígido)
     float gravity = -engine::gravity();                    // 96.6 u/s^2: FUN_00134060 0x1340A4 (g del motor, módulo+0x110 = masa del peso)
     float linDamp = engine::linDamp();                     // 0.975 por tick de 1/50 s sobre P y vel: módulo+0x120, FUN_00134060 / FUN_00237960
     float angDamp = engine::angDamp();                     // 0.987 por tick sobre L y omega: módulo+0x11C, FUN_00134060 / FUN_00237998
@@ -76,7 +77,10 @@ struct BikeParams {
 // (entradas grabadas de ALPINE/ALPINEMX/ALPINET/MOAB, ventanas de 0.5 s en suelo): error de posición mediano 6.0 -> 2.7 u y de |v| 21.8 -> 5.5 u/s, en cada nivel por separado. El motor sí calcula -m·0.0063·|v|²·v̂ (ctrl+0x110)
 // pero hay una fuerza de suelo de signo contrario sin identificar que lo compensa casi por completo: son valores de AJUSTE (HIPÓTESIS). Los de BikeParams (arnés de regresión, engineSteer = false) no cambian: con ellos y dragK bajo la moto
 // vuelca de morro al acelerar en llano (el arnés es frágil), con este perfil no.
-inline void useEngineProfile(BikeParams& P) { P.engineSteer = true; P.dragK = 0.001f; P.groundShare = 0.6f; }
+// 2026-10-16 (2.ª pasada, decompilación): peso en suelo 79.53 = m·2.47·32.2 (FUN_00136330, el 96.6 es del módulo de cuerpo rígido) y pedaleo FUN_00136A88 = m·50·0.5 = 2500 N = 25 u/s² a lo largo de la pendiente mientras rider+0x7A78 != 0
+// (la telemetría antes tomaba rider+0x796A como pedal, que es complementario). Mejora la posición mediana a 0.5 s en los 4 niveles (2.7/2.8/2.6/3.3 -> 2.5/2.7/2.5/2.9 u). Con los valores «de código» (dragK 0.0063, groundShare 1.0) el error es algo mayor: falta
+// algún término de suelo (hipótesis: el impulso de velocidad de FUN_00136A88 al pedalear bajo el tope, la rodadura por superficie FUN_001380E0 con la tabla del nivel).
+inline void useEngineProfile(BikeParams& P) { P.engineSteer = true; P.dragK = 0.001f; P.groundShare = 0.6f; P.gravityGround = 79.53f; P.pedalAccel = 25.f; }
 
 struct Axes { V3 r, f, u; };                               // lateral, adelante, arriba (derecha)
 inline V3 unit(V3 a) { float l = std::sqrt(dot(a, a)); return l > 1e-9f ? a * (1.f / l) : V3{}; }
@@ -143,8 +147,9 @@ private:
             v = v - A.r * (dot(v, A.r) * std::fmin(1.f, P.grip * h)); v = v * (1.f - P.rolling * h);
             { float vs = std::sqrt(dot(v, v)); if (vs > 1e-6f) v = v * (std::fmax(0.f, vs - P.rollConst * h) / vs); }
         }
-        v.y -= P.gravity * h;
-        if (gr) { V3 gt = V3{0, -P.gravity, 0}; gt = gt - groundN * dot(gt, groundN); v = v - gt * ((1.f - P.groundShare) * h); }   // fuerza de suelo empírica: anula (1-groundShare) de la gravedad tangente (hipótesis)
+        const float gW = (gr && P.gravityGround > 0.f) ? P.gravityGround : P.gravity;
+        v.y -= gW * h;
+        if (gr) { V3 gt = V3{0, -gW, 0}; gt = gt - groundN * dot(gt, groundN); v = v - gt * ((1.f - P.groundShare) * h); }   // fuerza de suelo empírica: anula (1-groundShare) de la gravedad tangente (hipótesis)
         if (in.hop && first && gr) { v = v + A.u * P.hop; coyote = 0; }
         rb.vel = v; rb.linMom = v * P.mass;
         float wp = dot(rb.omega, A.r), wy = rb.omega.y;
