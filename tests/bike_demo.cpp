@@ -29,6 +29,7 @@ int main(int argc, char** argv) {
     const float* s0 = (const float*)sp.data(); V3 start{s0[0], s0[2], -s0[1]};
     Ground vis; bool haveVis = false; if (argc > 5) { std::vector<uint8_t> m; std::vector<Ground::Tri> vt; if (rd(argv[5], m) && mdlTris(m, vt, true)) { vis.set(vt); haveVis = true; } }
     Race race; Run& run = race.run; const Gate* g0 = gates.courseGate(0); float h0 = g0 ? std::atan2(g0->n.x, -g0->n.z) : 0.f;
+    if (std::getenv("DH_ENGINE")) { useEngineProfile(race.run.bike.P); race.run.bike.P.hop = 32.f; }   // perfil calibrado con tests/replay_demo.cpp (DH_ENGINE=1)
     race.settle = false;   // el salto del barranco del punto 125 sale con ~8 u de margen y es sensible al estado inicial; sin asentar se repite la trayectoria validada
      race.load(g, &gates, start, h0); Bike& bike = run.bike;   // máquina de estados de la partida: cuenta atrás de 3 s y reloj a cero al «¡Ya!» (src/race.hpp)
     if (const char* e = std::getenv("DH_CONTACT_TRACE")) bike.trace = std::fopen(e, "w");   // con DH_TRACE_FROM=<punto> solo desde ese punto de la línea (por defecto 125)

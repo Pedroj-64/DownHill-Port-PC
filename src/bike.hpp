@@ -42,6 +42,7 @@ struct BikeParams {
     float mass = 100.f;                                    // body+0x00 invMass = 0.01
     float invI[3] = {0.0023f, 0.00474f, 0.00382f};         // body+0x80/0x90/0xA0 diagonal; asignación a (lateral, adelante, arriba): hipótesis
     float restitution = 0.2f, friction = 0.28f;            // módulo +0x114 / +0x118
+    float pedalKickV = 0.f, pedalKick = 0.f;              // impulso de arranque de FUN_00136A88: al pedalear con |v| < pedalKickV suma pedalKickV·pedalKick de velocidad por tick de 1/50 s (20·1.4666667 = 29.33 u/s y 0.1: consts 0x2C5398/0x2C539C); 0 = sin impulso
     float gravityGround = 0.f;                             // 0 = igual que `gravity`; >0 = peso en suelo (el controlador de conducción pesa m·2.47·32.2 = 79.53 u/s², FUN_00136330, no el 96.6 del módulo de cuerpo rígido)
     float gravity = -engine::gravity();                    // 96.6 u/s^2: FUN_00134060 0x1340A4 (g del motor, módulo+0x110 = masa del peso)
     float linDamp = engine::linDamp();                     // 0.975 por tick de 1/50 s sobre P y vel: módulo+0x120, FUN_00134060 / FUN_00237960
@@ -80,7 +81,7 @@ struct BikeParams {
 // 2026-10-16 (2.ª pasada, decompilación): peso en suelo 79.53 = m·2.47·32.2 (FUN_00136330, el 96.6 es del módulo de cuerpo rígido) y pedaleo FUN_00136A88 = m·50·0.5 = 2500 N = 25 u/s² a lo largo de la pendiente mientras rider+0x7A78 != 0
 // (la telemetría antes tomaba rider+0x796A como pedal, que es complementario). Mejora la posición mediana a 0.5 s en los 4 niveles (2.7/2.8/2.6/3.3 -> 2.5/2.7/2.5/2.9 u). Con los valores «de código» (dragK 0.0063, groundShare 1.0) el error es algo mayor: falta
 // algún término de suelo (hipótesis: el impulso de velocidad de FUN_00136A88 al pedalear bajo el tope, la rodadura por superficie FUN_001380E0 con la tabla del nivel).
-inline void useEngineProfile(BikeParams& P) { P.engineSteer = true; P.dragK = 0.001f; P.groundShare = 0.6f; P.gravityGround = 79.53f; P.pedalAccel = 25.f; }
+inline void useEngineProfile(BikeParams& P) { P.engineSteer = true; P.dragK = 0.001f; P.groundShare = 0.6f; P.gravityGround = 79.53f; P.pedalAccel = 25.f; }   // pedalKick (arranque de FUN_00136A88) disponible pero SIN activar: el oráculo no lo confirma (ALPINEMX |v| 5.2->4.8, MOAB pos 2.77->2.90 u)
 
 struct Axes { V3 r, f, u; };                               // lateral, adelante, arriba (derecha)
 inline V3 unit(V3 a) { float l = std::sqrt(dot(a, a)); return l > 1e-9f ? a * (1.f / l) : V3{}; }
@@ -141,6 +142,7 @@ private:
         bool gr = coyote > 0.f; V3 v = rb.vel; v = v * (1.f / (1.f + (gr ? P.dragK : P.dragKAir) * std::sqrt(dot(v, v)) * h));   // arrastre cuadrático implícito (estable a cualquier h)
         if (gr) {
             V3 f = unit(fwd - groundN * dot(fwd, groundN)); float sf = dot(v, f);
+            if (in.throttle > 0 && P.pedalKick > 0.f && dot(v, v) < P.pedalKickV * P.pedalKickV) v = v + f * (P.pedalKickV * P.pedalKick * engine::kTickHz * h);
             if (in.throttle > 0) v = v + f * (P.pedalAccel * (in.sprint ? P.sprintMul : 1.f) * in.throttle * std::fmax(0.f, 1.f - sf / P.pedalMax) * h);
             if (in.brake > 0 && sf > 0) v = v - f * std::fmin(sf, P.brakeDecel * in.brake * h);
             else if (in.brake > 0 && in.throttle <= 0 && P.reverseAccel > 0 && sf > -P.reverseMax) v = v - f * std::fmin(P.reverseAccel * in.brake * h, sf + P.reverseMax);   // parado o casi: rueda hacia atrás despacio

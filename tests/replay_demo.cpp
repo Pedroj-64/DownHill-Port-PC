@@ -24,11 +24,11 @@ static void applySet(BikeParams& P) {
         std::string k = kv.substr(0, q); float v = (float)std::atof(kv.c_str() + q + 1);
         if (k == "groundShare") P.groundShare = v; else if (k == "rolling") P.rolling = v; else if (k == "rollConst") P.rollConst = v; else if (k == "dragK") P.dragK = v; else if (k == "dragKAir") P.dragKAir = v;
         else if (k == "grip") P.grip = v; else if (k == "pedalAccel") P.pedalAccel = v; else if (k == "pedalMax") P.pedalMax = v; else if (k == "comLift") P.comLift = v; else if (k == "brakeDecel") P.brakeDecel = v;
-        else if (k == "gravityGround") P.gravityGround = v; else if (k == "gravity") P.gravity = v; else if (k == "sprintMul") P.sprintMul = v; else if (k == "steerAccelGround") P.steerAccelGround = v; else if (k == "steerMaxGround") P.steerMaxGround = v; else if (k == "restitution") P.restitution = v; else if (k == "friction") P.friction = v;
+        else if (k == "gravityGround") P.gravityGround = v; else if (k == "gravity") P.gravity = v; else if (k == "pedalKick") P.pedalKick = v; else if (k == "pedalKickV") P.pedalKickV = v; else if (k == "sprintMul") P.sprintMul = v; else if (k == "steerAccelGround") P.steerAccelGround = v; else if (k == "steerMaxGround") P.steerMaxGround = v; else if (k == "restitution") P.restitution = v; else if (k == "friction") P.friction = v;
         else std::fprintf(stderr, "DH_SET: parámetro desconocido %s\n", k.c_str()); }
 }
 
-struct Win { size_t i; float e05, e10, eW, b05, b10, bW, ev, evB; bool allGround; bool g05; float v05; float al, la; };
+struct Win { size_t i; float e05, e10, eW, b05, b10, bW, ev, evB; bool allGround; bool g05; float v05; float al, la; bool hasLean; float pitchErr; };
 
 int main(int argc, char** argv) {
     std::vector<uint8_t> col, raw; Ground g;
@@ -45,7 +45,7 @@ int main(int argc, char** argv) {
     double nextStart = R.empty() ? 0 : R[0].t;
     if (std::getenv("DH_FULL")) {       // carrera entera sin resincronizar: DH_FULL=<segundos entre informes>; el error es la distancia a la posición grabada
         const double rep = std::atof(std::getenv("DH_FULL")); size_t i0 = 0; while (i0 < R.size() && std::sqrt(dot(R[i0].v, R[i0].v)) < 8.f) i0++; if (i0 >= R.size()) return 1;
-        Bike b; if (!std::getenv("DH_NOENGINE")) useEngineProfile(b.P); b.P.hop = 32.f; applySet(b.P);
+        Bike b; if (!std::getenv("DH_NOENGINE")) useEngineProfile(b.P); b.P.hop = 32.f; applySet(b.P); b.rb.restitution = b.P.restitution; b.rb.friction = b.P.friction;
         b.pos = R[i0].p; b.fwd = unit(R[i0].f); b.rb.vel = R[i0].v; b.rb.linMom = R[i0].v * b.P.mass; b.rb.com = b.pos; b.grounded = R[i0].air < 0.5f; b.coyote = b.grounded ? 0.1f : 0.f; b.groundN = unit(R[i0].u);
         double next = rep, firstBad = -1; float worst = 0; size_t k = i0; const double tEnd = R.back().t - R[i0].t;
         for (double te = 0; te + DT <= tEnd; te += DT) {
@@ -61,23 +61,23 @@ int main(int argc, char** argv) {
         if (R[i].t < nextStart) continue;
         double tEnd = R[i].t + winS; if (R.back().t < tEnd) break;
         size_t j = at(tEnd, i); if (std::fabs(R[j].t - tEnd) > 0.015) { continue; }       // hueco de muestreo al final
-        float sp0 = std::sqrt(dot(R[i].v, R[i].v)); if (sp0 < 8.f) { nextStart = R[i].t + 0.2; continue; }
+        float sp0 = std::sqrt(dot(R[i].v, R[i].v)); static const float minSp = std::getenv("DH_MINSPEED") ? (float)std::atof(std::getenv("DH_MINSPEED")) : 8.f, maxSp = std::getenv("DH_MAXSPEED") ? (float)std::atof(std::getenv("DH_MAXSPEED")) : 1e9f; if (sp0 < minSp || sp0 > maxSp) { nextStart = R[i].t + 0.2; continue; }
         // sin huecos grandes dentro de la ventana (muestras perdidas)
         bool gap = false; for (size_t k = i; k < j; k++) if (R[k + 1].t - R[k].t > 0.045f) { gap = true; break; } if (gap) continue;
         if (std::getenv("DH_LAND")) {       // solo ventanas que empiezan en el aire y aterrizan en los primeros 0.3 s (aire->suelo en lo grabado)
             bool landing = R[i].air > 0.5f; size_t k2 = i; bool touched = false; while (landing && k2 < j && R[k2].t < R[i].t + 0.3) { if (R[k2].air < 0.5f) { touched = true; break; } k2++; } if (!landing || !touched) continue; }
         if (const char* pf = std::getenv("DH_PEDALFILTER")) { bool want = std::atoi(pf) != 0; bool all = true; for (size_t k2 = i; k2 <= j && R[k2].t < R[i].t + 0.5; k2++) if ((R[k2].pedal > 0.5f || R[k2].sprint > 0.5f) != want) { all = false; break; } if (!all) continue; }   // 1 = pedal/esfuerzo durante los primeros 0.5 s, 0 = sin pedal (rodando)
         nextStart = R[i].t + stepS;
-        Bike b; if (!std::getenv("DH_NOENGINE")) useEngineProfile(b.P); b.P.hop = 32.f; applySet(b.P);
+        Bike b; if (!std::getenv("DH_NOENGINE")) useEngineProfile(b.P); b.P.hop = 32.f; applySet(b.P); b.rb.restitution = b.P.restitution; b.rb.friction = b.P.friction;
         b.pos = R[i].p; b.fwd = unit(R[i].f); b.rb.vel = R[i].v; b.rb.linMom = R[i].v * b.P.mass; b.rb.omega = b.rb.angMom = V3{}; b.rb.com = b.pos;
         const bool ground0 = R[i].air < 0.5f; b.grounded = ground0; b.coyote = ground0 ? 0.1f : 0.f; b.groundN = unit(R[i].u);
-        bool allGround = true, g05 = true; float v05 = 0, al = 0, la = 0; size_t k = i; int airTicks = 0; float e05 = 0, e10 = 0, eW = 0, b05 = 0, b10 = 0, bW = 0;
+        bool allGround = true, g05 = true; float v05 = 0, al = 0, la = 0; bool hasLean = false; size_t k = i; int airTicks = 0; float e05 = 0, e10 = 0, eW = 0, b05 = 0, b10 = 0, bW = 0;
         for (int s = 0; s < steps; s++) {
             double ts = R[i].t + s * DT; k = at(ts + 1e-4, k); const Rec& in = R[k];
             BikeInput bi; bi.steer = in.steer; bi.lean = (float)sign * in.lean; bi.throttle = in.pedal; bi.sprint = in.sprint > 0.5f; if (std::getenv("DH_BRAKE796")) bi.brake = in.b796;
             if (in.release > 0.5f && b.grounded) { b.P.hop = hopSpeed((int)in.charge, 0); bi.hop = true; }
-            if (std::getenv("DH_ROLLTAB")) b.P.rolling = 0.025f * in.roll * (float)std::atof(std::getenv("DH_ROLLTAB")); b.step(g, bi, DT);
-            if (traceT >= 0 && R[i].t >= traceT && R[i].t < traceT + (std::getenv("DH_LAND") ? 5.0 : stepS * 1.5) && (s % 5 == 4)) { size_t m = at(ts + DT + 1e-4, k); std::printf("  s=%d port p=(%.1f %.1f %.1f) v=(%.1f %.1f %.1f) gr=%d | ref p=(%.1f %.1f %.1f) v=(%.1f %.1f %.1f) air=%.0f in(st %.2f ln %.0f pd %.0f)\n", s + 1, b.pos.x, b.pos.y, b.pos.z, b.rb.vel.x, b.rb.vel.y, b.rb.vel.z, (int)b.grounded, R[m].p.x, R[m].p.y, R[m].p.z, R[m].v.x, R[m].v.y, R[m].v.z, R[m].air, in.steer, in.lean, in.pedal); }
+            if (std::getenv("DH_ROLLTAB")) b.P.rolling = 0.025f * in.roll * (float)std::atof(std::getenv("DH_ROLLTAB")); if (bi.lean != 0.f && !b.grounded) hasLean = true; b.step(g, bi, DT);
+            if (traceT >= 0 && R[i].t >= traceT && R[i].t < traceT + (std::getenv("DH_LAND") ? 5.0 : stepS * 1.5) && (s % (std::getenv("DH_TRACESTRIDE") ? std::atoi(std::getenv("DH_TRACESTRIDE")) : 5) == (std::getenv("DH_TRACESTRIDE") ? std::atoi(std::getenv("DH_TRACESTRIDE")) - 1 : 4))) { size_t m = at(ts + DT + 1e-4, k); std::printf("  s=%d port p=(%.1f %.1f %.1f) v=(%.1f %.1f %.1f) gr=%d | ref p=(%.1f %.1f %.1f) v=(%.1f %.1f %.1f) air=%.0f in(st %.2f ln %.0f pd %.0f) fwd.y port %.2f ref %.2f\n", s + 1, b.pos.x, b.pos.y, b.pos.z, b.rb.vel.x, b.rb.vel.y, b.rb.vel.z, (int)b.grounded, R[m].p.x, R[m].p.y, R[m].p.z, R[m].v.x, R[m].v.y, R[m].v.z, R[m].air, in.steer, in.lean, in.pedal, b.fwd.y, R[m].f.y); }
             if (R[at(ts + DT + 1e-4, k)].air > 0.5f) { allGround = false; if (s < 25) g05 = false; }
             const double te = (s + 1) * DT;
             if (s + 1 == (int)std::lround(0.5 / DT) || s + 1 == (int)std::lround(1.0 / DT) || s + 1 == steps) {
@@ -87,7 +87,7 @@ int main(int argc, char** argv) {
             (void)airTicks;
         }
         float vend = std::sqrt(dot(b.rb.vel, b.rb.vel)), vref = std::sqrt(dot(R[j].v, R[j].v));
-        W.push_back({i, e05, e10, eW, b05, b10, bW, std::fabs(vend - vref), std::fabs(sp0 - vref), allGround, g05, v05, al, la});
+        W.push_back({i, e05, e10, eW, b05, b10, bW, std::fabs(vend - vref), std::fabs(sp0 - vref), allGround, g05, v05, al, la, hasLean, std::fabs(b.fwd.y - R[j].f.y)});
     }
     auto report = [&](const char* name, bool onlyGround, bool onlyAir) {
         std::vector<float> a05, a10, aW, c10, cW, ev; size_t ok = 0, cnt = 0;
@@ -98,6 +98,7 @@ int main(int argc, char** argv) {
     };
     std::printf("%s: %zu pasos, ventana %.1f s\n", argv[2], R.size(), winS);
     { std::vector<float> e, v; for (const Win& w : W) if (w.g05) { e.push_back(w.e05); v.push_back(w.v05); } std::printf("G05 n=%zu e05_med=%.3f e05_p90=%.3f v05_med=%.3f\n", e.size(), pct(e, .5f), pct(e, .9f), pct(v, .5f)); std::vector<float> A, Aa, L; for (const Win& w : W) if (w.g05) { A.push_back(w.al); Aa.push_back(std::fabs(w.al)); L.push_back(w.la); } std::printf("G05 along_signed_med=%.3f along_abs_med=%.3f lateral_med=%.3f\n", pct(A, .5f), pct(Aa, .5f), pct(L, .5f)); }
+    { std::vector<float> pe; for (const Win& w : W) if (w.hasLean) pe.push_back(w.pitchErr); std::printf("LEAN n=%zu pitch_err_med=%.3f p90=%.3f\n", pe.size(), pct(pe, .5f), pct(pe, .9f)); }
     report("todas", false, false); report("suelo", true, false); report("con aire", false, true);
     if (const char* ws = std::getenv("DH_SHOWWORST")) { std::sort(W.begin(), W.end(), [](const Win& a, const Win& b) { return a.eW > b.eW; }); for (int q = 0; q < std::atoi(ws) && q < (int)W.size(); q++) std::printf("  peor t=%.1f s: err %.1f u (base %.1f), %s\n", R[W[q].i].t, W[q].eW, W[q].bW, W[q].allGround ? "suelo" : "con aire"); }
     return 0;
