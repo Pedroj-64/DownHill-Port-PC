@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Pedro Soto
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Paso 5a del loader nativo (docs/native-loader-plan.md): geometría de modelos SUELTOS (bici, etc.: sin grafo útil, todo sin transformar). Mismo algoritmo y mismos bytes (.mdl DHM2) que tools/extract_model.py sin
+// Paso 5 del loader nativo (docs/native-loader-plan.md): 5a geometría de modelos SUELTOS (bici, etc.: sin grafo útil, todo sin transformar; .mdl DHM2) y 5b NIVELES (instancias del grafo con matrices acumuladas = Owners de tools/scene.py,
+// .mdl DHM3 con chunks + cielo y domo). Mismo algoritmo y mismos bytes que tools/extract_model.py. 5a sin
 // Owners: escaneo de bloques de vértices (UNPACK V3-32 precedido del comando 0x68/0x78), cadena VIF posterior (S-8 índices, ADC, V4-8/V4-5 color, V2-16 UV, MSCAL/MSCNT dispara las tiras) y materiales del PTR.
 // VIF: tools/vif.py (iter_vif). Cuentas en doble y redondeo a f32 al escribir, como Python. Accesos acotados (entrada no fiable).
 #pragma once
@@ -36,17 +37,73 @@ template <class F> inline void iterVif(const std::vector<uint8_t>& d, size_t off
     }
 }
 
-// Escanea un modelo y construye .mdl DHM2 (sin instancias). `variant` = 0.
-inline bool extractStatic(const std::vector<uint8_t>& ngpD, const tex::Level& L, std::vector<uint8_t>& mdl) {
+// ---------------- Owners (tools/scene.py: walk_payloads, Owners, split_type25) ----------------
+using Mat = std::array<double, 16>;
+inline constexpr Mat kIdent = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+struct Inst { size_t ptr = 0; Mat m = kIdent; std::vector<std::array<double, 5>> sels; uint32_t layer = 0, kind = 0; double rad = 0; long root = -1; };
+inline Mat mulMat(const Mat& a, const Mat& b) { Mat o; for (int r = 0; r < 4; r++) for (int c = 0; c < 4; c++) { double s = 0; for (int k = 0; k < 4; k++) s += a[4 * r + k] * b[4 * k + c]; o[4 * r + c] = s; } return o; }
+inline float f32at(const ngp::Reader& r, size_t o) { uint32_t u = r.u32(o); float f; std::memcpy(&f, &u, 4); return f; }
+inline bool localMat(const ngp::Reader& r, size_t o, Mat& m) {
+    const uint32_t t = r.u32(o) & 0x3f;
+    if (t == 3) { m = kIdent; m[12] = f32at(r, o + 0x10); m[13] = f32at(r, o + 0x14); m[14] = f32at(r, o + 0x18); return true; }
+    if (t == 4) { for (int i = 0; i < 16; i++) m[i] = f32at(r, o + 0x10 + 4 * i); m[3] = m[7] = m[11] = 0; m[15] = 1; return true; }
+    return false;
+}
+struct Anc { uint32_t layer = 0, kind = 0; double rad = 0; bool bd = false; };
+inline void walkRec(const ngp::Reader& r, size_t o, const Mat& m, const std::vector<std::array<double, 5>>& sels, std::vector<size_t>& path, long rk, Anc anc, std::vector<Inst>& out) {
+    if (std::find(path.begin(), path.end(), o) != path.end() || path.size() > 60) return;
+    const uint32_t h = r.u32(o), t = h & 0x3f; if (rk < 0 && !path.empty()) rk = (long)o;
+    if (t == 1) {
+        const uint32_t lay = r.u32(o + 8) >> 16; const bool bd = anc.bd || lay == 2; anc = {bd ? 2u : lay, h >> 18, (double)f32at(r, o + 0x1c), bd};
+        size_t ch; const bool has = r.ptr(o + 0x20, ch);
+        if (anc.kind == 0 && r.u16(o + 8) <= 1 && has && (r.u32(ch) & 0x3f) != 0) { Inst d; d.ptr = ch; d.m = m; d.sels = sels; d.layer = anc.layer; d.kind = anc.kind; d.rad = anc.rad; d.root = rk; out.push_back(std::move(d)); }
+    }
+    if (t == 0 && anc.kind == 0) { Inst d; d.ptr = o; d.m = m; d.sels = sels; d.layer = anc.layer; d.kind = anc.kind; d.rad = anc.rad; d.root = rk; out.push_back(std::move(d)); }
+    Mat l, m2 = m; if (localMat(r, o, l)) m2 = mulMat(l, m);
+    std::vector<std::array<double, 5>> s2 = sels;
+    if (t == 2) { const double cx = f32at(r, o + 0x10), cy = f32at(r, o + 0x14), cz = f32at(r, o + 0x18); std::array<double, 5> e; for (int k = 0; k < 3; k++) e[k] = cx * m[0 + k] + cy * m[4 + k] + cz * m[8 + k] + m[12 + k]; e[3] = f32at(r, o + 0x1c); e[4] = f32at(r, o + 0x24); s2.push_back(e); }
+    std::vector<size_t> ch; ngp::sceneChildren(r, o, ch);
+    path.push_back(o); for (size_t c : ch) walkRec(r, c, m2, s2, path, rk, anc, out); path.pop_back();
+}
+struct Owners {
+    std::vector<Inst> inst; std::map<size_t, std::vector<long>> byPtr; std::vector<size_t> starts;
+    long ownerStart(size_t i) const { auto it = std::upper_bound(starts.begin(), starts.end(), i); return it == starts.begin() ? -1 : (long)*(it - 1); }
+    const std::vector<long>* ids(size_t i) const { const long o = ownerStart(i); if (o < 0) return nullptr; auto it = byPtr.find((size_t)o); return it == byPtr.end() ? nullptr : &it->second; }
+    bool build(const std::vector<uint8_t>& d) {
+        ngp::Reader r{d}; if (d.size() < 8) return false; const uint32_t n = r.u32(0); if (n > (d.size() - 4) / 4) return false;
+        for (uint32_t i = 0; i < n; i++) { size_t root; if (!r.ptr(4 + 4 * i, root)) continue; if ((r.u32(root) & 0x3f) == 7) continue; std::vector<size_t> path; walkRec(r, root, kIdent, {}, path, -1, Anc{}, inst); }
+        for (size_t k = 0; k < inst.size(); k++) byPtr[inst[k].ptr].push_back((long)k);
+        // El cielo (capa 2) es una hoja clásica: su rango va de su inicio hasta el inicio de la siguiente hoja clásica
+        std::map<size_t, uint32_t> classic;
+        struct Rec { static void go(const ngp::Reader& r, size_t o, std::vector<size_t>& path, std::map<size_t, uint32_t>& classic) {
+            if (std::find(path.begin(), path.end(), o) != path.end() || path.size() > 60) return;
+            const uint32_t h = r.u32(o); size_t q;
+            if ((h & 0x3f) == 1 && r.u16(o + 8) <= 1 && r.ptr(o + 0x20, q)) classic[q] = r.u32(o + 8) >> 16;
+            std::vector<size_t> ch; ngp::sceneChildren(r, o, ch); path.push_back(o); for (size_t c : ch) go(r, c, path, classic); path.pop_back(); } };
+        for (uint32_t i = 0; i < n; i++) { size_t root; if (!r.ptr(4 + 4 * i, root) || (r.u32(root) & 0x3f) == 7) continue; std::vector<size_t> path; Rec::go(r, root, path, classic); }
+        std::vector<size_t> cs; for (auto& kv : classic) cs.push_back(kv.first);
+        for (size_t a = 0; a < cs.size(); a++) { const size_t nxt = a + 1 < cs.size() ? cs[a + 1] : (size_t)-1; if (classic[cs[a]] == 2) for (auto& d2 : inst) if (cs[a] <= d2.ptr && d2.ptr < nxt) d2.layer = 2; }
+        // split_type25: contenedor con u32 n @+0x28 y n punteros a cadenas VIF @+0x2c; cada una pasa a ser un inicio propio de las instancias del nodo
+        for (size_t k = 0; k < inst.size(); k++) {
+            const size_t p = inst[k].ptr; if ((r.u32(p) & 0x3f) != 25) continue; const uint32_t cnt = std::min<uint32_t>(r.u32(p + 0x28), 16);
+            for (uint32_t i = 0; i < cnt; i++) { size_t q; if (!r.ptr(p + 0x2c + 4 * i, q) || q == p) continue; auto& v = byPtr[q]; if (std::find(v.begin(), v.end(), (long)k) == v.end()) v.push_back((long)k); }
+        }
+        starts.clear(); for (auto& kv : byPtr) starts.push_back(kv.first);
+        return true;
+    }
+};
+
+struct ScanOut { std::vector<float> V; std::vector<long> VO; std::vector<std::tuple<uint32_t, uint32_t, std::vector<uint8_t>>> textures; };
+inline bool scanModel(const std::vector<uint8_t>& ngpD, const tex::Level& L, const Owners* OW, ScanOut& so) {
     ngp::Reader r{ngpD}; const size_t len = ngpD.size();
-    std::vector<std::tuple<uint32_t, uint32_t, std::vector<uint8_t>>> textures; std::map<std::pair<uint32_t, uint32_t>, long> tindex;
+    auto& textures = so.textures; std::map<std::pair<uint32_t, uint32_t>, long> tindex;
     auto getTex = [&](const tex::Material& m) -> long {
         const auto key = std::make_pair(m.tid, m.cbp); auto it = tindex.find(key); if (it != tindex.end()) return it->second;
         uint32_t w, h; std::vector<uint8_t> px; long id = -1;
         if (tex::makeTexture(L, m, w, h, px)) { id = (long)textures.size(); textures.emplace_back(w, h, std::move(px)); }
         tindex[key] = id; return id;
     };
-    std::vector<float> V; long lastTid = -1; size_t i = 0, prevEnd = 0;
+    auto& V = so.V; auto& VO = so.VO; long lastTid = -1; size_t i = 0, prevEnd = 0;
     while (len >= 16 && i < len - 16) {
         const uint32_t w = r.u32(i), cmd = w >> 24, num = (w >> 16) & 0xff; const size_t psz = 12 * (size_t)num;
         if ((cmd == 0x68 || cmd == 0x78) && num >= 3 && i + 4 + psz <= len) {
@@ -57,6 +114,14 @@ inline bool extractStatic(const std::vector<uint8_t>& ngpD, const tex::Level& L,
                 long tid = group.empty() ? lastTid : getTex(*group[0]);   // variant 0
                 bool haveIdx = false, haveHdr = false; std::vector<uint8_t> idx; long hdr = 0; std::set<long> flag; std::vector<std::pair<int16_t, int16_t>> uvs; bool haveUv = false; std::vector<std::array<double, 4>> cols; bool haveCol = false;
                 size_t end = i + 4 + psz;
+                // instancias del grafo (una copia por visita: árboles, banderas...); sin dueño: tal cual
+                std::vector<std::pair<long, std::vector<double>>> insts;
+                if (OW) if (const std::vector<long>* ids = OW->ids(i)) for (long k : *ids) {
+                    const Inst& in = OW->inst[(size_t)k]; std::vector<double> wp;
+                    if (in.m == kIdent) wp = pos; else for (size_t j = 0; j + 2 < pos.size() + 0; j += 3) { const double x = pos[j], y = pos[j + 1], z = pos[j + 2]; wp.push_back(x * in.m[0] + y * in.m[4] + z * in.m[8] + in.m[12]); wp.push_back(x * in.m[1] + y * in.m[5] + z * in.m[9] + in.m[13]); wp.push_back(x * in.m[2] + y * in.m[6] + z * in.m[10] + in.m[14]); }
+                    insts.emplace_back(k, std::move(wp));
+                }
+                if (insts.empty()) insts.emplace_back(-1, pos);
                 iterVif(ngpD, end, std::min(len, end + 0x4000), [&](const VifCmd& c) -> bool {
                     if (c.kind == 8 || c.kind == 7) return false;
                     const size_t off = c.off;
@@ -82,10 +147,10 @@ inline bool extractStatic(const std::vector<uint8_t>& ngpD, const tex::Level& L,
                                 if (flag.count((long)j)) continue;
                                 size_t o[3] = {j - 2, j - 1, j}; if (j & 1) { o[1] = j; o[2] = j - 1; }
                                 if (idx[o[0]] == idx[o[1]] || idx[o[0]] == idx[o[2]] || idx[o[1]] == idx[o[2]]) continue;
-                                for (int a = 0; a < 3; a++) {
+                                for (const auto& [kInst, wpos] : insts) for (int a = 0; a < 3; a++) {
                                     const double u = haveUv ? uvs[o[a]].first / 4096.0 : 0.0, vv = haveUv ? uvs[o[a]].second / 4096.0 : 0.0; const size_t pi = idx[o[a]];
-                                    V.push_back((float)pos[3 * pi]); V.push_back((float)pos[3 * pi + 1]); V.push_back((float)pos[3 * pi + 2]); V.push_back((float)u); V.push_back((float)(1.0 - vv));
-                                    for (int k = 0; k < 4; k++) V.push_back((float)(haveCol ? cols[o[a]][k] : 1.0)); V.push_back((float)tid);
+                                    V.push_back((float)wpos[3 * pi]); V.push_back((float)wpos[3 * pi + 1]); V.push_back((float)wpos[3 * pi + 2]); V.push_back((float)u); V.push_back((float)(1.0 - vv));
+                                    for (int k = 0; k < 4; k++) V.push_back((float)(haveCol ? cols[o[a]][k] : 1.0)); V.push_back((float)tid); VO.push_back(kInst);
                                 }
                             }
                         }
@@ -98,14 +163,70 @@ inline bool extractStatic(const std::vector<uint8_t>& ngpD, const tex::Level& L,
         }
         i += 4;
     }
-    // save(): recompacta texturas por primera aparición en los vértices (id >= 0); sin dueños ni chunks (DHM2)
-    std::map<long, long> remap; std::vector<std::tuple<uint32_t, uint32_t, std::vector<uint8_t>>> tx;
-    for (size_t k = 9; k < V.size(); k += 10) { const long t = (long)V[k]; if (t >= 0) { if (!remap.count(t)) { remap[t] = (long)tx.size(); tx.push_back(textures[(size_t)t]); } V[k] = (float)remap[t]; } }
-    const uint32_t nvv = (uint32_t)(V.size() / 10), ntex = (uint32_t)tx.size();
-    mdl.assign({'D', 'H', 'M', '2'}); auto put = [&](const void* p, size_t n) { const uint8_t* b = (const uint8_t*)p; mdl.insert(mdl.end(), b, b + n); };
-    put(&ntex, 4); put(&nvv, 4); put(&nvv, 4);
-    for (auto& [w, h, px] : tx) { put(&w, 4); put(&h, 4); put(px.data(), px.size()); }
-    put(V.data(), V.size() * 4); for (uint32_t k = 0; k < nvv; k++) put(&k, 4);
     return true;
+}
+
+// save() de extract_model.py: grupos [(dueño, [triángulos])]; recompacta texturas por primera aparición en los vértices (id >= 0); chunks = DHM3 (tras los índices: u32 nchunks y por chunk first, n, nsel, sels).
+inline std::vector<uint8_t> saveMdl(const ScanOut& so, const std::vector<std::pair<long, std::vector<size_t>>>& groups, const Owners* OW, bool chunks) {
+    std::map<long, long> remap; std::vector<size_t> txOrder; std::vector<float> vs; std::vector<std::tuple<long, size_t, size_t>> tab;
+    for (const auto& [own, tris] : groups) {
+        const size_t first = vs.size() / 10;
+        for (size_t t : tris) for (int k = 0; k < 3; k++) {
+            float row[10]; std::memcpy(row, &so.V[(3 * t + k) * 10], 40); const long tid = (long)row[9];
+            if (tid >= 0) { if (!remap.count(tid)) { remap[tid] = (long)txOrder.size(); txOrder.push_back((size_t)tid); } row[9] = (float)remap[tid]; }
+            vs.insert(vs.end(), row, row + 10);
+        }
+        tab.emplace_back(own, first, vs.size() / 10 - first);
+    }
+    const uint32_t nvv = (uint32_t)(vs.size() / 10), ntex = (uint32_t)txOrder.size(); std::vector<uint8_t> mdl;
+    mdl.assign({'D', 'H', 'M', chunks ? '3' : '2'}); auto put = [&](const void* p, size_t n) { const uint8_t* b = (const uint8_t*)p; mdl.insert(mdl.end(), b, b + n); };
+    put(&ntex, 4); put(&nvv, 4); put(&nvv, 4);
+    for (size_t t : txOrder) { const auto& [w, h, px] = so.textures[t]; put(&w, 4); put(&h, 4); put(px.data(), px.size()); }
+    put(vs.data(), vs.size() * 4); for (uint32_t k = 0; k < nvv; k++) put(&k, 4);
+    if (chunks) {
+        const uint32_t nt = (uint32_t)tab.size(); put(&nt, 4);
+        for (const auto& [own, first, n] : tab) {
+            const uint32_t f = (uint32_t)first, c = (uint32_t)n; const std::vector<std::array<double, 5>>* sl = (OW && own >= 0) ? &OW->inst[(size_t)own].sels : nullptr; const uint32_t ns = sl ? (uint32_t)sl->size() : 0;
+            put(&f, 4); put(&c, 4); put(&ns, 4); if (sl) for (const auto& e : *sl) for (int k = 0; k < 5; k++) { const float x = (float)e[k]; put(&x, 4); }
+        }
+    }
+    return mdl;
+}
+
+// Modelo suelto (5a): sin Owners, un solo grupo, DHM2.
+inline bool extractStatic(const std::vector<uint8_t>& ngpD, const tex::Level& L, std::vector<uint8_t>& mdl) {
+    ScanOut so; if (!scanModel(ngpD, L, nullptr, so)) return false;
+    std::vector<size_t> all(so.V.size() / 30); for (size_t t = 0; t < all.size(); t++) all[t] = t;
+    mdl = saveMdl(so, {{-1, all}}, nullptr, false); return true;
+}
+
+// Nivel (5b): .mdl DHM3 + cielo (capa 2) + domo del horizonte, como el final de extract_model.py.
+struct LevelFiles { std::vector<uint8_t> main, sky, dome; bool hasSky = false, hasDome = false; };
+inline bool extractLevel(const std::vector<uint8_t>& ngpD, const tex::Level& L, LevelFiles& out) {
+    Owners OW; if (!OW.build(ngpD)) return false;
+    ScanOut so; if (!scanModel(ngpD, L, &OW, so)) return false;
+    const size_t ntri = so.V.size() / 30; std::vector<long> order; std::map<long, std::vector<size_t>> byown;
+    for (size_t t = 0; t < ntri; t++) { const long o = so.VO[3 * t]; auto it = byown.find(o); if (it == byown.end()) { order.push_back(o); byown[o] = {}; } byown[o].push_back(t); }
+    std::set<long> sky, dome;
+    for (long o : order) if (o >= 0 && OW.inst[(size_t)o].layer == 2) sky.insert(o);
+    {   // panorama del horizonte (extract_model.py): raíz pequeña, de radio enorme, sin celdas de terreno y con todas las hojas en el origen
+        std::vector<long> rootOrder; std::map<long, std::vector<long>> roots;
+        for (size_t k = 0; k < OW.inst.size(); k++) { const long rk = OW.inst[k].root; if (!roots.count(rk)) rootOrder.push_back(rk); roots[rk].push_back((long)k); }
+        for (double R : {3000.0, 2000.0}) {
+            for (long rk : rootOrder) {
+                const auto& grp = roots[rk]; if (grp.size() > 16) continue; double mr = -1e300; bool l3 = false, origin = true;
+                for (long o : grp) { const Inst& in = OW.inst[(size_t)o]; mr = std::max(mr, in.rad); if (in.layer == 3) l3 = true; double mx = 0; for (int k = 12; k < 15; k++) mx = std::max(mx, std::fabs(in.m[k])); if (!(mx < 1500)) origin = false; }
+                if (mr <= R || l3) continue;
+                if (origin) for (long o : grp) if (byown.count(o)) dome.insert(o);
+            }
+            if (!dome.empty()) break;
+        }
+    }
+    for (long o : dome) sky.erase(o);
+    auto sortedTris = [&](const std::set<long>& owners) { std::vector<size_t> v; for (long o : owners) v.insert(v.end(), byown[o].begin(), byown[o].end()); std::sort(v.begin(), v.end()); return v; };
+    out.hasDome = !dome.empty(); if (out.hasDome) out.dome = saveMdl(so, {{-1, sortedTris(dome)}}, nullptr, false);
+    out.hasSky = !sky.empty(); if (out.hasSky) out.sky = saveMdl(so, {{-1, sortedTris(sky)}}, nullptr, false);
+    std::vector<std::pair<long, std::vector<size_t>>> mainGroups; for (long o : order) if (!sky.count(o) && !dome.count(o)) mainGroups.emplace_back(o, byown[o]);
+    out.main = saveMdl(so, mainGroups, &OW, true); return true;
 }
 }  // namespace mesh
