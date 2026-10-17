@@ -17,14 +17,21 @@ static Rec parse(const float* r) { return {r[0], {r[1], r[2], r[3]}, {r[4], r[5]
 static float dist(V3 a, V3 b) { V3 d = a - b; return std::sqrt(dot(d, d)); }
 static float pct(std::vector<float> v, float q) { if (v.empty()) return 0; std::sort(v.begin(), v.end()); return v[std::min(v.size() - 1, (size_t)(q * (v.size() - 1) + 0.5f))]; }
 
+static std::string gAutoRst;   // unpacked/RST/<nivel>.RST derivado del nombre del .col (DH_WHEELFRIC=1)
 // DH_SET="groundShare=0.5,grip=10": sustituye parámetros de BikeParams (ajuste empírico con el oráculo; los nombres son los del struct)
 static void applySet(BikeParams& P) {
+    if (const char* rst = std::getenv("DH_WHEELFRIC")) {   // DH_WHEELFRIC=<nivel>.RST: rozamiento de rueda del motor con la tabla del nivel (RST+0xCA4, 32x8 f32)
+        if (std::string(rst) == "1") rst = gAutoRst.c_str();
+        FILE* f = std::fopen(rst, "rb"); float t[32][8];
+        if (f && !std::fseek(f, 0xCA4, SEEK_SET) && std::fread(t, sizeof t, 1, f) == 1) { P.wheelFric = true; for (int c = 0; c < 32; c++) P.fricCoef[c] = t[c][0]; } else std::fprintf(stderr, "DH_WHEELFRIC: no se puede leer %s\n", rst);
+        if (f) std::fclose(f); }
     const char* e = std::getenv("DH_SET"); if (!e) return; std::string str(e); size_t a = 0;
     while (a < str.size()) { size_t b = str.find(',', a); if (b == std::string::npos) b = str.size(); std::string kv = str.substr(a, b - a); a = b + 1; size_t q = kv.find('='); if (q == std::string::npos) continue;
         std::string k = kv.substr(0, q); float v = (float)std::atof(kv.c_str() + q + 1);
         if (k == "groundShare") P.groundShare = v; else if (k == "rolling") P.rolling = v; else if (k == "rollConst") P.rollConst = v; else if (k == "dragK") P.dragK = v; else if (k == "dragKAir") P.dragKAir = v;
         else if (k == "grip") P.grip = v; else if (k == "pedalAccel") P.pedalAccel = v; else if (k == "pedalMax") P.pedalMax = v; else if (k == "comLift") P.comLift = v; else if (k == "brakeDecel") P.brakeDecel = v;
         else if (k == "gravityGround") P.gravityGround = v; else if (k == "gravity") P.gravity = v; else if (k == "pedalKick") P.pedalKick = v; else if (k == "pedalKickV") P.pedalKickV = v; else if (k == "sprintMul") P.sprintMul = v; else if (k == "steerAccelGround") P.steerAccelGround = v; else if (k == "steerMaxGround") P.steerMaxGround = v; else if (k == "restitution") P.restitution = v; else if (k == "friction") P.friction = v;
+        else if (k == "wheelFricLong") P.wheelFricLong = v != 0.f; else if (k == "fricMaxK") P.fricMaxK = v; else if (k == "fricGate") P.fricGate = (int)v; else if (k == "fricApps") P.fricApps = (int)v;
         else std::fprintf(stderr, "DH_SET: parámetro desconocido %s\n", k.c_str()); }
 }
 
@@ -32,6 +39,7 @@ struct Win { size_t i; float e05, e10, eW, b05, b10, bW, ev, evB; bool allGround
 
 int main(int argc, char** argv) {
     std::vector<uint8_t> col, raw; Ground g;
+    if (argc > 1) { std::string a1 = argv[1]; size_t sl = a1.find_last_of('/'); size_t dt = a1.rfind('.'); gAutoRst = "unpacked/RST/" + a1.substr(sl == std::string::npos ? 0 : sl + 1, dt - (sl == std::string::npos ? 0 : sl + 1)) + ".RST"; }
     if (argc < 3 || !rd(argv[1], col) || !rd(argv[2], raw) || !g.load(col) || raw.size() < 16 || std::memcmp(raw.data(), "DHRPL1\0\0", 8) != 0) { std::fprintf(stderr, "uso: replay_demo nivel.col archivo.replay [ventana_s=2] [paso_s=1]\n"); return 1; }
     uint32_t nf, n; std::memcpy(&nf, raw.data() + 8, 4); std::memcpy(&n, raw.data() + 12, 4);
     if (nf != NF || raw.size() < 16 + (size_t)n * NF * 4) { std::fprintf(stderr, "formato inesperado\n"); return 1; }

@@ -63,6 +63,12 @@ struct BikeParams {
     // groundShare = 0.46 (con k = 0.0063 del motor) se AJUSTÓ a 191 ventanas de 50 ticks de rodadura sin entrada (ride_s1/s5, roll_s1/s5/s5b): 72 % dentro del 15 % de la velocidad capturada (mediana 10.3 %; sin término de suelo 12 %). HIPÓTESIS.
     float dragK = 0.0063f, dragKAir = 0.0077f;             // 1/u: aceleración de arrastre = k·|v|²; valores del motor (ctrl+0x490): 0.00627/0.00632 con ctrl+0x4A4 = 0 (suelo), 0.00744/0.0079 con >= 2 (aire)
     float groundShare = 0.46f;                             // fracción de la gravedad tangente a la pendiente que sobrevive en suelo (el resto lo anula la fuerza de suelo desconocida, origen abierto: physics-module.md "3b"). HIPÓTESIS empírica
+    // Rozamiento de rueda con tope (FUN_00132FD8 / FUN_00131078; physics-module.md "T5"): impulso opuesto a la velocidad tangencial, |J| = min(|w|·rampa, maxF), maxF = 225·coef·1.0·0.01, coef = col 0 de DAT_0077A3D8 (RST del nivel, +0xCA4).
+    // HIPÓTESIS de port: una aplicación por rueda en contacto y tick; punto de aplicación = CM (par nulo, como lo muestra Ghidra). Apagado por defecto (sustituye a grip lateral y groundShare).
+    bool wheelFric = false, wheelFricLong = true; float fricCoef[32] = {}; float fricMaxK = 2.25f;   // fricMaxK = 225·1.0·0.01 (solo valor de RAM del doc)
+    int fricApps = 0;                                       // aplicaciones por tick (0 = una por rueda en contacto; experimento)
+    int fricGate = 1;                                       // 1 = (v̂×lateral)·n > 0 como Ghidra; 2 = siempre; 3 = signo invertido (experimento)
+    float rampStart = 0.25f, rampMul = 1.3f;                // gp 0x8218 / 0x821C leídos de RAM (tools/fric_table_check.py)
     float comLift = 1.4f;                                  // sube todos los puntos locales (baja el centro de masas efectivo): el motor da los puntos respecto al nodo y el centro de masas está desplazado (+0x50), desplazamiento desconocido: hipótesis de estabilidad
     float rollConst = 0.8f;                                // u/s^2 de rodadura constante en el suelo: detiene la moto en llano (hipótesis)
     float pitchDamp = 0.975f;                              // HIPÓTESIS (no es del motor): amortiguación extra del cabeceo por tick de 1/50 s; era el único uso del 0.975 antes de localizar FUN_00134060, y sin ella el cabeceo oscila en las caídas largas de ALP2
@@ -102,7 +108,7 @@ struct Bike {
     BikeParams P; RigidBody rb; V3 pos; V3 fwd{0, 0, -1};
     float yawW = 0, pitchW = 0;                            // estados del controlador del motor (rad/tick)
     bool grounded = false, wheelF = false, wheelR = false; float coyote = 0, tF = 0, tR = 0;   // grounded/wheelF/wheelR = contacto en los últimos 0.1 s (en reposo el barrido a veces no llega a tocar en un sub-paso)
-    V3 groundN{0, 1, 0}; uint16_t surface = 0;
+    V3 groundN{0, 1, 0}; uint16_t surface = 0; float fricRamp = 0.25f;   // ctrl+0x48C: rampa de entrada del rozamiento (FUN_00135D28)
     uint32_t sweeps = 0, hits = 0, overlaps = 0; double airTime = 0;
     FILE* trace = nullptr; bool traceOn = false;           // traza de depuración (DH_CONTACT_TRACE en bike_demo): una línea por respuesta de contacto
 
@@ -146,12 +152,21 @@ private:
             if (in.throttle > 0) v = v + f * (P.pedalAccel * (in.sprint ? P.sprintMul : 1.f) * in.throttle * std::fmax(0.f, 1.f - sf / P.pedalMax) * h);
             if (in.brake > 0 && sf > 0) v = v - f * std::fmin(sf, P.brakeDecel * in.brake * h);
             else if (in.brake > 0 && in.throttle <= 0 && P.reverseAccel > 0 && sf > -P.reverseMax) v = v - f * std::fmin(P.reverseAccel * in.brake * h, sf + P.reverseMax);   // parado o casi: rueda hacia atrás despacio
-            v = v - A.r * (dot(v, A.r) * std::fmin(1.f, P.grip * h)); v = v * (1.f - P.rolling * h);
+            if (!P.wheelFric) v = v - A.r * (dot(v, A.r) * std::fmin(1.f, P.grip * h)); v = v * (1.f - P.rolling * h);
             { float vs = std::sqrt(dot(v, v)); if (vs > 1e-6f) v = v * (std::fmax(0.f, vs - P.rollConst * h) / vs); }
         }
         const float gW = (gr && P.gravityGround > 0.f) ? P.gravityGround : P.gravity;
         v.y -= gW * h;
-        if (gr) { V3 gt = V3{0, -gW, 0}; gt = gt - groundN * dot(gt, groundN); v = v - gt * ((1.f - P.groundShare) * h); }   // fuerza de suelo empírica: anula (1-groundShare) de la gravedad tangente (hipótesis)
+        if (gr && !P.wheelFric) { V3 gt = V3{0, -gW, 0}; gt = gt - groundN * dot(gt, groundN); v = v - gt * ((1.f - P.groundShare) * h); }
+        if (gr && P.wheelFric) {                               // rozamiento de rueda: lateral (fila 0) y longitudinal (fila 1, solo si (v̂ × lateral)·n > 0), cada una topada a maxF; una aplicación por rueda en contacto
+            const int nw = P.fricApps > 0 ? P.fricApps : (wheelF ? 1 : 0) + (wheelR ? 1 : 0); const float sc = engine::kTickHz * h, capV = P.fricMaxK * P.fricCoef[surface & 0x1F] / P.mass;
+            V3 n = groundN, lat = unit(A.r - n * dot(A.r, n)), lon = unit(fwd - n * dot(fwd, n));
+            for (int w = 0; w < nw; w++) {
+                float vl = dot(v, lat), dl = std::fmin(std::fabs(vl) * fricRamp, capV * sc); v = v - lat * (vl < 0 ? -dl : dl);
+                float vf = dot(v, lon); V3 vh = unit(v);
+                if (P.wheelFricLong && (P.fricGate == 2 || dot(cross(vh, lat), n) * (P.fricGate == 3 ? -1.f : 1.f) > 0.f)) { float df = std::fmin(std::fabs(vf) * fricRamp, capV * sc); v = v - lon * (vf < 0 ? -df : df); }
+            }
+        }   // fuerza de suelo empírica: anula (1-groundShare) de la gravedad tangente (hipótesis)
         if (in.hop && first && gr) { v = v + A.u * P.hop; coyote = 0; }
         rb.vel = v; rb.linMom = v * P.mass;
         float wp = dot(rb.omega, A.r), wy = rb.omega.y;
@@ -191,6 +206,7 @@ private:
         Axes Ae = axes(); float wpe = dot(rb.omega, Ae.r); wpe = std::fmax(-8.f, std::fmin(8.f, wpe));
         rb.omega = Ae.r * wpe + V3{0, 1, 0} * rb.omega.y;           // balanceo bloqueado (hipótesis)
         if (hitGround) { coyote = 0.1f; airTime = 0; } else { coyote = std::fmax(0.f, coyote - h); airTime += h; }
+        fricRamp = (fHit || rHit) ? std::fmin(1.f, fricRamp * std::pow(P.rampMul, engine::kTickHz * h)) : P.rampStart;
         tF = fHit ? 0.1f : std::fmax(0.f, tF - h); tR = rHit ? 0.1f : std::fmax(0.f, tR - h); grounded = coyote > 0.f; wheelF = tF > 0.f; wheelR = tR > 0.f;
     }
 };
