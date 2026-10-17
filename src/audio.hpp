@@ -19,11 +19,14 @@ public:
     bool play(const std::vector<uint8_t>& file, float volume, bool loop = true) {
         stop(); vag::Track t;
         if (!(vag::decodeVpk(file, t) || vag::decodeVag(file, t))) return false;
-        if (!SDL_WasInit(SDL_INIT_AUDIO) && !SDL_InitSubSystem(SDL_INIT_AUDIO)) return false;
-        SDL_AudioSpec spec{}; spec.format = SDL_AUDIO_S16; spec.channels = t.channels; spec.freq = (int)t.rate;
-        stream_ = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
-        if (!stream_) return false;
-        track_ = std::move(t); pos_ = 0; loop_ = loop; SDL_SetAudioStreamGain(stream_, volume); SDL_ResumeAudioStreamDevice(stream_); return true;
+        return start(std::move(t), volume, loop);
+    }
+    // Igual, pero con dos ficheros mono (izquierda y derecha) que se juntan en estéreo: la música por capas del juego
+    // guarda cada capa como `<tema><CAPA>-L.VAG` y `-R.VAG` (FUN_001e1d10).
+    bool playPair(const std::vector<uint8_t>& left, const std::vector<uint8_t>& right, float volume, bool loop = true) {
+        stop(); vag::Track l, r, t;
+        if (!vag::decodeVag(left, l) || !vag::decodeVag(right, r) || !vag::toStereoPair(l, r, t)) return false;
+        return start(std::move(t), volume, loop);
     }
     // Mantiene ~1 s de audio en cola; al llegar al final vuelve al principio si `loop`.
     void update() {
@@ -41,6 +44,14 @@ public:
     bool playing() const { return stream_ != nullptr; }
     double seconds() const { return track_.rate ? (double)track_.frames() / track_.rate : 0.0; }
 private:
+    // Abre el dispositivo para una pista ya decodificada y la deja sonando. Requiere haber llamado antes a stop().
+    bool start(vag::Track&& t, float volume, bool loop) {
+        if (!SDL_WasInit(SDL_INIT_AUDIO) && !SDL_InitSubSystem(SDL_INIT_AUDIO)) return false;
+        SDL_AudioSpec spec{}; spec.format = SDL_AUDIO_S16; spec.channels = t.channels; spec.freq = (int)t.rate;
+        stream_ = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
+        if (!stream_) return false;
+        track_ = std::move(t); pos_ = 0; loop_ = loop; SDL_SetAudioStreamGain(stream_, volume); SDL_ResumeAudioStreamDevice(stream_); return true;
+    }
     SDL_AudioStream* stream_ = nullptr; vag::Track track_; size_t pos_ = 0; bool loop_ = true;
 };
 }  // namespace audio

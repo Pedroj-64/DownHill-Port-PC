@@ -54,4 +54,13 @@ inline bool decodeVpk(const std::vector<uint8_t>& f, Track& t) {
     t.pcm.resize(n * ch); for (size_t i = 0; i < n; i++) for (size_t k = 0; k < ch; k++) t.pcm[i * ch + k] = chan[k][i];
     return true;
 }
+// Une dos pistas mono (izquierda y derecha) en una estéreo intercalada; recorta a la más corta. Es lo que usa la música
+// por capas del juego, que guarda cada capa como dos VAGp mono (`<tema><CAPA>-L.VAG` y `-R.VAG`).
+inline bool toStereoPair(const Track& l, const Track& r, Track& t) {
+    if (l.channels != 1 || r.channels != 1 || l.rate != r.rate || l.pcm.empty() || r.pcm.empty()) return false;
+    const size_t n = std::min(l.pcm.size(), r.pcm.size());
+    t.rate = l.rate; t.channels = 2; t.pcm.resize(n * 2);
+    for (size_t i = 0; i < n; i++) { t.pcm[i * 2] = l.pcm[i]; t.pcm[i * 2 + 1] = r.pcm[i]; }
+    return true;
+}
 }  // namespace vag
