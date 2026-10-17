@@ -301,10 +301,18 @@ int main(int argc, char** argv) {
         if (!useCol) { std::fprintf(stderr, "modo jugable: hace falta la colisión (<modelo>.col o DH_COL)\n"); return; }
         if (!gateOpened) { openStartGate(gcol); gateOpened = true; }   // la verja de salida (superficie 0x681D) está cerrada en la malla estática
         const Gate* g0 = gts.courseGate(0); float h0 = g0 ? std::atan2(g0->n.x, -g0->n.z) : yaw;
+        if (haveStart && overlay.size() >= 9 && !std::getenv("DH_HEADING_GATE")) {   // rumbo de salida = sentido de la línea de carrera PTS junto a la parrilla (la normal de la puerta 0 no siempre apunta en el sentido de la carrera: CITY, ALPINEMX)
+            const size_t n = overlay.size() / 3; size_t k = 0; float best = 1e30f;
+            for (size_t i = 0; i < n; i++) { const float dx = overlay[3*i] - startPt.x, dz = overlay[3*i+2] - startPt.z, dd = dx * dx + dz * dz; if (dd < best) { best = dd; k = i; } }
+            size_t t = std::min(k + 3, n - 1); while (t > 0 && t == k) t--;   // unos puntos por delante para suavizar el quiebro local
+            const float dx = overlay[3*t] - overlay[3*k], dz = overlay[3*t+2] - overlay[3*k+2];
+            if (dx * dx + dz * dz > 1e-4f) h0 = std::atan2(dx, -dz);
+        }
         if (!std::getenv("DH_FEEL0")) { BikeParams& bp = prun.bike.P; useEngineProfile(bp); bp.hop = 32.f; bp.grip = 8.f; bp.reverseAccel = 18.f; bp.reverseMax = 7.f; }   // ajuste «para jugar a mano»: controlador de dirección del motor (leído de RAM) y salto de 2.45·13 = 32 u/s (FUN_00136330); agarre y marcha atrás = HIPÓTESIS. DH_FEEL0=1 usa los valores del arnés
         race.loadLen = std::getenv("DH_LOADHOLD") ? (float)std::atof(std::getenv("DH_LOADHOLD")) : (shot ? 0.f : 1.5f);   // pantalla de carga: duración mínima provisional (no sale del ELF); 0 en capturas DH_SHOT
         race.load(gcol, &gts, haveStart ? startPt : V3{px, py, pz}, h0);   // cuenta atrás de 3 s con la moto en la parrilla y reloj a cero al «¡Ya!» (src/race.hpp) camHead = h0; leanVis = 0; finishedMsg = false;
         if (std::getenv("DH_DEMO_RESULTS")) { race.res.finished = true; race.res.time = 430.98; race.res.gates = race.res.totalGates = gts.size(); race.res.respawns = 0; race.res.maxSpeed = 111.f; race.res.splits = {16.00f, 26.26f, 39.66f}; race.state = RaceState::Results; }   // solo para capturas de la maquetación (valores de muestra)
+        if (std::getenv("DH_DEBUG")) { const V3 fw = prun.bike.fwd; V3 d0 = overlay.size() >= 6 ? V3{overlay[3] - overlay[0], 0, overlay[5] - overlay[2]} : V3{}; std::fprintf(stderr, "salida: pos=(%.1f %.1f %.1f) rumbo=%.2f fwd=(%.2f %.2f) puerta0 n=(%.2f %.2f %.2f) d=%.1f dist=%.1f línea0->1=(%.1f %.1f) startPts=%d\n", prun.bike.pos.x, prun.bike.pos.y, prun.bike.pos.z, h0, fw.x, fw.z, g0 ? g0->n.x : 0.f, g0 ? g0->n.y : 0.f, g0 ? g0->n.z : 0.f, g0 ? g0->d : 0.f, g0 ? gateDist(*g0, prun.bike.pos) : 0.f, d0.x, d0.z, (int)haveStart); }
         V3 f = prun.bike.fwd; camPos = prun.bike.pos + V3{-f.x * 11.f, 4.5f, -f.z * 11.f}; play = true; ride = false; walk = false;
     };
     auto startRide = [&]() {
@@ -399,6 +407,15 @@ int main(int argc, char** argv) {
                 else bits = packKeys(ky, hopEdge);
                 hopEdge = false; in = unpackInput(bits);
                 if (const char* pi = std::getenv("DH_PLAYIN")) std::sscanf(pi, "%f %f %f %f", &in.throttle, &in.brake, &in.steer, &in.lean);
+                if (std::getenv("DH_AUTOPLAY") && overlay.size() >= 9 && inReplay.empty()) {   // piloto automático del modo juego (pruebas, sin teclado): sigue la línea de carrera PTS con acelerador a fondo; sólo para el humo de tools/smoke_levels.sh
+                    static size_t apK = 0; const Bike& b = prun.bike; const size_t n = overlay.size() / 3;
+                    float bd = 1e30f; size_t lo = apK > 30 ? apK - 30 : 0, hi = std::min(n, apK + 60);   // ventana alrededor del último punto: no salta a otra parte de la línea en los zigzags
+                    for (size_t q = lo; q < hi; q++) { const float ex = overlay[3*q] - b.pos.x, ez = overlay[3*q+2] - b.pos.z, dd = ex*ex + ez*ez; if (dd < bd) { bd = dd; apK = q; } }
+                    const size_t tq = std::min(n - 1, apK + 2 + (size_t)(b.speed() / 40.f));
+                    float df = std::atan2(overlay[3*tq] - b.pos.x, -(overlay[3*tq+2] - b.pos.z)) - b.heading();
+                    while (df > 3.14159f) df -= 6.28318f; while (df < -3.14159f) df += 6.28318f;
+                    in.steer = std::fmax(-1.f, std::fmin(1.f, df * 1.5f)); in.throttle = 1.f; in.brake = (std::fabs(df) > 0.9f && b.speed() > 40.f) ? 1.f : 0.f;
+                }
                 if (std::getenv("DH_INPUT_LOG")) inLog.push_back(bits);
                 inTick++;
                 if (replay.size() >= 12) {
