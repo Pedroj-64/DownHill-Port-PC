@@ -22,7 +22,7 @@ A native engine reimplementation (not an emulator wrapper) that loads the game's
 ## Progress
 
 <!-- progress:start -->
-**Downhill Domination: 49.5% verified, 62.8% implemented**
+**Downhill Domination: 49.9% verified, 62.8% implemented**
 
 Average of all rows. Verified = checked against evidence from the game (savestates, the game's own camera, bit-identical reference). Implemented = works but unverified or based on hypotheses. Counted rows show real units; the rest are rough maintainer estimates.
 
@@ -49,7 +49,7 @@ Average of all rows. Verified = checked against evidence from the game (savestat
 | Rider body mesh | Found in each level NGP (kinds 4030-4130, 13 models in ALP2); skinning decoded from the VU1 code and posed with BANIM clips; not yet compared with the game. |
 | Rigid-body integrator (functions) | FUN_00238818 and 9 helpers traced from the disassembly. FUN_00238818 is validated for FREE FLIGHT only: the C++ port with the engine constants read from the ELF (FUN_00134060: damping 0.975/0.987, G = -96.6000061; no fit) matches 4 captures x 50 consecutive ticks to ~1 float32 ulp. Contacts and impacts not validated, so counted as wip, not done. |
 | Viewer (dhview) | Free camera, walk mode, camera-centred sky, play mode. |
-| Bike physics | Rigid body on the ported sweep and contact response, exact air steering/pitch, validated jump impulse; ground force terms are a fit checked by the replay oracle (hypothesis). |
+| Bike physics | Rigid body on the ported sweep and contact response, exact air steering/pitch, validated jump impulse; ground forces (weight, drag with the effort ramp, per-class rolling, pedal) validated tick by tick against the game (about 0.2 u/s² residual); the default profile is still an empirical fit because the contact losses with the terrain are not reproduced (T7). |
 | Levels ridden start to finish | ALP2 only (28/28 gates, test autopilot, 0 resets); keyboard riding works. |
 | Native C++ modules | ISO9660 reader, IE containers (own inflate), collision, scene graph, textures, models/meshes, course data, animations (NGA) and bike assembly are native and byte-identical to the Python reference (2385 ISO files, 54 levels, 352 models); `dhview game.iso LEVEL` loads a level straight from the image in ~1 s. |
 | Menus and loading screens | 78 loading screens render; no menu logic. |

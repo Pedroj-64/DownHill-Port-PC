@@ -294,6 +294,9 @@ int main(int argc, char** argv) {
     bool play = false, hopPressed = false, finishedMsg = false; Race race; Run& prun = race.run; V3 camPos{}, startPt{}; float camHead = 0, leanVis = 0; bool haveStart = false, gateOpened = false;
     { std::vector<uint8_t> sraw; std::string sp0 = mdl ? std::string(argv[1]).substr(0, std::string(argv[1]).size() - 4) + ".start.pts" : std::string();   // primera plaza de la rejilla (tools/markers.py), espacio NGP -> Y arriba
       if (!sp0.empty() && readFile(sp0, sraw) && sraw.size() >= 12) { float f[3]; std::memcpy(f, sraw.data(), 12); startPt = {f[0], f[2], -f[1]}; haveStart = true; } }
+    float surfTab[32][8] = {}; bool haveSurfTab = false;   // tabla de clases de superficie del nivel (RST+0xCA4): rodadura por clase del motor
+    { std::vector<uint8_t> tr; std::string tp = mdl ? std::string(argv[1]).substr(0, std::string(argv[1]).size() - 4) + ".surftab" : std::string();
+      if (!tp.empty() && readFile(tp, tr) && tr.size() == sizeof surfTab) { std::memcpy(surfTab, tr.data(), sizeof surfTab); haveSurfTab = true; } }
     // DH_REPLAY=traza6.bin (tests/bike_demo.cpp, DH_TRACE6): reproduce la trayectoria del piloto automático de pruebas (6 f32 por muestra: posición y dirección, Y arriba) en el modo jugable, sin simular; DH_REPLAY_AT=i fija la muestra (capturas). Sólo para evidencia visual.
     std::vector<float> replay; size_t replayAt = std::getenv("DH_REPLAY_AT") ? (size_t)std::atoi(std::getenv("DH_REPLAY_AT")) : 0;
     if (const char* rp0 = std::getenv("DH_REPLAY")) { std::vector<uint8_t> rr; if (readFile(rp0, rr)) { replay.resize(rr.size() / 4); std::memcpy(replay.data(), rr.data(), replay.size() * 4); } }
@@ -308,11 +311,20 @@ int main(int argc, char** argv) {
             const float dx = overlay[3*t] - overlay[3*k], dz = overlay[3*t+2] - overlay[3*k+2];
             if (dx * dx + dz * dz > 1e-4f) h0 = std::atan2(dx, -dz);
         }
-        if (!std::getenv("DH_FEEL0")) { BikeParams& bp = prun.bike.P; useEngineProfile(bp); bp.hop = 32.f; bp.grip = 8.f; bp.reverseAccel = 18.f; bp.reverseMax = 7.f; }   // ajuste «para jugar a mano»: controlador de dirección del motor (leído de RAM) y salto de 2.45·13 = 32 u/s (FUN_00136330); agarre y marcha atrás = HIPÓTESIS. DH_FEEL0=1 usa los valores del arnés
+        // DH_REAL=1: fuerzas de suelo del motor (T6, docs/formats/physics-module.md); por defecto el perfil empírico, que el oráculo de repetición predice mejor (2.2-2.5 u frente a 2.7-3.1 u a 0.5 s: faltan las pérdidas por contacto con el terreno)
+        if (!std::getenv("DH_FEEL0")) { BikeParams& bp = prun.bike.P; useEngineProfile(bp); if (haveSurfTab && std::getenv("DH_REAL")) useRealForces(bp, surfTab); bp.hop = 32.f; bp.grip = 8.f; bp.reverseAccel = 18.f; bp.reverseMax = 7.f; }   // ajuste «para jugar a mano»: controlador de dirección del motor (leído de RAM) y salto de 2.45·13 = 32 u/s (FUN_00136330); agarre y marcha atrás = HIPÓTESIS. DH_FEEL0=1 usa los valores del arnés
         race.loadLen = std::getenv("DH_LOADHOLD") ? (float)std::atof(std::getenv("DH_LOADHOLD")) : (shot ? 0.f : 1.5f);   // pantalla de carga: duración mínima provisional (no sale del ELF); 0 en capturas DH_SHOT
         race.load(gcol, &gts, haveStart ? startPt : V3{px, py, pz}, h0);   // cuenta atrás de 3 s con la moto en la parrilla y reloj a cero al «¡Ya!» (src/race.hpp) camHead = h0; leanVis = 0; finishedMsg = false;
         if (std::getenv("DH_DEMO_RESULTS")) { race.res.finished = true; race.res.time = 430.98; race.res.gates = race.res.totalGates = gts.size(); race.res.respawns = 0; race.res.maxSpeed = 111.f; race.res.splits = {16.00f, 26.26f, 39.66f}; race.state = RaceState::Results; }   // solo para capturas de la maquetación (valores de muestra)
-        if (std::getenv("DH_DEBUG")) { const V3 fw = prun.bike.fwd; V3 d0 = overlay.size() >= 6 ? V3{overlay[3] - overlay[0], 0, overlay[5] - overlay[2]} : V3{}; std::fprintf(stderr, "salida: pos=(%.1f %.1f %.1f) rumbo=%.2f fwd=(%.2f %.2f) puerta0 n=(%.2f %.2f %.2f) d=%.1f dist=%.1f línea0->1=(%.1f %.1f) startPts=%d\n", prun.bike.pos.x, prun.bike.pos.y, prun.bike.pos.z, h0, fw.x, fw.z, g0 ? g0->n.x : 0.f, g0 ? g0->n.y : 0.f, g0 ? g0->n.z : 0.f, g0 ? g0->d : 0.f, g0 ? gateDist(*g0, prun.bike.pos) : 0.f, d0.x, d0.z, (int)haveStart); }
+        if (std::getenv("DH_DEBUG")) { const V3 fw = prun.bike.fwd; V3 d0 = overlay.size() >= 6 ? V3{overlay[3] - overlay[0], 0, overlay[5] - overlay[2]} : V3{}; std::fprintf(stderr, "salida: pos=(%.1f %.1f %.1f) rumbo=%.2f fwd=(%.2f %.2f) puerta0 n=(%.2f %.2f %.2f) d=%.1f dist=%.1f línea0->1=(%.1f %.1f) startPts=%d startPt=(%.1f %.1f %.1f) linea[0]=(%.1f %.1f %.1f) linea[fin]=(%.1f %.1f %.1f)\n", prun.bike.pos.x, prun.bike.pos.y, prun.bike.pos.z, h0, fw.x, fw.z, g0 ? g0->n.x : 0.f, g0 ? g0->n.y : 0.f, g0 ? g0->n.z : 0.f, g0 ? g0->d : 0.f, g0 ? gateDist(*g0, prun.bike.pos) : 0.f, d0.x, d0.z, (int)haveStart, startPt.x, startPt.y, startPt.z, overlay.size() >= 3 ? overlay[0] : 0.f, overlay.size() >= 3 ? overlay[1] : 0.f, overlay.size() >= 3 ? overlay[2] : 0.f, overlay.size() >= 3 ? overlay[overlay.size()-3] : 0.f, overlay.size() >= 3 ? overlay[overlay.size()-2] : 0.f, overlay.size() >= 3 ? overlay[overlay.size()-1] : 0.f); }
+        if (const char* dl = std::getenv("DH_DEBUG_LINE")) { size_t a = 0, c = 12; std::sscanf(dl, "%zu %zu", &a, &c); for (size_t q = a; q < a + c && 3*q+2 < overlay.size(); q++) std::fprintf(stderr, "  linea[%zu]=(%.1f %.1f %.1f)\n", q, overlay[3*q], overlay[3*q+1], overlay[3*q+2]); }
+        if (std::getenv("DH_DEBUG_GATES") && overlay.size() >= 6) {   // para cada puerta: punto de la línea PTS donde el plano pasa de - a + (primer cruce) y cuántos cruces hay en total
+            const size_t n = overlay.size() / 3; std::fprintf(stderr, "puertas: %zu, línea %zu puntos\n", gts.size(), n);
+            for (size_t gi = 0; gi < gts.size(); gi++) {
+                const Gate& g = *gts.courseGate(gi); int first = -1, cross = 0; float dmin = 1e30f; size_t kmin = 0;
+                for (size_t q = 0; q < n; q++) { const V3 p{overlay[3*q], overlay[3*q+1], overlay[3*q+2]}; const float dq = gateDist(g, p); if (std::fabs(dq) < dmin) { dmin = std::fabs(dq); kmin = q; }
+                    if (q > 0) { const V3 pp{overlay[3*q-3], overlay[3*q-2], overlay[3*q-1]}; if (gateDist(g, pp) < 0.f && dq > 0.f) { cross++; if (first < 0) first = (int)q; } } }
+                std::fprintf(stderr, "  puerta %zu kind=%u idx=%u |n|=%.3f d=%.1f cruces(-→+)=%d primero=%d cercano=%zu (%.1f u)\n", gi, g.kind, g.idx, std::sqrt(dot(g.n, g.n)), g.d, cross, first, kmin, dmin); } }
         V3 f = prun.bike.fwd; camPos = prun.bike.pos + V3{-f.x * 11.f, 4.5f, -f.z * 11.f}; play = true; ride = false; walk = false;
     };
     auto startRide = [&]() {
@@ -415,6 +427,15 @@ int main(int argc, char** argv) {
                     float df = std::atan2(overlay[3*tq] - b.pos.x, -(overlay[3*tq+2] - b.pos.z)) - b.heading();
                     while (df > 3.14159f) df -= 6.28318f; while (df < -3.14159f) df += 6.28318f;
                     in.steer = std::fmax(-1.f, std::fmin(1.f, df * 1.5f)); in.throttle = 1.f; in.brake = (std::fabs(df) > 0.9f && b.speed() > 40.f) ? 1.f : 0.f;
+                    if (std::getenv("DH_REAL")) { static const float vcap = std::getenv("DH_AUTOVMAX") ? (float)std::atof(std::getenv("DH_AUTOVMAX")) : 170.f;   // limitador del piloto de prueba (jugadores reales en las telemetrías: p90 ~130, p99 ~170-197 u/s)
+                      if (b.speed() > vcap) { in.throttle = 0.f; in.brake = b.grounded && b.speed() > 1.2f * vcap ? 1.f : 0.f; in.sprint = false; } else if (!std::getenv("DH_AUTOSPRINT0")) in.sprint = true; }
+                    // esfuerzo extra: con las fuerzas reales el arrastre depende de él (rampa 3.84 s), como lo usan los jugadores en las telemetrías
+                    if (!b.grounded && b.speed() > 8.f && !std::getenv("DH_AUTOLEAN0")) {   // en el aire alinea el morro con la velocidad (el juego lo controla con FUN_00137E68): sin esto la moto despega de una rampa con el morro arriba y aterriza casi vertical
+                        V3 vd = unit(b.rb.vel);
+                        if (std::getenv("DH_AUTOLEAN_SLOPE")) { const size_t a0 = std::min(n - 2, apK + 1), a1 = std::min(n - 1, apK + 4); const V3 sl{overlay[3*a1] - overlay[3*a0], overlay[3*a1+1] - overlay[3*a0+1], overlay[3*a1+2] - overlay[3*a0+2]}; if (dot(sl, sl) > 1e-4f) vd = unit(sl); }   // DH_AUTOLEAN_SLOPE=1: objetivo = pendiente de la línea por delante (mejora CITY/GLACIERT pero empeora AUBERMX/FUJI/GLACIER/PERUMX); por defecto = dirección de la velocidad
+                        const float pv = std::asin(std::fmax(-1.f, std::fmin(1.f, vd.y))), pf = std::asin(std::fmax(-1.f, std::fmin(1.f, b.fwd.y)));
+                        in.lean = std::fmax(-1.f, std::fmin(1.f, (pv - pf) * 3.f)); }
+                    if (std::getenv("DH_DEBUG") && inTick % 60 == 0) std::fprintf(stderr, "auto t=%.1f pos=(%.1f %.1f %.1f) v=%.1f punto=%zu/%zu lineaY=%.1f dist=%.1f df=%.2f suelo=%d sup=%04x fwd=(%.2f %.2f %.2f) vel=(%.1f %.1f %.1f) n=(%.2f %.2f %.2f) FR=%d%d\n", inTick / 60.0, b.pos.x, b.pos.y, b.pos.z, b.speed(), apK, n, overlay[3*apK+1], std::sqrt(bd), df, (int)b.grounded, (unsigned)b.surface, b.fwd.x, b.fwd.y, b.fwd.z, b.rb.vel.x, b.rb.vel.y, b.rb.vel.z, b.groundN.x, b.groundN.y, b.groundN.z, (int)b.wheelF, (int)b.wheelR);
                 }
                 if (std::getenv("DH_INPUT_LOG")) inLog.push_back(bits);
                 inTick++;

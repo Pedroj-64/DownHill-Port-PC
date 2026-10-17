@@ -71,6 +71,9 @@ struct BikeParams {
     int fricGate = 1;                                       // 1 = (v̂×lateral)·n > 0 como Ghidra; 2 = siempre; 3 = signo invertido (experimento)
     float rampStart = 0.25f, rampMul = 1.3f;                // gp 0x8218 / 0x821C leídos de RAM (tools/fric_table_check.py)
     float comLift = 1.4f;                                  // sube todos los puntos locales (baja el centro de masas efectivo): el motor da los puntos respecto al nodo y el centro de masas está desplazado (+0x50), desplazamiento desconocido: hipótesis de estabilidad
+    // T6 (VERIFICADO con la telemetría de 4 niveles): el arrastre del motor es k = g/vterm² (FUN_00136330: ctrl+0x490), con g = peso en suelo/aire y vterm = vterm0·1.15·(1 + min(t/3.84, 1)) mientras dura el esfuerzo extra (rider+0x7A69; t = ticks rider+0x7964·0.02)
+    bool rollByClass = false; float rollTab[32] = {};      // rodadura lineal del motor (FUN_001380E0): a = -0.025·coef[col 2 de la clase]·v (1/s), coef de DAT_0077A3D8 = RST+0xCA4; VERIFICADO con 4 niveles (residuo ≈ 0.2 u/s² sin pedal)
+    bool realDrag = false; float vterm0 = 112.36f, sprintRamp = 3.84f;   // vterm0 = sqrt(79.53/0.0063); el 0.0063 varía algo con el piloto/nivel (0.0063-0.0089 medido)
     float rollConst = 0.8f;                                // u/s^2 de rodadura constante en el suelo: detiene la moto en llano (hipótesis)
     float pitchDamp = 0.975f;                              // HIPÓTESIS (no es del motor): amortiguación extra del cabeceo por tick de 1/50 s; era el único uso del 0.975 antes de localizar FUN_00134060, y sin ella el cabeceo oscila en las caídas largas de ALP2
     float grip = 10.f;                                     // 1/s: rapidez con que el neumático anula la velocidad lateral (el motor sólo tiene la fricción anisótropa de FUN_00134630)
@@ -90,6 +93,9 @@ struct BikeParams {
 // algún término de suelo (hipótesis: el impulso de velocidad de FUN_00136A88 al pedalear bajo el tope, la rodadura por superficie FUN_001380E0 con la tabla del nivel).
 inline void useEngineProfile(BikeParams& P) { P.engineSteer = true; P.dragK = 0.001f; P.groundShare = 0.6f; P.gravityGround = 79.53f; P.pedalAccel = 25.f; }   // pedalKick (arranque de FUN_00136A88) disponible pero SIN activar: el oráculo no lo confirma (ALPINEMX |v| 5.2->4.8, MOAB pos 2.77->2.90 u)
 
+// T6: fuerzas de suelo del motor sin términos empíricos (peso en suelo, arrastre g/vterm² con rampa de esfuerzo, rodadura por clase, pedal constante, impulso de arranque de FUN_00136A88: |v| < 20·1.4667 suma dir·0.1·|v|límite por tick, constantes leídas de RAM). `tab` = 32x8 f32 de la clase (RST+0xCA4).
+inline void useRealForces(BikeParams& P, const float (*tab)[8]) { P.groundShare = 1.f; P.rollConst = 0.f; P.pedalMax = 1e9f; P.realDrag = true; P.pedalKick = 0.1f; P.pedalKickV = 29.333f; P.rollByClass = true; for (int c = 0; c < 32; c++) P.rollTab[c] = tab[c][2]; }
+
 struct Axes { V3 r, f, u; };                               // lateral, adelante, arriba (derecha)
 inline V3 unit(V3 a) { float l = std::sqrt(dot(a, a)); return l > 1e-9f ? a * (1.f / l) : V3{}; }
 // Orientación con balanceo bloqueado: sólo `f` (rumbo + cabeceo) es estado; r = f x Yarriba, u = r x f. (El motor mantiene la moto en pie con otro controlador; los puntos de contacto
@@ -107,6 +113,7 @@ inline float comp(V3 v, int i) { return i == 0 ? v.x : i == 1 ? v.y : v.z; }
 
 struct Bike {
     BikeParams P; RigidBody rb; V3 pos; V3 fwd{0, 0, -1};
+    float sprintT = 0;                                     // segundos de esfuerzo extra seguidos (rampa del arrastre, realDrag)
     float yawW = 0, pitchW = 0;                            // estados del controlador del motor (rad/tick)
     bool grounded = false, wheelF = false, wheelR = false; float coyote = 0, tF = 0, tR = 0;   // grounded/wheelF/wheelR = contacto en los últimos 0.1 s (en reposo el barrido a veces no llega a tocar en un sub-paso)
     V3 groundN{0, 1, 0}; uint16_t surface = 0; float fricRamp = 0.25f;   // ctrl+0x48C: rampa de entrada del rozamiento (FUN_00135D28)
@@ -146,14 +153,16 @@ private:
         // orden de FUN_00134060: primero el amortiguamiento de P/vel y L/omega (factor por tick de 1/50 s llevado al sub-paso h), luego las fuerzas (peso incluido)
         float ka = std::pow(P.angDamp, engine::kTickHz * h);
         rb.omega = rb.omega * ka;
-        bool gr = coyote > 0.f; V3 v = rb.vel; v = v * (1.f / (1.f + (gr ? P.dragK : P.dragKAir) * std::sqrt(dot(v, v)) * h));   // arrastre cuadrático implícito (estable a cualquier h)
+        bool gr = coyote > 0.f; V3 v = rb.vel; float kd = gr ? P.dragK : P.dragKAir;
+        if (P.realDrag) { sprintT = in.sprint ? sprintT + h : 0.f; const float sf = in.sprint ? 1.15f * (1.f + std::fmin(1.f, sprintT / P.sprintRamp)) : 1.f; kd = (gr && P.gravityGround > 0.f ? P.gravityGround : P.gravity) / (P.vterm0 * P.vterm0 * sf * sf); }
+        v = v * (1.f / (1.f + kd * std::sqrt(dot(v, v)) * h));   // arrastre cuadrático implícito (estable a cualquier h)
         if (gr) {
             V3 f = unit(fwd - groundN * dot(fwd, groundN)); float sf = dot(v, f);
             if (in.throttle > 0 && P.pedalKick > 0.f && dot(v, v) < P.pedalKickV * P.pedalKickV) v = v + f * (P.pedalKickV * P.pedalKick * engine::kTickHz * h);
             if (in.throttle > 0) v = v + f * (P.pedalAccel * (in.sprint ? P.sprintMul : 1.f) * in.throttle * std::fmax(0.f, 1.f - sf / P.pedalMax) * h);
             if (in.brake > 0 && sf > 0) v = v - f * std::fmin(sf, P.brakeDecel * in.brake * h);
             else if (in.brake > 0 && in.throttle <= 0 && P.reverseAccel > 0 && sf > -P.reverseMax) v = v - f * std::fmin(P.reverseAccel * in.brake * h, sf + P.reverseMax);   // parado o casi: rueda hacia atrás despacio
-            if (!P.wheelFric) v = v - A.r * (dot(v, A.r) * std::fmin(1.f, P.grip * h)); v = v * (1.f - P.rolling * h);
+            if (!P.wheelFric) v = v - A.r * (dot(v, A.r) * std::fmin(1.f, P.grip * h)); v = v * (1.f - (P.rollByClass ? 0.025f * P.rollTab[surface & 0x1F] : P.rolling) * h);
             { float vs = std::sqrt(dot(v, v)); if (vs > 1e-6f) v = v * (std::fmax(0.f, vs - P.rollConst * h) / vs); }
         }
         const float gW = (gr && P.gravityGround > 0.f) ? P.gravityGround : P.gravity;
@@ -224,7 +233,9 @@ struct Run {
     V3 goodPos; float goodHeading = 0; double goodT = 0, lastSave = 0;
     void start(const Ground& g, V3 p, float heading) {
         auto gi = g.groundQuery(p.x, p.y + 10.f, p.z, bike.P.radius, 66.f);
-        V3 q{p.x, (gi.hit ? gi.height : p.y) + 3.8f, p.z}; bike.place(q, heading); goodPos = q; goodHeading = heading; gs = Gates::State(); t = 0; respawns = 0; lastSave = 0; goodT = 0;
+        V3 q{p.x, (gi.hit ? gi.height : p.y) + 3.8f, p.z}; bike.place(q, heading);
+        if (gi.hit && gi.normal.y > 0.3f && !std::getenv("DH_START_FLAT")) bike.fwd = unit(bike.fwd - gi.normal * dot(bike.fwd, gi.normal));   // salida alineada con la cuesta (el juego no la deja horizontal): en BC (46°) horizontal volcaba la moto sobre la rueda trasera al asentarse
+        goodPos = q; goodHeading = heading; gs = Gates::State(); t = 0; respawns = 0; lastSave = 0; goodT = 0;
     }
     void respawn() { bike.place(goodPos + V3{0, 0.5f, 0}, goodHeading); respawns++; }
     int update(const Ground& g, const BikeInput& in, float dt) {

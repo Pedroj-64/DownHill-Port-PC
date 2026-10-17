@@ -28,7 +28,8 @@ struct Race {
 
     void load(const Ground& g, const Gates* gts, V3 start, float heading) {   // Carga -> Cuenta atrás: coloca la moto en la parrilla
         gates = gts; run.gates = gts; run.start(g, start, heading);
-        if (settle) { for (int i = 0; i < 300; i++) run.bike.step(g, BikeInput{}, 1.f / 60.f);   // asienta la moto en la parrilla (Run::start la deja 3.8 u sobre el suelo) y la para
+        if (settle) { for (int i = 0; i < 300; i++) { run.bike.step(g, BikeInput{}, 1.f / 60.f);   // asienta la moto en la parrilla (Run::start la deja 3.8 u sobre el suelo) y la para
+                run.bike.rb.vel = run.bike.rb.linMom = V3{}; }   // sin traslación en cada tick (en una salida con pendiente — PERUTDH, PERU, BC — rodaba ~190 u antes de la cuenta atrás) pero con giro libre: así el cabeceo se alinea con la cuesta
             run.bike.rb.vel = run.bike.rb.omega = run.bike.rb.linMom = run.bike.rb.angMom = V3{}; }
         countdown = countdownLen; hold = 0; raceTime = 0; maxSpeed = 0; res = RaceResult(); loading = loadLen; state = loadLen > 0.f ? RaceState::Loading : RaceState::Countdown;
     }

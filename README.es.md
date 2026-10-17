@@ -22,7 +22,7 @@ Una reimplementación nativa del motor (no un envoltorio de emulador) que carga 
 ## Progreso
 
 <!-- progress:start -->
-**Downhill Domination: 49.5% verificado, 62.8% implementado**
+**Downhill Domination: 49.9% verificado, 62.8% implementado**
 
 Promedio de todas las filas. Verificado = comprobado con evidencia del juego (savestates, la cámara del propio juego, referencia idéntica bit a bit). Implementado = funciona pero sin verificar o basado en hipótesis. Las filas con unidades muestran cifras reales; el resto son estimaciones aproximadas de los mantenedores.
 
@@ -49,7 +49,7 @@ Promedio de todas las filas. Verificado = comprobado con evidencia del juego (sa
 | Malla del cuerpo del piloto | Encontrada en el NGP de cada nivel (kinds 4030-4130, 13 modelos en ALP2); piel decodificada del código VU1 y posada con clips BANIM; aún sin comparar con el juego. |
 | Integrador de cuerpo rígido (funciones) | FUN_00238818 y 9 auxiliares trazadas desde el desensamblado. FUN_00238818 validada SOLO EN VUELO LIBRE: el port C++ con las constantes del motor leídas del ELF (FUN_00134060: amortiguamiento 0,975/0,987, G = -96,6000061; sin ajuste) coincide en 4 capturas x 50 ticks consecutivos hasta ~1 ulp float32. Contactos e impactos sin validar, por eso cuenta como wip, no done. |
 | Visor (dhview) | Cámara libre, modo caminar, cielo centrado en la cámara, modo de juego. |
-| Física de la bici | Cuerpo rígido sobre el barrido y la respuesta de contacto portados, giro y cabeceo exactos en el aire, impulso de salto validado; los términos de fuerza de suelo son un ajuste comprobado con el oráculo por repetición (hipótesis). |
+| Física de la bici | Cuerpo rígido sobre el barrido y la respuesta de contacto portados, giro y cabeceo exactos en el aire, impulso de salto validado; fuerzas de suelo (peso, arrastre con la rampa de esfuerzo, rodadura por clase, pedal) validadas tick a tick contra el juego (residuo de unos 0,2 u/s²); el perfil por defecto sigue siendo un ajuste empírico porque no se reproducen las pérdidas por contacto con el terreno (T7). |
 | Niveles recorridos de salida a meta | Solo ALP2 (28/28 puertas, autopiloto de pruebas, 0 reinicios); se puede conducir con el teclado. |
 | Módulos nativos en C++ | Lector ISO9660, contenedores IE (inflate propio), colisión, grafo de escena, texturas, modelos/mallas, datos del recorrido, animaciones (NGA) y ensamblado de la bici son nativos e idénticos byte a byte a la referencia Python (2385 archivos de la ISO, 54 niveles, 352 modelos); `dhview juego.iso NIVEL` carga un nivel directo de la imagen en ~1 s. |
 | Menús y pantallas de carga | Las 78 pantallas de carga se renderizan; no hay lógica de menús. |

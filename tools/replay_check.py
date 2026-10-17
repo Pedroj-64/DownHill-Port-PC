@@ -13,6 +13,7 @@ POS_MAX, VEL_MAX = 3.5, 8.0
 
 def main():
     a = [x for x in sys.argv[1:] if not x.startswith('--')]; check = '--assert' in sys.argv
+    env = dict(os.environ, DH_REAL='1', DH_ROLLTAB='1') if '--real' in sys.argv else None   # --real: fuerzas de suelo del motor sin términos empíricos (T6: peso, arrastre g/vterm² con rampa de esfuerzo, rodadura por clase, pedal constante, impulso de arranque)
     base = os.path.expanduser(a[0] if a else '~/dh-states/awiiwa'); out = os.path.expanduser('~/dh-states/replay'); os.makedirs(out, exist_ok=True); ok = True
     for n in LEVELS:
         dirs = sorted(glob.glob(os.path.join(base, f'dhtel_*_{n}_*')))
@@ -20,7 +21,7 @@ def main():
         if not dirs: print(f'{n}: sin grabación en {base}'); ok = False; continue
         rp = os.path.join(out, f'{n}.replay'); subprocess.run([sys.executable, os.path.join(R, 'tools/telemetry/export_replay.py'), dirs[-1], '-o', rp], check=True, capture_output=True)
         col = os.path.join(R, 'out/maps', f'{n}.col')
-        o = subprocess.run([os.path.join(R, 'build/replay_demo'), col, rp, '2', '0.5'], capture_output=True, text=True).stdout
+        o = subprocess.run([os.path.join(R, 'build/replay_demo'), col, rp, '2', '0.5'], capture_output=True, text=True, env=env).stdout
         m = re.search(r'G05 n=(\d+) e05_med=([\d.]+) e05_p90=([\d.]+) v05_med=([\d.]+)', o)
         if not m: print(f'{n}: sin salida de replay_demo'); ok = False; continue
         e, v = float(m.group(2)), float(m.group(4)); good = e <= POS_MAX and v <= VEL_MAX; ok &= good

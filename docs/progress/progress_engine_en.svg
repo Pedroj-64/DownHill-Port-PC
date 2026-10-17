@@ -5,9 +5,9 @@
 <rect class="v" x="330" y="38" width="216.0" height="14" rx="3"/>
 <text class="d" x="612" y="49">80% est.</text>
 <text x="0" y="77">Bike physics</text><rect class="t" x="330" y="66" width="270" height="14" rx="3"/>
-<rect class="v" x="330" y="66" width="94.5" height="14" rx="3"/>
-<rect class="w" x="424.5" y="66" width="108.0" height="14" rx="3"/>
-<text class="d" x="612" y="77">35% (+40%) est.</text>
+<rect class="v" x="330" y="66" width="121.5" height="14" rx="3"/>
+<rect class="w" x="451.5" y="66" width="81.0" height="14" rx="3"/>
+<text class="d" x="612" y="77">45% (+30%) est.</text>
 <text x="0" y="105">Levels ridden start to finish</text><rect class="t" x="330" y="94" width="270" height="14" rx="3"/>
 <rect class="v" x="330" y="94" width="5.0" height="14" rx="3"/>
 <text class="d" x="612" y="105">1 / 54 levels</text>

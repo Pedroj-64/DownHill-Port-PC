@@ -35,6 +35,7 @@ inline bool loadFrom(const Reader& rd, const std::string& lvlDir, const std::str
     out.files[b + ".col"] = std::move(col);
     out.files[b + ".gates"] = markers::gatesFile(n); out.files[b + ".start.pts"] = markers::startPointsFile(n);
     std::vector<uint8_t> pts; if (rd("PTS/" + name + ".PTS", pts)) out.files[b + ".chain0.pts"] = markers::ptsChainFile(pts, 0);
+    std::vector<uint8_t> rst; if (rd("RST/" + name + ".RST", rst) && rst.size() >= 0xCA4 + 1024) out.files[b + ".surftab"] = std::vector<uint8_t>(rst.begin() + 0xCA4, rst.begin() + 0xCA4 + 1024);   // tabla de clases de superficie del nivel (DAT_0077A3D8, 32x8 f32; T6)
     std::vector<uint8_t> hud; if (uiextract::hudDat(L, hud)) out.files["native:hud.dat"] = std::move(hud);   // bloque de texturas del HUD de este nivel (idéntico en todos)
     for (const std::string& c : loadscreen::candidates(name)) {   // pantalla de carga: la primera candidata de LOADBAR que se pueda decodificar
         std::vector<uint8_t> ln, lp, lt, lc; if (!rd("LOADBAR/" + c + ".NGP", ln) || !rd("LOADBAR/" + c + ".PTR", lp) || !rd("LOADBAR/" + c + ".TEX", lt) || !rd("LOADBAR/" + c + ".RTX", lc)) continue;

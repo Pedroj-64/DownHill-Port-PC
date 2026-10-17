@@ -9,15 +9,16 @@ The output (`*.replay`) holds game data: it does NOT go in the repo (rule 4); wr
 Uso / Usage:  python3 tools/telemetry/export_replay.py <carpeta o ticks.dhtel[.gz]> -o salida.replay
 
 Formato / Format:  'DHRPL1\\0\\0' | u32 nfloats por registro | u32 nregistros | registros de f32.
-Registro / record (NF = 24 floats), coordenadas del port (Y arriba: x, z, -y del espacio NGP):
+Registro / record (NF = 32 floats), coordenadas del port (Y arriba: x, z, -y del espacio NGP):
   0 t(s)  1-3 P  4-6 v  7-9 adelante / forward (matriz del nodo, fila +0x50)  10-12 arriba / up (fila +0x60); ctrl+0x190/0x170 es el marco de CONTACTO y no cambia en el aire  13 giro / steer (+ = derecha, der.-izq. normalizado, FUN_0012DFF0)
   14 cabeceo / lean (+1 = palabra arriba rider+0x1198 = morro arriba, -1 = abajo +0x119C)  15 pedal / pedal (rider+0x7A78, float 0..1; FUN_00136A88)  16 carga del salto (ticks, jump_obj+0x24)  17 suelta el salto (jump_obj+0x0C == 2)
-  18 aire (ctrl+0x4A4 >= 2)  19 superficie (ctrl+0x206 & 0x1F)  20 ctrl+0x49C (truco)  21 esfuerzo extra / sprint (rider+0x7A69)  22 rider+0x796A (complementario del pedal; ¿freno?)  23 columna 2 de la tabla de superficies de la clase actual (rodadura, FUN_001380E0; x0.025 = 1/s)"""
+  18 aire (ctrl+0x4A4 >= 2)  19 superficie (ctrl+0x206 & 0x1F)  20 ctrl+0x49C (truco)  21 esfuerzo extra / sprint (rider+0x7A69)  22 rider+0x796A (complementario del pedal; ¿freno?)  23 columna 2 de la tabla de superficies de la clase actual (rodadura, FUN_001380E0; x0.025 = 1/s)
+  24 ctrl+0x490 (k del arrastre cuadrático del tick, = peso/vterm²)  25 ctrl+0x428 (parámetro de la velocidad terminal)  26 rider+0x7964 (temporizador de esfuerzo extra, s16)  27 rider+0x796C (índice de la tabla de esfuerzo, s32)  28 rider+0x4098 (banderas del piloto, u32 bajo: el bit 2 anula el pedal en FUN_00136A88)  29-31 normal de contacto del suelo ctrl+0x220 (x, y, z NGP -> coordenadas del port)"""
 import argparse, math, os, struct, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import schema as S
 
-NF = 24
+NF = 32
 MAGIC = b'DHRPL1\0\0'
 
 def v3(b, o):
@@ -52,7 +53,9 @@ def export(path):
         lean = (struct.unpack_from('<i', ri, 0x18)[0] != 0) - (struct.unpack_from('<i', ri, 0x1C)[0] != 0)      # +1 = palabra «arriba» (rider+0x1198) = morro arriba en el port; validado con el cabeceo del nodo (error 0.58 -> 0.07)
         air = struct.unpack_from('<h', c, 0x4A4)[0] >= 2
         rec = [t, *P, *v3(c, 0xC0), *v3(nd, 0x50), *v3(nd, 0x60), steer_of(inp), float(lean), S.f32(misc, 0x178),
-               float(S.u32(jo, 0x24)), float(S.u32(jo, 0x0C) == 2), float(air), float(struct.unpack_from('<H', c, 0x206)[0] & 0x1F), S.f32(c, 0x49C), float(misc[0x169] != 0), float(misc[0x6A] != 0), roll[struct.unpack_from('<H', c, 0x206)[0] & 0x1F]]
+               float(S.u32(jo, 0x24)), float(S.u32(jo, 0x0C) == 2), float(air), float(struct.unpack_from('<H', c, 0x206)[0] & 0x1F), S.f32(c, 0x49C), float(misc[0x169] != 0), float(misc[0x6A] != 0), roll[struct.unpack_from('<H', c, 0x206)[0] & 0x1F],
+               S.f32(c, 0x490), S.f32(c, 0x428), float(struct.unpack_from('<h', misc, 0x64)[0]), float(struct.unpack_from('<i', misc, 0x6C)[0]),
+               float(struct.unpack_from('<I', p['rider_state'], 8)[0]), *v3(c, 0x220)]
         recs.append(rec + [0.0] * (NF - len(rec)))
     return recs
 
