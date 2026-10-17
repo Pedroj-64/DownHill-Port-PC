@@ -18,8 +18,9 @@
 <rect class="v" x="330" y="150" width="40.5" height="14" rx="3"/>
 <text class="d" x="612" y="161">15% est.</text>
 <text x="0" y="189">Audio</text><rect class="t" x="330" y="178" width="270" height="14" rx="3"/>
-<rect class="w" x="330.0" y="178" width="13.5" height="14" rx="3"/>
-<text class="d" x="612" y="189">0% (+5%) est.</text>
+<rect class="v" x="330" y="178" width="81.0" height="14" rx="3"/>
+<rect class="w" x="411.0" y="178" width="54.0" height="14" rx="3"/>
+<text class="d" x="612" y="189">30% (+20%) est.</text>
 <text x="0" y="217">IA y rivales</text><rect class="t" x="330" y="206" width="270" height="14" rx="3"/>
 <text class="d" x="612" y="217">0% est.</text>
 <text x="0" y="245">Modos de juego y flujo</text><rect class="t" x="330" y="234" width="270" height="14" rx="3"/>

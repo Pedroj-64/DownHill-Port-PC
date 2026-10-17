@@ -97,3 +97,11 @@ Con archivos `.mdl` añade `DH_WALK=1` para empezar en modo caminar (colisión c
 - Intérprete VU1 / VIF / GIF en tiempo de ejecución, sólo si la geometría animada lo exige.
 - Formatos aún sin tocar: `.PTS`, `.RST`, `.REP`, `.BNK`, `.SKX`, `.CTL`, `.APT`, `.BHS`.
 - Preguntas de arquitectura y lenguaje: ver [`architecture.md`](architecture.md).
+
+## 5. Herramientas y créditos
+
+- **Pseudo-C del ejecutable: Ghidra** con [ghidra-emotionengine-reloaded](https://github.com/chaoticgd/ghidra-emotionengine-reloaded) (sección 2). Los nombres `FUN_xxxxxxxx` / `DAT_xxxxxxxx` que citan los docs son los nombres automáticos de Ghidra para el ELF.
+- **[PS2Recomp](https://github.com/ran-j/PS2Recomp)** (recompilador estático PS2 → C++) también se ejecutó sobre el ELF (salida fuera del repo). Da una segunda lectura del mismo código MIPS; las funciones decompiladas que citan los hallazgos vienen de Ghidra, no de él.
+- **989snd** (`github.com/Ziemas/989snd`): decompilación de la biblioteca de sonido del IOP; confirmó el formato de los bancos `.BNK` (SFX2 / SFXGrain / Tone).
+- **PCSX2 + PINE**: savestates y capturas de repetición usadas como oráculo.
+- **Banda sonora (referencia externa, no verificada por nosotros):** listas de la comunidad (Giant Bomb) nombran a los artistas licenciados; el port reproduce lo que haya en los `VAG/` del propio disco, así que esa lista no es un oráculo.

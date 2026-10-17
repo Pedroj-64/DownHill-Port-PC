@@ -17,6 +17,7 @@ int main(int argc, char** argv) {
     std::vector<uint8_t> colb; Ground g; if (!rd(argv[1], colb) || !g.load(colb)) { std::fprintf(stderr, "no se puede cargar %s\n", argv[1]); return 2; }
     FILE* f = std::fopen(argv[2], "r"); if (!f) return 2;
     float invm, com[3], d[3], e, mu; int np; if (std::fscanf(f, "%f %f %f %f %f %f %f %f %f %d", &invm, com, com + 1, com + 2, d, d + 1, d + 2, &e, &mu, &np) != 10) return 2;
+    if (np < 1 || np > 64) { std::fprintf(stderr, "volcado con formato desconocido (nPuntos=%d): ¿dump antiguo sin restitución/fricción/nPuntos?\n", np); return 2; }   // p. ej. air_r1b.ref.txt (7 valores de cabecera) desbordaba el vector
     std::vector<V4> loc(np); std::vector<float> rad(np); for (int i = 0; i < np; i++) { float a, b, c, r; if (std::fscanf(f, "%f %f %f %f", &a, &b, &c, &r) != 4) return 2; loc[i] = {a, b, c, 0}; rad[i] = r; }
     std::vector<Rec> T; for (;;) { Rec r; float* q = r.node; int n = 0; for (; n < 21; n++) { float* p = n < 3 ? r.node + n : n < 12 ? r.R + n - 3 : n < 15 ? r.pos + n - 12 : n < 18 ? r.P + n - 15 : r.L + n - 18; if (std::fscanf(f, "%f", p) != 1) break; } (void)q; if (n < 21 || std::fscanf(f, "%u", &r.step) != 1) break; T.push_back(r); }
     std::fclose(f); size_t k0 = argc > 3 ? std::atoi(argv[3]) : 0, k1 = argc > 4 ? std::atoi(argv[4]) : T.size() - 2;

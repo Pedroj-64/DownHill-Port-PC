@@ -22,7 +22,7 @@ A native engine reimplementation (not an emulator wrapper) that loads the game's
 ## Progress
 
 <!-- progress:start -->
-**Downhill Domination: 48.0% verified, 60.7% implemented**
+**Downhill Domination: 49.5% verified, 62.8% implemented**
 
 Average of all rows. Verified = checked against evidence from the game (savestates, the game's own camera, bit-identical reference). Implemented = works but unverified or based on hypotheses. Counted rows show real units; the rest are rough maintainer estimates.
 
@@ -53,7 +53,7 @@ Average of all rows. Verified = checked against evidence from the game (savestat
 | Levels ridden start to finish | ALP2 only (28/28 gates, test autopilot, 0 resets); keyboard riding works. |
 | Native C++ modules | ISO9660 reader, IE containers (own inflate), collision, scene graph, textures, models/meshes, course data, animations (NGA) and bike assembly are native and byte-identical to the Python reference (2385 ISO files, 54 levels, 352 models); `dhview game.iso LEVEL` loads a level straight from the image in ~1 s. |
 | Menus and loading screens | 78 loading screens render; no menu logic. |
-| Audio | VAG files located; nothing decoded in the engine. |
+| Audio | VAG/VPK decoding is bit-identical to ffmpeg; the 50 BNK banks are parsed and the five sfx the port uses play; the per-level music (layered themes, TDH/MX tracks) was decoded from the executable and plays. Missing: dynamic layer switching, voices (SKAT), per-tone pitch (unverified by ear). |
 | AI and rivals | Not started. |
 | Game modes and flow | Countdown, timing, results, save data. |
 | Packaging (deb, Windows) | CPack scaffolding only. |

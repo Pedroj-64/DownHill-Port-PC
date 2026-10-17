@@ -95,3 +95,11 @@ For `.mdl` files add `DH_WALK=1` to start in walk mode (terrain collision, gravi
 - VU1 interpreter / VIF / GIF in the runtime, only if animated geometry needs it.
 - Formats still untouched: `.PTS`, `.RST`, `.REP`, `.BNK`, `.SKX`, `.CTL`, `.APT`, `.BHS`.
 - Architecture and language questions: see [`architecture.md`](architecture.md).
+
+## 5. Tools and credits
+
+- **Pseudo-C of the executable: Ghidra** with [ghidra-emotionengine-reloaded](https://github.com/chaoticgd/ghidra-emotionengine-reloaded) (section 2). The `FUN_xxxxxxxx` / `DAT_xxxxxxxx` names cited in the docs are Ghidra's auto-names for the ELF.
+- **[PS2Recomp](https://github.com/ran-j/PS2Recomp)** (static recompiler PS2 → C++) was also run over the ELF (output kept outside the repo). It gives a second reading of the same MIPS code; the decompiled functions that the findings cite come from Ghidra, not from it.
+- **989snd** (`github.com/Ziemas/989snd`): decompilation of the IOP sound library; it is what confirmed the `.BNK` bank format (SFX2 / SFXGrain / Tone).
+- **PCSX2 + PINE**: savestates and replay captures used as the oracle.
+- **Soundtrack (external reference, not verified by us):** community lists (Giant Bomb) name the licensed artists; the port plays whatever the disc's own `VAG/` files contain, so that list is not an oracle.

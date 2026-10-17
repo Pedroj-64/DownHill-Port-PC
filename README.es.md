@@ -22,7 +22,7 @@ Una reimplementación nativa del motor (no un envoltorio de emulador) que carga 
 ## Progreso
 
 <!-- progress:start -->
-**Downhill Domination: 48.0% verificado, 60.7% implementado**
+**Downhill Domination: 49.5% verificado, 62.8% implementado**
 
 Promedio de todas las filas. Verificado = comprobado con evidencia del juego (savestates, la cámara del propio juego, referencia idéntica bit a bit). Implementado = funciona pero sin verificar o basado en hipótesis. Las filas con unidades muestran cifras reales; el resto son estimaciones aproximadas de los mantenedores.
 
@@ -53,7 +53,7 @@ Promedio de todas las filas. Verificado = comprobado con evidencia del juego (sa
 | Niveles recorridos de salida a meta | Solo ALP2 (28/28 puertas, autopiloto de pruebas, 0 reinicios); se puede conducir con el teclado. |
 | Módulos nativos en C++ | Lector ISO9660, contenedores IE (inflate propio), colisión, grafo de escena, texturas, modelos/mallas, datos del recorrido, animaciones (NGA) y ensamblado de la bici son nativos e idénticos byte a byte a la referencia Python (2385 archivos de la ISO, 54 niveles, 352 modelos); `dhview juego.iso NIVEL` carga un nivel directo de la imagen en ~1 s. |
 | Menús y pantallas de carga | Las 78 pantallas de carga se renderizan; no hay lógica de menús. |
-| Audio | Archivos VAG localizados; nada decodificado en el motor. |
+| Audio | La decodificación VAG/VPK es bit a bit igual a ffmpeg; los 50 bancos BNK se parsean y suenan los cinco efectos que usa el port; la música por nivel (temas por capas, pistas TDH/MX) se descifró del ejecutable y suena. Falta: cambio de capa dinámico, voces (SKAT), afinación por tono (sin comprobar a oído). |
 | IA y rivales | Sin empezar. |
 | Modos de juego y flujo | Cuenta atrás, tiempos, resultados, datos de guardado. |
 | Empaquetado (deb, Windows) | Solo el andamiaje de CPack. |
