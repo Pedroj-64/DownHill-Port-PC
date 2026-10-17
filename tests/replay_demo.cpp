@@ -31,7 +31,7 @@ static void applySet(BikeParams& P) {
         if (k == "groundShare") P.groundShare = v; else if (k == "rolling") P.rolling = v; else if (k == "rollConst") P.rollConst = v; else if (k == "dragK") P.dragK = v; else if (k == "dragKAir") P.dragKAir = v;
         else if (k == "grip") P.grip = v; else if (k == "pedalAccel") P.pedalAccel = v; else if (k == "pedalMax") P.pedalMax = v; else if (k == "comLift") P.comLift = v; else if (k == "brakeDecel") P.brakeDecel = v;
         else if (k == "gravityGround") P.gravityGround = v; else if (k == "gravity") P.gravity = v; else if (k == "pedalKick") P.pedalKick = v; else if (k == "pedalKickV") P.pedalKickV = v; else if (k == "sprintMul") P.sprintMul = v; else if (k == "steerAccelGround") P.steerAccelGround = v; else if (k == "steerMaxGround") P.steerMaxGround = v; else if (k == "restitution") P.restitution = v; else if (k == "friction") P.friction = v;
-        else if (k == "wheelFricLong") P.wheelFricLong = v != 0.f; else if (k == "fricMaxK") P.fricMaxK = v; else if (k == "fricGate") P.fricGate = (int)v; else if (k == "fricApps") P.fricApps = (int)v;
+        else if (k == "wheelFricLong") P.wheelFricLong = v != 0.f; else if (k == "fricMaxK") P.fricMaxK = v; else if (k == "fricGate") P.fricGate = (int)v; else if (k == "fricApps") P.fricApps = (int)v; else if (k == "fricE") P.fricE = v;
         else std::fprintf(stderr, "DH_SET: parámetro desconocido %s\n", k.c_str()); }
 }
 

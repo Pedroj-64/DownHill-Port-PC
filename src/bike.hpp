@@ -66,6 +66,7 @@ struct BikeParams {
     // Rozamiento de rueda con tope (FUN_00132FD8 / FUN_00131078; physics-module.md "T5"): impulso opuesto a la velocidad tangencial, |J| = min(|w|·rampa, maxF), maxF = 225·coef·1.0·0.01, coef = col 0 de DAT_0077A3D8 (RST del nivel, +0xCA4).
     // HIPÓTESIS de port: una aplicación por rueda en contacto y tick; punto de aplicación = CM (par nulo, como lo muestra Ghidra). Apagado por defecto (sustituye a grip lateral y groundShare).
     bool wheelFric = false, wheelFricLong = true; float fricCoef[32] = {}; float fricMaxK = 2.25f;   // fricMaxK = 225·1.0·0.01 (solo valor de RAM del doc)
+    float fricE = 1.f;                                     // «e» de FUN_00131078 (ctrl+0x168 si ctrl+0x160 != 0, si no 1.0; valor de ctrl+0x168 NO leído): J = e·s·masa·rampa, con tope maxF
     int fricApps = 0;                                       // aplicaciones por tick (0 = una por rueda en contacto; experimento)
     int fricGate = 1;                                       // 1 = (v̂×lateral)·n > 0 como Ghidra; 2 = siempre; 3 = signo invertido (experimento)
     float rampStart = 0.25f, rampMul = 1.3f;                // gp 0x8218 / 0x821C leídos de RAM (tools/fric_table_check.py)
@@ -162,9 +163,9 @@ private:
             const int nw = P.fricApps > 0 ? P.fricApps : (wheelF ? 1 : 0) + (wheelR ? 1 : 0); const float sc = engine::kTickHz * h, capV = P.fricMaxK * P.fricCoef[surface & 0x1F] / P.mass;
             V3 n = groundN, lat = unit(A.r - n * dot(A.r, n)), lon = unit(fwd - n * dot(fwd, n));
             for (int w = 0; w < nw; w++) {
-                float vl = dot(v, lat), dl = std::fmin(std::fabs(vl) * fricRamp, capV * sc); v = v - lat * (vl < 0 ? -dl : dl);
+                float vl = dot(v, lat), dl = std::fmin(std::fabs(vl) * fricRamp * P.fricE, capV * sc); v = v - lat * (vl < 0 ? -dl : dl);
                 float vf = dot(v, lon); V3 vh = unit(v);
-                if (P.wheelFricLong && (P.fricGate == 2 || dot(cross(vh, lat), n) * (P.fricGate == 3 ? -1.f : 1.f) > 0.f)) { float df = std::fmin(std::fabs(vf) * fricRamp, capV * sc); v = v - lon * (vf < 0 ? -df : df); }
+                if (P.wheelFricLong && (P.fricGate == 2 || dot(cross(vh, lat), n) * (P.fricGate == 3 ? -1.f : 1.f) > 0.f)) { float df = std::fmin(std::fabs(vf) * fricRamp * P.fricE, capV * sc); v = v - lon * (vf < 0 ? -df : df); }
             }
         }   // fuerza de suelo empírica: anula (1-groundShare) de la gravedad tangente (hipótesis)
         if (in.hop && first && gr) { v = v + A.u * P.hop; coyote = 0; }

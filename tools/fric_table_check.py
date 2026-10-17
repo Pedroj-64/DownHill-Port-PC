@@ -6,6 +6,7 @@ Uso: python3 tools/fric_table_check.py [--assert] [--rst unpacked/RST] [--ram ~/
 import argparse, glob, gzip, os, re, struct, subprocess, sys
 
 RST_OFF, TBL_RAM, TBL_LEN = 0xCA4, 0x77A3D8, 32 * 32
+FX_OFF, FX_RAM, FX_LEN = 0x10D4, 0x3B7E00, 32 * 8   # tabla de efectos DAT_003b7e00: 32 registros {u32 ARGB, i16 tipo, u16 banderas}; los niveles de carrera usan clases < 32
 GP = 0x2CD170  # gp - 0x7E28 = 0x2C5348 (physics-module.md); fGpffff8234 = gp - 0x7DCC = 0x2C53A4
 
 
@@ -31,6 +32,8 @@ def main():
         ok = rst[RST_OFF:RST_OFF + TBL_LEN] == ram[TBL_RAM:TBL_RAM + TBL_LEN]
         bad += not ok
         print(f"{'OK  ' if ok else 'FALLA'} RAM == RST[0xCA4] en {lvl}")
+        fx = rst[FX_OFF:FX_OFF + FX_LEN] == ram[FX_RAM:FX_RAM + FX_LEN]; bad += not fx
+        print(f"{'OK  ' if fx else 'FALLA'} tabla de efectos RAM(0x3B7E00) == RST[0x10D4] (32 reg.) en {lvl}")
     g = lambda v, fmt="<f": struct.unpack_from(fmt, ram, GP + v - 0x10000)[0]
     print("gp (RAM, 1.ª carrera): ramp ini 0x8218=%.2f, ramp x 0x821C=%.2f, k 0x8220=%.2f, cap lat x 0x8234=%.2f, 0x8210=%.2f"
           % (g(0x8218), g(0x821C), g(0x8220), g(0x8234), g(0x8210)))
