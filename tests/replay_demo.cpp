@@ -12,9 +12,9 @@
 #include <string>
 static bool rd(const char* p, std::vector<uint8_t>& r) { FILE* f = std::fopen(p, "rb"); if (!f) return false; std::fseek(f, 0, SEEK_END); r.resize(std::ftell(f)); std::rewind(f); bool ok = std::fread(r.data(), 1, r.size(), f) == r.size(); std::fclose(f); return ok; }
 
-constexpr int NF = 32;
-struct Rec { float t; V3 p, v, f, u; float steer, lean, pedal, charge, release, air, surf, trick, sprint, b796, roll, kDrag, vtermP, sprintT, sprintIdx, rflags; V3 gn; };
-static Rec parse(const float* r) { return {r[0], {r[1], r[2], r[3]}, {r[4], r[5], r[6]}, {r[7], r[8], r[9]}, {r[10], r[11], r[12]}, r[13], r[14], r[15], r[16], r[17], r[18], r[19], r[20], r[21], r[22], r[23], r[24], r[25], r[26], r[27], r[28], {r[29], r[30], r[31]}}; }
+constexpr int NF = 47;
+struct Rec { float t; V3 p, v, f, u; float steer, lean, pedal, charge, release, air, surf, trick, sprint, b796, roll, kDrag, vtermP, sprintT, sprintIdx, rflags; V3 gn; V3 e0, x250; float k430, mass; V3 lat; float ramp, w0, w1, coef0; };
+static Rec parse(const float* r) { return {r[0], {r[1], r[2], r[3]}, {r[4], r[5], r[6]}, {r[7], r[8], r[9]}, {r[10], r[11], r[12]}, r[13], r[14], r[15], r[16], r[17], r[18], r[19], r[20], r[21], r[22], r[23], r[24], r[25], r[26], r[27], r[28], {r[29], r[30], r[31]}, {r[32], r[33], r[34]}, {r[35], r[36], r[37]}, r[38], r[39], {r[40], r[41], r[42]}, r[43], r[44], r[45], r[46]}; }
 static float dist(V3 a, V3 b) { V3 d = a - b; return std::sqrt(dot(d, d)); }
 static float pct(std::vector<float> v, float q) { if (v.empty()) return 0; std::sort(v.begin(), v.end()); return v[std::min(v.size() - 1, (size_t)(q * (v.size() - 1) + 0.5f))]; }
 
@@ -70,7 +70,7 @@ int main(int argc, char** argv) {
 
     if (std::getenv("DH_STEP1")) {      // oráculo de UN tick (T6): estado grabado -> un paso del port con las mismas entradas -> dv frente al grabado, por clase de superficie y pedal (solo ticks en suelo en ambos extremos)
         struct Acc { std::vector<float> refA, portA, diffA, refP, portP, predRoll, codeA, codeL, portTA; };
-        std::map<std::pair<int, int>, Acc> M; const float minSp1 = std::getenv("DH_MINSPEED") ? (float)std::atof(std::getenv("DH_MINSPEED")) : 8.f;
+        size_t gateN = 0, gateFwd = 0; std::map<std::pair<int, int>, Acc> M; const float minSp1 = std::getenv("DH_MINSPEED") ? (float)std::atof(std::getenv("DH_MINSPEED")) : 8.f;
         for (size_t i = 0; i + 1 < R.size(); i++) {
             const float dtR = R[i + 1].t - R[i].t; if (dtR < 0.015f || dtR > 0.025f) continue; if (R[i].air > 0.5f || R[i + 1].air > 0.5f) continue;
             const float sp = std::sqrt(dot(R[i].v, R[i].v)); if (sp < minSp1) continue;
@@ -83,6 +83,7 @@ int main(int argc, char** argv) {
             if (std::getenv("DH_STEP1_EVENTS")) { const float r0 = std::sqrt(dot(R[i].v, R[i].v)), rr = std::sqrt(dot(R[i + 1].v, R[i + 1].v)) / r0, rp = b.speed() / r0; if (rr < 0.93f && rp > 0.97f && R[i + 1].gn.y * R[i + 1].gn.y < 0.36f * dot(R[i + 1].gn, R[i + 1].gn)) { const V3 nr = unit(R[i + 1].gn); auto H = g.sweepHits(R[i].p, R[i].p - nr * 4.f, b.P.radius); std::printf("W t=%.2f pared del juego n=(%.2f %.2f %.2f) v=%.0f ref=%.2f: barrido de %.1f u hacia la pared -> %zu golpes", R[i].t, nr.x, nr.y, nr.z, r0, rr, 4.f, H.size()); if (!H.empty()) std::printf(", 1º n=(%.2f %.2f %.2f) frac=%.2f clase=%d", H[0].normal.x, H[0].normal.y, H[0].normal.z, H[0].frac, (int)(H[0].surface & 0x1F)); std::printf("\n"); }
                 if (rr < 0.93f) std::printf("E t=%.2f v=%.0f cls=%d ref=%.2f port=%.2f hits=%u overlaps=%u normal_ref=(%.2f %.2f %.2f) normal_port=(%.2f %.2f %.2f)\n", R[i].t, r0, (int)R[i].surf, rr, rp, b.hits, b.overlaps, unit(R[i + 1].gn).x, unit(R[i + 1].gn).y, unit(R[i + 1].gn).z, b.groundN.x, b.groundN.y, b.groundN.z); }
             const V3 u0 = unit(R[i].v), dref = R[i + 1].v - R[i].v, dport = b.rb.vel - R[i].v; const float ra = dot(dref, u0), pa = dot(dport, u0);
+            if (std::getenv("DH_STEP1_TRACE") && in.pedal > 0.5f && R[i + 1].k430 < 10.f && (int)in.surf == 0) { static int cnt = 0; if (cnt++ < 8) std::printf("T v0=(%.2f %.2f %.2f) dref/dt=(%.2f %.2f %.2f) dport/dt=(%.2f %.2f %.2f) fwd=(%.2f %.2f %.2f) n=(%.2f %.2f %.2f) E0/m=(%.2f %.2f %.2f)\n", R[i].v.x, R[i].v.y, R[i].v.z, dref.x / DT, dref.y / DT, dref.z / DT, dport.x / DT, dport.y / DT, dport.z / DT, R[i].f.x, R[i].f.y, R[i].f.z, R[i].gn.x, R[i].gn.y, R[i].gn.z, R[i + 1].e0.x / R[i + 1].mass, R[i + 1].e0.y / R[i + 1].mass, R[i + 1].e0.z / R[i + 1].mass); }
             if (dot(dref, dref) < 1e-10f) continue;          // muestra repetida de la telemetría (sin cambio): no es un tick de física
             // predicción analítica con las fuerzas del motor, proyectada al plano tangente del suelo (el contacto solo quita la componente normal): peso 79.53, arrastre k|v|v (k = 0.0063), rodadura 0.025·coef2·v, pedal 25·pedal a lo largo del avance
             const V3 n = (std::getenv("DH_STEP1_UP") || dot(R[i].gn, R[i].gn) < 0.25f) ? unit(R[i].u) : unit(R[i].gn), vv = R[i].v, fT = unit(R[i].f - n * dot(R[i].f, n)), ut = unit(vv - n * dot(vv, n)), lat = unit(cross(n, ut));
@@ -90,11 +91,15 @@ int main(int argc, char** argv) {
             const float kUse = (std::getenv("DH_STEP1_K") && in.kDrag > 0.f) ? in.kDrag : 0.0063f; const float pedMul = (std::getenv("DH_STEP1_K") && in.sprint > 0.5f) ? 1.5f : 1.f;   // DH_STEP1_K=1: k exacta del juego (ctrl+0x490) y pedal x1.5 con esfuerzo extra
             V3 aCode = tan(V3{0, -79.53f, 0}) - tan(vv) * (kUse * sp) - tan(vv) * (0.025f * in.roll) + fT * (25.f * in.pedal * pedMul);
             V3 dT = tan(dref) * (1.f / DT) - aCode; V3 dTp = tan(dport) * (1.f / DT);
-            V3 rp = dref - u0 * ra, pp = dport - u0 * pa; Acc& a = M[{(int)R[i].surf, (in.pedal > 0.5f || in.sprint > 0.5f) ? 1 : 0}];
+            V3 rp = dref - u0 * ra, pp = dport - u0 * pa; const float vn = std::fabs(dot(vv, n)); const int band = std::getenv("DH_STEP1_MODE") ? (R[i + 1].k430 >= 10.f ? 2 : 1) : std::getenv("DH_STEP1_BANDS") ? (vn < 1.f ? 1 : vn < 5.f ? 2 : vn < 20.f ? 3 : 4) : 0;   // T7: banda de velocidad normal |v·n| (1:<1, 2:<5, 3:<20, 4:>=20); la clase sale como surf+100*banda
+            gateN++; if (dot(ut, fT) > 0.f) gateFwd++;   // T7: puerta B (FUN_00132FD8) = -v̂·(n×fila0) con n×fila0 ~ dirección del pedal fT; abierta solo si se rueda hacia atrás
+            Acc& a = M[{(int)R[i].surf + 100 * band, (in.pedal > 0.5f || in.sprint > 0.5f) ? 1 : 0}];
             a.refA.push_back(ra / DT); a.portA.push_back(pa / DT); a.diffA.push_back((pa - ra) / DT); a.refP.push_back(std::sqrt(dot(rp, rp)) / DT); a.portP.push_back(std::sqrt(dot(pp, pp)) / DT); a.predRoll.push_back(-0.025f * in.roll * sp);
             if (std::getenv("DH_STEP1_DUMP") && in.pedal > 0.f) std::printf("D %d %.3f %.3f %.0f %.3f %.3f %.3f %.0f %.0f %.3f %u\n", (int)in.surf, sp, in.pedal, in.sprint, dot(dT, ut), n.y, dot(fT, ut), in.roll, in.trick, in.steer, (unsigned)in.rflags);
+            if (std::getenv("DH_STEP1_ROWS")) { const V3 sd = unit(cross(n, fT)); std::printf("R %d %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.0f %.2f\n", (int)in.surf, sp, dot(vv, n), dot(vv, sd), dot(dT, ut), dot(dT, lat), in.pedal, in.sprint, in.roll, in.sprintT); }   // T7: una fila por tick de suelo: clase, |v|, v·n, deslizamiento lateral v·(n×fT), residuo along/lateral, pedal, sprint, roll, sprintT
             a.codeA.push_back(dot(dT, ut)); a.codeL.push_back(dot(dT, lat)); a.portTA.push_back(dot(dTp - tan(dref) * (1.f / DT), ut));
         }
+        std::printf("puerta B cerrada (rodando hacia delante): %zu/%zu ticks (%.2f %%)\n", gateFwd, gateN, gateN ? 100.0 * gateFwd / gateN : 0.0);
         std::printf("clase pedal     n | a_along ref  port  dif(port-ref) | a_perp ref  port | rodadura código || residuo (ref - fuerzas de código) tangente: along lateral | port-ref tangente along\n");
         for (auto& kv : M) { Acc& a = kv.second; if (a.refA.size() < 8) continue; std::printf("%5d %5d %5zu | %10.2f %6.2f %8.2f | %10.2f %6.2f | %8.2f || %8.2f %8.2f | %8.2f\n", kv.first.first, kv.first.second, a.refA.size(), pct(a.refA, .5f), pct(a.portA, .5f), pct(a.diffA, .5f), pct(a.refP, .5f), pct(a.portP, .5f), pct(a.predRoll, .5f), pct(a.codeA, .5f), pct(a.codeL, .5f), pct(a.portTA, .5f)); }
         return 0;
