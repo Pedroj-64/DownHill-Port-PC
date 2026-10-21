@@ -73,6 +73,8 @@ add_executable(replay_demo tests/replay_demo.cpp)
 add_executable(wheelfric_check tests/wheelfric_check.cpp)
 add_executable(wheelfric_test tests/wheelfric_test.cpp)
 add_test(NAME wheelfric_test COMMAND wheelfric_test)
+add_executable(suspension_test tests/suspension_test.cpp)
+add_test(NAME suspension_test COMMAND suspension_test)
 
 add_executable(integrator_test tests/integrator_test.cpp)
 add_test(NAME integrator_test COMMAND integrator_test)
