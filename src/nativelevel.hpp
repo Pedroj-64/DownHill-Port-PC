@@ -64,6 +64,8 @@ public:
         std::vector<uint8_t> raw; if (!img_.read(it->second, raw)) return false; if (!ie::unpack(raw, out)) out = std::move(raw); return true;
     }
     Reader reader() const { return [this](const std::string& rel, std::vector<uint8_t>& o) { return read(rel, o); }; }
+    // Niveles de carrera de la imagen (LVL/<N>.NGP sin los podios POD*, que no tienen parrilla), ordenados.
+    std::vector<std::string> levels() const { std::vector<std::string> v; for (auto& [k, e] : idx_) { if (k.rfind("LVL/", 0) != 0 || k.size() < 9 || k.substr(k.size() - 4) != ".NGP") continue; std::string n = k.substr(4, k.size() - 8); if (n.rfind("POD", 0) != 0 && n.find('/') == std::string::npos) v.push_back(n); } return v; }
     bool has(const std::string& rel) const { std::string k = rel; for (char& ch : k) ch = (char)std::toupper((unsigned char)ch); return idx_.count(k) != 0; }
 private:
     iso9660::Image img_; std::map<std::string, iso9660::Entry> idx_;

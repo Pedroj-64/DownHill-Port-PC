@@ -81,6 +81,16 @@ Format notes live in [`docs/en/formats.md`](docs/en/formats.md) and [`docs/forma
 
 You need **your own legally obtained disc image** of the PAL release (`SLES_522.02`). Nothing from the game is ever included in this repository or uploaded anywhere.
 
+Quick path (native, no Python and no extraction; needs only CMake, a C++20 compiler and SDL3/OpenGL):
+
+```sh
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build
+./build/dhview "Downhill Domination.iso"          # level picker (arrows + Enter) -> race -> results (Enter = retry, M = menu, Esc = quit)
+./build/dhview "Downhill Domination.iso" MOAB     # straight into a level
+```
+
+Alternative with the Python tools:
+
 ```sh
 python3 tools/dh.py doctor                                   # checks dependencies and state
 python3 tools/dh.py setup "Downhill Domination.iso"          # extract, unpack, export ALP2 + ALPINEMX, build the viewer
@@ -90,7 +100,7 @@ python3 tools/dh.py setup "Downhill Domination.iso" --all    # optional: all 54 
 
 `setup` needs Python 3 with Pillow and NumPy, 7-Zip (`7z`, `7zz` or `7za`) or `bsdtar`, CMake, a C++20 compiler and the SDL3 and OpenGL development files. It writes only to `iso_extract/`, `unpacked/`, `out/` and `build/`, all ignored by git, and can be re-run safely: finished steps are skipped. Controls: `W` accelerate, `S` brake, `A`/`D` steer, `Q`/`E` lean, `Space` jump, `Enter` respawn at the last good point, `T` back to the start, `Esc` quit.
 
-This is a physics prototype: no rider, menus, audio or opponents yet, and several physics parameters are hypotheses (see [Progress](#progress)). Tested on Linux; Windows should work the same way but has not been tried yet.
+This is a physics prototype: a textured rider (approximate pose, 50 of 51 levels), a basic level picker and music/effects, but no full menus or opponents yet, and several physics parameters are hypotheses (see [Progress](#progress)). Tested on Linux; Windows should work the same way but has not been tried yet.
 
 ## Building
 

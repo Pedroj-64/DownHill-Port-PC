@@ -34,9 +34,9 @@ int main() {
       auto c = hud::fitCourse(pts, 64); CHECK(c.size() >= 4 && c.size() / 2 <= 65 + 1); for (float f : c) CHECK(f >= -1e-4f && f <= 1.0001f);
       CHECK(c[1] < c[c.size() - 1]);                                                                                        // la salida arriba, la meta abajo
       CHECK(hud::fitCourse({}).empty() && hud::fitCourse({1, 2, 3}).empty() && hud::fitCourse({5, 0, 5, 5, 9, 5}).empty());  // degenerados: ningún trazado
-      float lastY = -1; for (float fr : {-1.f, 0.f, 0.3f, 0.7f, 1.f, 2.f}) for (int vw : {640, 1920}) { int vh = vw == 640 ? 480 : 1080; std::vector<gfx::Quad> q; hud::Rect lb; hud::progressPanel(vw, vh, c, fr, q, lb);
-        CHECK(q.size() > 10); for (auto& r : q) CHECK(r.x >= 0 && r.y >= 0 && r.x + r.w <= vw * 0.2f + 1 && r.y + r.h <= vh + 1); CHECK(lb.y + lb.h <= vh + 1 && lb.x >= 0);
-        if (vw == 640 && fr >= 0.f && fr <= 1.f) { float py = q.back().y; CHECK(py >= lastY - 1e-3f); lastY = py; } }   // el punto del jugador (último rectángulo) baja con el avance
-      std::vector<gfx::Quad> q; hud::Rect lb; hud::progressPanel(640, 480, {}, 0.5f, q, lb); CHECK(q.size() > 10); }          // sin recorrido: línea recta
+      float lastY = -1; for (float fr : {-1.f, 0.f, 0.3f, 0.7f, 1.f, 2.f}) for (int vw : {640, 1920}) { int vh = vw == 640 ? 480 : 1080; std::vector<gfx::Quad> q; std::vector<gfx::TexQuad> lq; hud::progressPanel(vw, vh, c, fr, 3, 10, q, lq);
+        CHECK(q.size() > 10 && lq.size() == 3); for (auto& r : q) CHECK(r.x >= 0 && r.y >= 0 && r.x + r.w <= vw * 0.2f + 1 && r.y + r.h <= vh + 1);   // «3» sobre «10»: 1 + 2 dígitos LCD
+        if (vw == 640 && fr >= 0.f && fr <= 1.f) { float py = q[q.size() - 2].y; CHECK(py >= lastY - 1e-3f); lastY = py; } }   // el punto del jugador (penúltimo rectángulo; el último es la raya de la fracción) baja con el avance
+      std::vector<gfx::Quad> q; std::vector<gfx::TexQuad> lq; hud::progressPanel(640, 480, {}, 0.5f, 1, 1, q, lq); CHECK(q.size() > 10); }          // sin recorrido: línea recta
     std::puts("hud_test OK"); return 0;
 }

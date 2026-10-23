@@ -81,6 +81,16 @@ Las notas de formatos están en [`docs/es/formats.md`](docs/es/formats.md) y [`d
 
 Necesitas **tu propia imagen de disco obtenida legalmente** de la versión PAL (`SLES_522.02`). Nada del juego se incluye en este repositorio ni se sube a ningún sitio.
 
+Camino rápido (nativo, sin Python ni extraer nada; solo CMake, un compilador C++20 y SDL3/OpenGL):
+
+```sh
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build
+./build/dhview "Downhill Domination.iso"          # selector de nivel (flechas + Enter) -> carrera -> resultados (Enter = repetir, M = menú, Esc = salir)
+./build/dhview "Downhill Domination.iso" MOAB     # directo a un nivel
+```
+
+Alternativa con las herramientas de Python:
+
 ```sh
 python3 tools/dh.py doctor                                   # comprueba dependencias y estado
 python3 tools/dh.py setup "Downhill Domination.iso"          # extrae, descomprime, exporta ALP2 + ALPINEMX y compila el visor
@@ -90,7 +100,7 @@ python3 tools/dh.py setup "Downhill Domination.iso" --all    # opcional: los 54 
 
 `setup` necesita Python 3 con Pillow y NumPy, 7-Zip (`7z`, `7zz` o `7za`) o `bsdtar`, CMake, un compilador C++20 y los archivos de desarrollo de SDL3 y OpenGL. Escribe solo en `iso_extract/`, `unpacked/`, `out/` y `build/`, todas ignoradas por git, y se puede repetir sin riesgo: los pasos terminados se saltan. Controles: `W` acelerar, `S` frenar, `A`/`D` girar, `Q`/`E` inclinar, `Espacio` saltar, `Enter` reaparecer en el último punto bueno, `T` volver a la salida, `Esc` salir.
 
-Es un prototipo de física: todavía no hay piloto, menús, audio ni rivales, y varios parámetros de la física son hipótesis (ver [Progreso](#progreso)). Probado en Linux; en Windows debería funcionar igual, pero aún no se ha probado.
+Es un prototipo de física: hay piloto con texturas (pose aproximada, 50 de 51 niveles), selector de nivel básico, música y efectos, pero aún no hay menús completos ni rivales, y varios parámetros de la física son hipótesis (ver [Progreso](#progreso)). Probado en Linux; en Windows debería funcionar igual, pero aún no se ha probado.
 
 ## Compilación
 

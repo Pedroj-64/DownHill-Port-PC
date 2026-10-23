@@ -3,6 +3,7 @@
 // dhview: visor de .pts (puntos) y .msh (triángulos). Uso: dhview archivo   |  WASD + ratón, Shift = rápido, Esc = salir
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_opengl.h>
+#include <unistd.h>   // execv (POSIX; en Windows habría que usar _execv)
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -20,6 +21,9 @@
 #include <map>
 #include <unordered_map>
 #include "race.hpp"
+#include "menu.hpp"
+#include "menuart.hpp"
+#include "tex.hpp"
 #include "controls.hpp"
 #include "text.hpp"
 #include "hud.hpp"
@@ -50,16 +54,40 @@ static const char* surfMaterialHyp(uint16_t surface) {
 
 int main(int argc, char** argv) {
     if (argc < 2) { std::fprintf(stderr, "uso: dhview archivo.pts|.msh|.mdl|NIVEL.NGP  (mdl/NGP: F = volar/caminar, R = bici, Espacio = saltar; .NGP = carga nativa sin herramientas Python)\n"); return 1; }
+    const std::string exePath = argv[0], isoArg = argv[1];
+    bool menuMode = false; std::vector<std::string> menuNames; size_t menuSel = 0, menuTop = 0;
+    struct MenuLoc { const char* art; int artIdx; const char* file[3]; const char* label[3]; };   // circuito -> (FR, MX, TD): archivos de LVL/ y nombre del atlas (HIPÓTESIS de la correspondencia, docs/formats/menu-assets.md)
+    static const MenuLoc kLocs[] = {
+        {"ITALIAN ALPS", 222, {"ALPINE", "ALPINEMX", "ALPINET"}, {"ITALIAN ALPS FR", "ITALIAN ALPS MX", "ITALIAN ALPS TD"}},
+        {"UTAH", 225, {"MOAB", "MOABMX", "MOABTDH"}, {"UTAH FR", "UTAH MX", "UTAH TD"}},
+        {"HAWAII", 227, {"JUNGLE", "JUNGLEMX", "JUNGLETD"}, {"HAWAII FR", "HAWAII MX", "HAWAII TD"}},
+        {"PERU", 229, {"PERU", "PERUMX", "PERUTDH"}, {"PERU FR", "PERU MX", "PERU TD"}},
+        {"RUSSIA", 231, {"GLACIER", "GLACIERX", "GLACIERT"}, {"RUSSIA FR", "RUSSIA MX", "RUSSIA TD"}},
+        {"SCOTLAND", 234, {"AUBERST", "AUBERMX", "AUBERSTD"}, {"SCOTLAND FR", "SCOTLAND MX", "SCOTLAND TD"}},
+        {"JAPAN", 236, {"FUJI", nullptr, nullptr}, {"JAPAN FR", nullptr, nullptr}},
+        {"USA", 238, {"CITY", "CITYMX", "CITYTDH"}, {"USA FR", "USA MX", "USA TD"}},
+        {"BRITISH COLUMBIA", 240, {"BC", "BCTDX", nullptr}, {"BRITISH COLUMBIA FR", "BRITISH COLUMBIA MX", nullptr}}};
+    int menuLoc = 0, menuMd = 0; menuart::Art menuArt; std::vector<int> menuTex;   // circuito y modo elegidos; arte cargado de SHELL/UI   // selector sobre la escena real SHELL/UI (plan M2)   // para volver al selector (plan M2): se relanza el propio binario solo con la ISO
     std::vector<float> v, col;
     std::map<std::string, std::vector<uint8_t>> vfs;   // archivos virtuales de la carga nativa (<nivel>.NGP -> .mdl, .sky.mdl, .dome.mdl, .col, .gates, .start.pts, .chain0.pts): readFile los sirve antes que el disco
     nativelevel::Reader assetRd;   // lector de la raíz del juego (imagen ISO o carpeta extraída) para música y otros recursos
     nativelevel::IsoSource isoSrc;   // imagen ISO del jugador: dhview "juego.iso" NIVEL  (p. ej. ALP2): lee, descomprime los contenedores IE y construye el nivel y la bici sin carpetas extraídas
+    auto menuHas = [&](int l, int m) { return kLocs[l].file[m] && isoSrc.has(std::string("LVL/") + kLocs[l].file[m] + ".NGP"); };
     { const std::string a1 = argv[1]; if (a1.size() > 4 && (a1.ends_with(".iso") || a1.ends_with(".ISO"))) {
-        std::string lvl = argc > 2 ? argv[2] : "ALP2"; for (char& ch : lvl) ch = (char)std::toupper((unsigned char)ch);
+        std::string lvl = argc > 2 ? argv[2] : ""; for (char& ch : lvl) ch = (char)std::toupper((unsigned char)ch);
         if (!isoSrc.open(a1)) { std::fprintf(stderr, "no se puede abrir la imagen ISO9660 %s\n", a1.c_str()); return 1; }
-        nativelevel::Level nl; std::string err; if (!nativelevel::loadFrom(isoSrc.reader(), "LVL", lvl, lvl, nl, err)) { std::fprintf(stderr, "carga nativa de %s desde la ISO: %s\n", lvl.c_str(), err.c_str()); return 1; }
+        if (lvl.empty()) {   // sin nivel: selector (plan M2). Headless (DH_MENU_PICK) elige sin ventana; si no, el selector se dibuja sobre la escena del menú original SHELL/UI
+            menuNames = isoSrc.levels(); if (menuNames.empty()) return 1;
+            if (std::getenv("DH_MENU_PICK")) { lvl = menu::pick(menuNames, "DOWNHILL DOMINATION"); if (lvl.empty()) return 0; }
+            else { menuMode = true; lvl = "SHELL/UI"; } }
+        std::string lvlDirName = "LVL"; if (const size_t sl = lvl.find('/'); sl != std::string::npos) { lvlDirName = lvl.substr(0, sl); lvl = lvl.substr(sl + 1); }   // «SHELL/UI»: escenas del menú (solo visor)
+        nativelevel::Level nl; std::string err; if (!nativelevel::loadFrom(isoSrc.reader(), lvlDirName, lvl, lvl, nl, err)) { std::fprintf(stderr, "carga nativa de %s desde la ISO: %s\n", lvl.c_str(), err.c_str()); return 1; }
         assetRd = isoSrc.reader();
+        if (!menuMode && !std::getenv("DH_SHOT") && !std::getenv("DH_VIEW")) setenv("DH_PLAY", "1", 0);   // con ISO se juega por defecto (plan M2); DH_VIEW=1 = visor libre; las capturas DH_SHOT no cambian
         vfs = std::move(nl.files); static std::string mdlName0; mdlName0 = lvl + ".mdl"; argv[1] = mdlName0.data();
+        if (std::getenv("DH_PLAY") && !std::getenv("DH_NORIDER") && !std::getenv("DH_RIDER") && !std::getenv("DH_RIDER_NGP")) {   // piloto nativo por defecto al jugar (pose APROXIMADA, hipótesis: docs/formats/rider-live.md); DH_NORIDER=1 lo quita
+            bool okr = true; for (const char* ex : {"NGP", "PTR", "TEX", "RTX"}) { std::vector<uint8_t> rb; if (isoSrc.read("LVL/" + lvl + "." + ex, rb)) vfs[std::string("native:level.") + ex] = std::move(rb); else okr = false; }
+            if (okr) { setenv("DH_RIDER_NGP", "native:level.NGP", 1); setenv("DH_RIDER_POSE", "approx", 0); } }
         auto setEnv = [](const char* k, const char* v) {
 #ifdef _WIN32
             _putenv_s(k, v);
@@ -195,16 +223,27 @@ int main(int argc, char** argv) {
         std::vector<uint8_t> nraw; rider_mesh::Mesh native; const size_t none = std::numeric_limits<size_t>::max();
         size_t off = co ? std::strtoull(co, nullptr, 0) : none, end = none, skRoot = none;
         if (readFile(np, nraw)) {
-            if (!co) { uint32_t kind = 0; if (const char* rk = std::getenv("DH_RIDER_KIND")) kind = static_cast<uint32_t>(std::strtoul(rk, nullptr, 0)); rider_mesh::findChain(nraw, off, kind, &end, &skRoot); }
+            if (!co) {   // tipo explícito (DH_RIDER_KIND) o, por defecto, 4090 y luego los de 4000-4495 de 5 en 5 hasta hallar uno con esqueleto: el tipo del piloto cambia por nivel (docs/formats/rider.md)
+                std::vector<uint32_t> kinds; if (const char* rk = std::getenv("DH_RIDER_KIND")) kinds.push_back(static_cast<uint32_t>(std::strtoul(rk, nullptr, 0))); else { kinds.push_back(4090); for (uint32_t k = 4000; k < 4500; k += 5) kinds.push_back(k); }
+                for (uint32_t kind : kinds) { size_t o2 = none, e2 = none, r2 = none; if (rider_mesh::findChain(nraw, o2, kind, &e2, &r2) && r2 != none) { off = o2; end = e2; skRoot = r2; break; } } }
             if (const char* rt = std::getenv("DH_RIDER_ROOT")) skRoot = std::strtoul(rt, nullptr, 0);
-            const bool ok = off != none && (end != none ? rider_mesh::loadRange(nraw, off, end, native) : rider_mesh::load(nraw, off, native));
+            // texturas: se resuelven con .PTR/.TEX/.RTX junto al NGP (mismo resolvedor que tests/rider_mesh_check.cpp, validado en los 13 rangos de ALP2) y se decodifican con tex.hpp
+            rider_mesh::TextureResolver resolver; tex::Level TL; bool haveTex = false;
+            { const std::string np0 = np; const std::string base = np0.size() > 4 ? np0.substr(0, np0.size() - 4) : np0; std::vector<uint8_t> pr, tx, rx;
+              if (readFile(base + ".PTR", pr) && readFile(base + ".TEX", tx) && readFile(base + ".RTX", rx) && tex::load(nraw, pr, tx, rx, TL)) {
+                  for (const tex::Material& m : TL.mats) { uint32_t W, H; std::vector<uint8_t> px; resolver.materials.push_back({m.tex0Off, (uint16_t)m.tid, m.cbp, tex::makeTexture(TL, m, W, H, px)}); }
+                  haveTex = true; } }
+            const rider_mesh::TextureResolver* tr = haveTex ? &resolver : nullptr;
+            const bool ok = off != none && (end != none ? rider_mesh::loadRange(nraw, off, end, native, tr) : rider_mesh::load(nraw, off, native, tr));
             if (ok) {
-                riderVerts = native.vertices; riderMesh = gr.createMesh(riderVerts, native.indices, {}, true);   // sin texturas: la decodificación de texturas es del hito 5 (docs/formats/rider.md)
+                std::vector<gfx::TextureId> rtids;   // índice compacto = orden de primera aparición de (id, CBP)
+                for (const auto& key : resolver.firstKeys) { gfx::TextureId id = -1; for (const tex::Material& m : TL.mats) if (m.tid == key.first && m.cbp == key.second) { uint32_t W, H; std::vector<uint8_t> px; if (tex::makeTexture(TL, m, W, H, px)) id = gr.createTexture({(int)W, (int)H, px}); break; } rtids.push_back(id); }
+                riderVerts = native.vertices; riderMesh = gr.createMesh(riderVerts, native.indices, rtids, true);
                 if (skRoot != none && riderSk.load(nraw, skRoot) && native.boneIds.size() == 3 * (riderVerts.size() / 10)) {   // piel y esqueleto nativos
                     const size_t nv = riderVerts.size() / 10; riderSkin.resize(nv); riderBind.resize(3 * nv);
                     for (size_t i = 0; i < nv; i++) { for (int k = 0; k < 3; k++) { riderSkin[i].bone[k] = native.boneIds[3*i+k]; riderSkin[i].w[k] = native.weights[3*i+k]; riderBind[3*i+k] = riderVerts[10*i+k]; } }
                 }
-                std::fprintf(stderr, "rider_mesh: cadena 0x%zx..0x%zx, %u posiciones, %zu vértices, %u paquetes, esqueleto %s (sin texturas)\n", off, end, native.positionCount, riderVerts.size() / 10, native.packetCount, riderSk.j.empty() ? "no" : "sí");
+                std::fprintf(stderr, "rider_mesh: cadena 0x%zx..0x%zx, %u posiciones, %zu vértices, %u paquetes, esqueleto %s, %zu texturas\n", off, end, native.positionCount, riderVerts.size() / 10, native.packetCount, riderSk.j.empty() ? "no" : "sí", resolver.firstKeys.size());
             } else std::fprintf(stderr, "aviso: DH_RIDER_NGP/KIND/CHAIN no válidos; se ignora el piloto nativo\n");
         } else std::fprintf(stderr, "aviso: no se pudo leer DH_RIDER_NGP\n");
     }
@@ -386,19 +425,31 @@ int main(int argc, char** argv) {
     }
     int frame = 0;
     Uint64 last = SDL_GetTicks();
+    auto backToMenu = [&](const char* level = nullptr) {   // resultados -> selector: cierra audio y SDL como al salir y relanza dhview "<iso>" (sin nivel); false si no se partió de una ISO o falla el exec
+        if (!isoArg.ends_with(".iso") && !isoArg.ends_with(".ISO")) return false;
+        unsetenv("DH_FLOW_BACK"); unsetenv("DH_FLOW_FINISH");
+        for (const char* v : {"DH_BIKE", "DH_PTS", "DH_RIDER_NGP", "DH_RIDER_KIND", "DH_RIDER_POSE"}) unsetenv(v);   // las fija el propio dhview al cargar (ISO): si se heredan, el nivel siguiente no ensambla bici ni piloto (cubo rojo) y usa la línea PTS del anterior   // las banderas de prueba solo valen para esta ejecución
+        music.stop(); mixer.close(); SDL_GL_DestroyContext(gl); SDL_DestroyWindow(w); SDL_Quit();
+        char* args[] = {const_cast<char*>(exePath.c_str()), const_cast<char*>(isoArg.c_str()), const_cast<char*>(level), nullptr}; execv(exePath.c_str(), args); return false;   // level == nullptr corta la lista tras la ISO
+    };
     for (bool run = true; run;) {
         for (SDL_Event e; SDL_PollEvent(&e);) {
             if (e.type == SDL_EVENT_QUIT || (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE)) run = false;
             if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_R && mdl) { static bool fromPlay = false; if (!ride) { fromPlay = play; ride = true; play = false; startRide(); } else { ride = false; if (fromPlay) startPlay(); } }   // R: bici automática y de vuelta al modo jugable (antes la segunda R dejaba la cámara libre sin bici)   // R: modo bici (demo cinemática)
             if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_P && mdl) { play = !play; if (play) startPlay(); }   // P: modo jugable
-            if (play && e.type == SDL_EVENT_KEY_DOWN) { if (e.key.key == SDLK_SPACE) hopPressed = true; if (e.key.key == SDLK_R && race.state == RaceState::Riding) { prun.respawn(); std::fprintf(stderr, "R: de vuelta al último punto bueno\n"); } if (e.key.key == SDLK_T) { startPlay(); std::fprintf(stderr, "T: salida (%.0f %.0f %.0f)\n", prun.bike.pos.x, prun.bike.pos.y, prun.bike.pos.z); } if (e.key.key == SDLK_RETURN) { prun.respawn(); std::fprintf(stderr, "Enter: reaparece en (%.0f %.0f %.0f), reapariciones %d\n", prun.bike.pos.x, prun.bike.pos.y, prun.bike.pos.z, (int)prun.respawns); } }
+            if (play && e.type == SDL_EVENT_KEY_DOWN) { if (e.key.key == SDLK_SPACE) hopPressed = true; if (e.key.key == SDLK_R && race.state == RaceState::Riding) { prun.respawn(); std::fprintf(stderr, "R: de vuelta al último punto bueno\n"); } if (e.key.key == SDLK_T) { startPlay(); std::fprintf(stderr, "T: salida (%.0f %.0f %.0f)\n", prun.bike.pos.x, prun.bike.pos.y, prun.bike.pos.z); } if (e.key.key == SDLK_M && race.state == RaceState::Results) backToMenu(); if (e.key.key == SDLK_RETURN && race.state == RaceState::Results) { startPlay(); std::fprintf(stderr, "Enter: repetir la carrera\n"); } else if (e.key.key == SDLK_RETURN) { prun.respawn(); std::fprintf(stderr, "Enter: reaparece en (%.0f %.0f %.0f), reapariciones %d\n", prun.bike.pos.x, prun.bike.pos.y, prun.bike.pos.z, (int)prun.respawns); } }
             if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_F && mdl) { walk = !walk; vy = 0; ride = false; play = false; }   // F: volar <-> caminar con gravedad
-            if (e.type == SDL_EVENT_MOUSE_MOTION) { yaw += e.motion.xrel * 0.003f; pitch -= e.motion.yrel * 0.003f; }
+            if (menuMode && e.type == SDL_EVENT_KEY_DOWN) { const SDL_Keycode kc = e.key.key; const int NL = (int)(sizeof kLocs / sizeof kLocs[0]);
+                if (kc == SDLK_RIGHT) { menuLoc = (menuLoc + 1) % NL; menuMd = 0; } else if (kc == SDLK_LEFT) { menuLoc = (menuLoc + NL - 1) % NL; menuMd = 0; }
+                else if (kc == SDLK_DOWN || kc == SDLK_UP) { const int d = kc == SDLK_DOWN ? 1 : 2; for (int i = 1; i <= 3; i++) { const int m = (menuMd + d * i) % 3; if (menuHas(menuLoc, m)) { menuMd = m; break; } } }
+                else if ((kc == SDLK_RETURN || kc == SDLK_KP_ENTER) && menuHas(menuLoc, menuMd)) backToMenu(kLocs[menuLoc].file[menuMd]); }   // relanza dhview "<iso>" NIVEL: con ISO + nivel se juega por defecto
+            if (!menuMode && e.type == SDL_EVENT_MOUSE_MOTION) { yaw += e.motion.xrel * 0.003f; pitch -= e.motion.yrel * 0.003f; }
         }
         pitch = std::fmax(-1.55f, std::fmin(1.55f, pitch));
         Uint64 now = SDL_GetTicks(); float dt = (now - last) / 1000.f; last = now;
         static const float fixedDt = std::getenv("DH_DT") ? (float)std::atof(std::getenv("DH_DT")) : 0.f; if (fixedDt > 0) dt = fixedDt;   // pruebas deterministas
         const bool* k = SDL_GetKeyboardState(nullptr);
+        if (menuMode) { static const bool none[SDL_SCANCODE_COUNT] = {}; k = none; yaw += 0.02f * std::fmin(dt, 0.05f); }   // menú: sin vuelo libre; la cámara gira despacio sobre la escena
         float sp = (mdl ? (k[SDL_SCANCODE_LSHIFT] ? 4.f : 1.f) * scale : (k[SDL_SCANCODE_LSHIFT] ? 4000.f : 800.f)) * dt;
         float fx = std::sin(yaw) * std::cos(pitch), fy = std::sin(pitch), fz = -std::cos(yaw) * std::cos(pitch);
         float rx = std::cos(yaw), rz = std::sin(yaw);
@@ -444,7 +495,12 @@ int main(int argc, char** argv) {
                     b0.pos = {replay[6*i], replay[6*i+1], replay[6*i+2]}; b0.fwd = {replay[6*i+3], replay[6*i+4], replay[6*i+5]}; b0.grounded = true;
                     V3 dv{replay[6*j] - replay[6*i], replay[6*j+1] - replay[6*i+1], replay[6*j+2] - replay[6*i+2]}; if (j < i) dv = dv * -1.f; b0.rb.vel = dv * 10.f;
                     camHead = std::atan2(dv.x, -dv.z); camPos = b0.pos + V3{-std::sin(camHead) * 11.f, 4.5f, std::cos(camHead) * 11.f};
-                } else { int e2 = race.update(gcol, in, 1.f / 60.f); tickCount++; if (e2 && !ev) ev = e2; }
+                } else { static RaceState prevSt = RaceState::Loading; int e2 = race.update(gcol, in, 1.f / 60.f); tickCount++; if (e2 && !ev) ev = e2;
+                    // pruebas del flujo (tools/flow_check.sh): DH_FLOW_FINISH=1 fuerza la meta tras 300 ticks; DH_FLOW_REPEAT=1 pulsa «repetir» al llegar a resultados (una vez)
+                    static bool flowRepeated = false; if (std::getenv("DH_FLOW_FINISH") && race.state == RaceState::Riding && tickCount == 300) { prun.gs.finished = true; prun.gs.finishTime = (float)race.raceTime; }
+                    if (maxTicks > 0 && race.state != prevSt) { std::fprintf(stderr, "estado: %s -> %s tick=%ld\n", raceStateName(prevSt), raceStateName(race.state), tickCount); prevSt = race.state; }   // transiciones de la carrera (oráculo tools/flow_check.sh)
+                    if (std::getenv("DH_FLOW_BACK") && race.state == RaceState::Results) backToMenu();
+                    if (std::getenv("DH_FLOW_REPEAT") && !flowRepeated && race.state == RaceState::Results) { flowRepeated = true; startPlay(); } }
             }
             { static const char* lp = std::getenv("DH_INPUT_LOG"); if (lp && !g_inLogSaved && race.state >= RaceState::Finished) { g_inLogSaved = saveInputs(lp, inLog); std::fprintf(stderr, "registro de entradas (meta): %zu ticks -> %s (%s)\n", inLog.size(), lp, g_inLogSaved ? "ok" : "error"); } }
             if (ev > 0) { evCheck++; std::printf("puerta %zu/%zu cruzada a los %.1f s\n", prun.gs.counter, gts.size(), prun.t); if (sfxLib) mixer.play(sfxLib->get("PCKP_S", "P_CHECKPOINT"), 0.9f); }
@@ -469,8 +525,13 @@ int main(int argc, char** argv) {
             static float lastSteer = 0; { uint8_t lb = packKeys(ky, false); lastSteer = unpackInput(lb).steer; } leanVis += (-lastSteer * std::fmin(0.45f, bk.speed() * 0.012f) * (bk.grounded ? 1.f : 0.f) - leanVis) * std::fmin(1.f, 6.f * ddt);   // inclinación visual al girar (sólo dibujo)
             float want = hs > 4.f ? std::atan2(vv.x, -vv.z) : bk.heading(), df = want - camHead; while (df > 3.14159f) df -= 6.28318f; while (df < -3.14159f) df += 6.28318f;
             camHead += df * std::fmin(1.f, 3.f * ddt);
-            V3 tgt = bk.pos + ax.u * 0.5f, cp = tgt + V3{-std::sin(camHead) * 11.f, 4.5f, std::cos(camHead) * 11.f}; camPos = camPos + (cp - camPos) * std::fmin(1.f, 8.f * ddt);
-            { auto gq = gcol.groundQuery(camPos.x, camPos.y + 60.f, camPos.z, 0.f, 400.f); if (gq.hit && camPos.y < gq.height + 3.f) camPos.y = gq.height + 3.f; }   // la cámara no baja del suelo
+            V3 tgt = bk.pos + ax.u * 0.5f, cp = tgt + V3{-std::sin(camHead) * 11.f, 4.5f, std::cos(camHead) * 11.f}; camPos = camPos + (cp - camPos) * std::fmin(1.f, 24.f * ddt);   // seguimiento firme: con 8/s el retraso crecía con la velocidad (a 90 u/s la cámara iba a ~22 u en vez de 11)
+            static const bool camLegacy = std::getenv("DH_CAM_LEGACY") != nullptr;   // pruebas: la cámara antigua (solo suelo, consultando desde +60 u)
+            if (camLegacy) { auto gq = gcol.groundQuery(camPos.x, camPos.y + 60.f, camPos.z, 0.f, 400.f); if (gq.hit && camPos.y < gq.height + 3.f) camPos.y = gq.height + 3.f; } else
+            { const V3 org = tgt + V3{0.f, 2.5f, 0.f}, toCam = camPos - org; const auto sh = gcol.sweep(org, camPos, 0.8f);   // la cámara no atraviesa el terreno: se acerca a la moto hasta el primer impacto (esfera de 1.2 u de la moto a la cámara)
+              if (sh.hit && sh.frac >= 0.f && sh.frac < 1.f) camPos = org + toCam * std::fmax(0.4f, sh.frac);
+              auto gq = gcol.groundQuery(camPos.x, camPos.y + 8.f, camPos.z, 0.f, 40.f); if (gq.hit && camPos.y < gq.height + 1.5f) camPos.y = gq.height + 1.5f; }   // y no baja del suelo (antes consultaba desde +60 u: podía saltar a un techo o puente)
+            if (std::getenv("DH_CAMCHECK")) { static long n = 0, bad = 0; n++; auto q = gcol.groundQuery(camPos.x, camPos.y + 30.f, camPos.z, 0.f, 60.f); if (q.hit && camPos.y < q.height - 0.1f) { bad++; if (bad <= 3) std::fprintf(stderr, "camara: bajo el suelo en el fotograma %ld (cam y=%.1f, suelo %.1f, moto y=%.1f)\n", n, camPos.y, q.height, tgt.y); } if (n % 1000 == 0) std::fprintf(stderr, "camara: %ld/%ld fotogramas bajo el suelo\n", bad, n); }   // cuenta fotogramas con la cámara bajo la superficie de debajo (prueba)
             V3 d = tgt - camPos; px = camPos.x; py = camPos.y; pz = camPos.z; yaw = std::atan2(d.x, -d.z); pitch = std::atan2(d.y, std::sqrt(d.x * d.x + d.z * d.z));
             rx0 = bk.pos.x; ry0 = bk.pos.y - 2.05f; rz0 = bk.pos.z; rh = bk.heading();
             if (frame % 10 == 0) { char t[200]; std::snprintf(t, sizeof t, "dhview JUGAR  [%s%s]  %s  %.0f km/h  puertas %zu/%zu  %s  reinicios %u", raceStateName(race.state), race.state == RaceState::Countdown ? (" " + std::to_string(race.countdownDigit())).c_str() : "", formatTime(race.displayTime()).c_str(), 1.0973f * bk.speed(), prun.gs.counter, gts.size(), bk.grounded ? "suelo" : "aire", prun.respawns); SDL_SetWindowTitle(w, t); }
@@ -663,7 +724,7 @@ int main(int argc, char** argv) {
             glDisable(GL_DEPTH_TEST); glEnableClientState(GL_VERTEX_ARRAY); glColor3f(1, 0.2f, 0.9f); glPointSize(5);
             glVertexPointer(3, GL_FLOAT, 0, overlay.data()); glDrawArrays(GL_POINTS, 0, (GLsizei)(overlay.size() / 3)); glEnable(GL_DEPTH_TEST);
         }
-        if (play) {                                          // HUD: barra de velocidad (amarilla, 100 u/s a tope) y una casilla por puerta (verde = cruzada; todas verdes + barra verde = meta)
+        if (play && std::getenv("DH_DEBUGHUD")) {          // HUD de depuración (DH_DEBUGHUD=1): barra de velocidad (amarilla, 100 u/s a tope) y una casilla por puerta (verde = cruzada; todas verdes + barra verde = meta)
             glDisable(GL_TEXTURE_2D); glDisable(GL_DEPTH_TEST); glDisable(GL_FOG); glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
             glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity(); glOrtho(0, ww, 0, hh, -1, 1); glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity();
             auto rect = [&](float x, float y, float rw, float rh2, float r, float g, float b, float a) { glColor4f(r, g, b, a); glBegin(GL_QUADS); glVertex2f(x, y); glVertex2f(x + rw, y); glVertex2f(x + rw, y + rh2); glVertex2f(x, y + rh2); glEnd(); };
@@ -694,6 +755,7 @@ int main(int argc, char** argv) {
                 std::snprintf(b, sizeof b, "TOP SPEED  %.0f KM/H", 1.0973f * race.res.maxSpeed); mid(b, hh * 0.46f, S * 1.5f, 1, 1, 1);
                 std::snprintf(b, sizeof b, "GATES  %zu/%zu", race.res.gates, race.res.totalGates); mid(b, hh * 0.54f, S * 1.5f, 1, 1, 1);
                 std::snprintf(b, sizeof b, "RESETS  %u", race.res.respawns); mid(b, hh * 0.62f, S * 1.5f, 1, 1, 1);
+                mid("ENTER = RETRY   M = MENU   ESC = QUIT", hh * 0.92f, S, 0.6f, 0.6f, 0.6f);
                 for (size_t i = 0; i < race.res.splits.size() && i < 3; i++) { std::snprintf(b, sizeof b, "SPLIT %zu  %s", i + 1, formatTime(race.res.splits[i]).c_str()); mid(b, hh * (0.72f + 0.05f * i), S, 0.8f, 0.8f, 0.8f); }
             } else {
                 if (hudState == 1) {                                                                      // ordenador de la bici con las texturas del juego (reloj mm:ss; tercera cifra = puertas: hipótesis)
@@ -706,15 +768,31 @@ int main(int argc, char** argv) {
                     std::snprintf(b, sizeof b, "%.0f KM/H", 1.0973f * prun.bike.speed()); line(b, ww * 0.97f - gfx::textWidth(b, S * 1.5f), hh * 0.04f, S * 1.5f, 1, 0.85f, 0.2f);
                     std::snprintf(b, sizeof b, "GATES %zu/%zu", prun.gs.counter, gts.size()); line(b, ww * 0.03f, hh * 0.04f + 10 * S * 2.f, S, 0.8f, 1, 0.8f);
                 }
-                { static std::vector<float> course = hud::fitCourse(overlay); std::vector<gfx::Quad> pq; hud::Rect lb;               // panel de progreso (HIPÓTESIS de contenido, src/hud.hpp); sin rivales: posición 1/1
-                  hud::progressPanel((int)ww, (int)hh, course, gts.size() ? (float)prun.gs.counter / (float)gts.size() : 0.f, pq, lb); gr.drawQuads2D(pq, (int)ww, (int)hh);
-                  const float sc = std::fmax(2.f, lb.h / 10.f); line("1/1", lb.x + (lb.w - gfx::textWidth("1/1", sc)) * 0.5f, lb.y, sc, 1, 1, 1); }
+                { static std::vector<float> course = hud::fitCourse(overlay); std::vector<gfx::Quad> pq; std::vector<gfx::TexQuad> plq;   // panel de progreso: cinta vertical medida sobre capturas (src/hud.hpp); sin rivales: posición 1 de 1
+                  hud::progressPanel((int)ww, (int)hh, course, gts.size() ? (float)prun.gs.counter / (float)gts.size() : 0.f, 1, 1, pq, plq); gr.drawQuads2D(pq, (int)ww, (int)hh);
+                  if (hudState == 1) gr.drawTexQuads2D(hudTex[hud::kLcdFont], plq, (int)ww, (int)hh); else line("1/1", ww * 0.02f, hh * 0.9f, S * 1.5f, 1, 1, 1); }
                 if (race.state == RaceState::Countdown) { std::snprintf(b, sizeof b, "%d", race.countdownDigit()); mid(b, hh * 0.3f, S * 8.f, 1, 0.85f, 0.2f); }
                 else if (race.state == RaceState::Riding && race.displayTime() < 1.0) mid("GO!", hh * 0.3f, S * 8.f, 0.3f, 1, 0.3f);                       // provisional (la cadena real del juego no está localizada)
                 else if (race.state == RaceState::Finished) mid("GREAT FINISH!", hh * 0.3f, S * 4.f, 1, 0.85f, 0.2f);                                       // texto real del ELF (0x277614); su uso aquí es hipótesis
             }
             gr.drawQuads2D(tq, (int)ww, (int)hh);
         }
+        if (menuMode) {   // selector por circuito (ilustración real de SHELL/UI) y modo FR/MX/TD con los nombres del atlas original; si no hay arte, la lista de texto
+            static bool artTried = false; if (!artTried) { artTried = true; if (menuart::load(assetRd, menuArt)) for (auto& t : menuArt.tex) menuTex.push_back(gr.createTexture(t)); else std::fprintf(stderr, "aviso: sin arte de menú (SHELL/UI)\n"); }
+            const float W = (float)ww, H = (float)hh, S = std::fmax(2.f, std::floor(H / 240.f)); std::vector<gfx::Quad> mq; std::vector<gfx::TexQuad> tqs;
+            auto sprite = [&](const menuart::Sprite& sp, float x, float y, float h, float r, float g2, float b2, float a2, float maxW = 1e9f) { if (sp.tex < 0) return 0.f; if (h * sp.w / sp.h > maxW) h = maxW * sp.h / sp.w; const float w2 = h * sp.w / sp.h; gr.drawTexQuads2D(menuTex[sp.tex], {{x, y, w2, h, sp.u0, sp.v0, sp.u1, sp.v1, r, g2, b2, a2}}, (int)ww, (int)hh); return w2; };
+            if (menuArt.ok) {
+                mq.push_back({0, 0, W, H, 0.f, 0.f, 0.f, 0.35f}); gr.drawQuads2D(mq, (int)ww, (int)hh); mq.clear();
+                const float lh = H * 0.19f; for (int i = 0; i < 3; i++) sprite(menuart::whole(menuArt, 136 + i), W * 0.04f + lh * 0.9f * i, H * 0.03f, lh, 1, 1, 1, 1);   // logo: tres mosaicos de 128x128
+                const float aw = W * 0.46f, ah = aw * 0.5f, ax = W * 0.04f, ay = H * 0.3f; mq.push_back({ax - 6, ay - 6, aw + 12, ah + 12, 0.f, 0.f, 0.f, 0.7f}); gr.drawQuads2D(mq, (int)ww, (int)hh); mq.clear();
+                { const int ai = kLocs[menuLoc].artIdx; const menuart::Sprite l = menuart::whole(menuArt, ai), r = menuart::whole(menuArt, ai + 1); sprite(l, ax, ay, ah, 1, 1, 1, 1); sprite(r, ax + ah * 1.0f, ay, ah, 1, 1, 1, 1); }   // dos mitades de 256x256 = imagen apaisada 2:1
+                for (int m = 0; m < 3; m++) { if (!kLocs[menuLoc].label[m]) continue; const bool has = menuHas(menuLoc, m), on = m == menuMd; auto it = menuArt.names.find(kLocs[menuLoc].label[m]); if (it == menuArt.names.end()) continue;
+                    const float ry = H * (0.34f + 0.12f * m), rh = H * 0.07f; mq.push_back({W * 0.52f, ry - H * 0.015f, W * 0.44f, rh + H * 0.03f, on ? 0.25f : 0.f, on ? 0.3f : 0.f, on ? 0.55f : 0.f, on ? 0.85f : 0.45f}); gr.drawQuads2D(mq, (int)ww, (int)hh); mq.clear();
+                    const float v = on ? 1.f : has ? 0.75f : 0.3f; sprite(it->second, W * 0.54f, ry, rh, v * 2.2f, v * 2.2f, v * 2.2f, 1.f, W * 0.40f); }   // el atlas va en gris tenue: se amplifica el color
+                gfx::textQuadsCentered(std::string("- ") + kLocs[menuLoc].art + " -", W * 0.5f, H * 0.9f, S * 1.5f, 1.f, 0.85f, 0.2f, 1.f, mq);
+                gfx::textQuadsCentered("LEFT/RIGHT = TRACK   UP/DOWN = MODE   ENTER = RACE   ESC = QUIT", W * 0.5f, H * 0.96f, S * 0.8f, 0.7f, 0.7f, 0.7f, 1.f, mq);
+            } else menu::drawList(menuNames, "DOWNHILL DOMINATION", menuSel, menuTop, (int)ww, (int)hh, mq);
+            gr.drawQuads2D(mq, (int)ww, (int)hh); (void)tqs; }
         static const int shotFrame = std::getenv("DH_FRAMES") ? std::atoi(std::getenv("DH_FRAMES")) : 3;
         if (shot && frame == shotFrame - 1 && play) std::printf("play: estado=%s cuenta=%d reloj=%s velocidad=%.1f u/s puertas=%zu/%zu\n", raceStateName(race.state), race.countdownDigit(), formatTime(race.displayTime()).c_str(), prun.bike.speed(), prun.gs.counter, gts.size());
         if (shot && frame == shotFrame - 1 && walk) std::printf("walk: py=%.1f vy=%.2f\n", py, vy);

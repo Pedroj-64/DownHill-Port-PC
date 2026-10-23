@@ -21,6 +21,7 @@ Coverage inferred from file names only (documents were not opened).
 | Cielos y objetos de nodo (fase 4) / Skies and node objects | [sky-and-objects.md](sky-and-objects.md) |
 | Referencia de interfaz y HUD del original / Original UI and HUD reference | [ui-reference.md](ui-reference.md) |
 | Piloto (malla, esqueleto, piel) / Rider (mesh, skeleton, skin) | [rider.md](rider.md) |
+| Arte y vídeo del menú / Menu art and video | [menu-assets.md](menu-assets.md) |
 | Piloto en vivo / Rider live | [rider-live.md](rider-live.md) |
 | Piernas del piloto / Rider legs | [rider-legs.md](rider-legs.md) |
 | Montaje del piloto / Rider mount | [rider-mount.md](rider-mount.md) |
