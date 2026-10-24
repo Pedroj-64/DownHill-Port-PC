@@ -36,6 +36,9 @@ static std::vector<uint8_t> g_inLog; static bool g_inLogSaved = false;   // regi
 #include "audio.hpp"
 #include "music.hpp"
 #include "sfx.hpp"
+#include "peds.hpp"
+#include "ghosts.hpp"
+#include "dust.hpp"
 
 // HIPÓTESIS (docs/formats/audio.md, «superficie → material»): la clase física de la superficie (los 5
 // bits bajos del u16 de colisión, que indexan la tabla de propiedades DAT_0077a3d8) se traduce a un
@@ -51,6 +54,10 @@ static const char* surfMaterialHyp(uint16_t surface) {
         default: return "DIRT";   // 4 y 29/30 (los más frecuentes) y el resto
     }
 }
+
+// Ángulo vertical de la cámara del juego (rad). Medido 2026-10-24: proyectando los puntos de contacto del piloto de un savestate (cámara de RAM 0x3A8D10..) sobre la
+// captura del propio juego coinciden con ~1,4 rad (80°); barrido de correlación estructural sobre 4 savestates con máximo en 1,35-1,5 (tools/visual_diff.py). Antes 1,1 (sin evidencia).
+static constexpr float kDefaultFov = 1.4f;
 
 int main(int argc, char** argv) {
     if (argc < 2) { std::fprintf(stderr, "uso: dhview archivo.pts|.msh|.mdl|NIVEL.NGP  (mdl/NGP: F = volar/caminar, R = bici, Espacio = saltar; .NGP = carga nativa sin herramientas Python)\n"); return 1; }
@@ -85,6 +92,9 @@ int main(int argc, char** argv) {
         assetRd = isoSrc.reader();
         if (!menuMode && !std::getenv("DH_SHOT") && !std::getenv("DH_VIEW")) setenv("DH_PLAY", "1", 0);   // con ISO se juega por defecto (plan M2); DH_VIEW=1 = visor libre; las capturas DH_SHOT no cambian
         vfs = std::move(nl.files); static std::string mdlName0; mdlName0 = lvl + ".mdl"; argv[1] = mdlName0.data();
+        if (!std::getenv("DH_NOPEDS") && lvlDirName == "LVL") {   // peatones (src/peds.hpp): puntos PED + el NGP/PTR/TEX/RTX del nivel (modelos de personaje)
+            std::vector<uint8_t> pd; if (isoSrc.read("PTS/" + lvl + ".PED", pd)) { vfs["native:level.PED"] = std::move(pd);
+                for (const char* ex : {"NGP", "PTR", "TEX", "RTX"}) { std::vector<uint8_t> rb; if (isoSrc.read("LVL/" + lvl + "." + ex, rb)) vfs[std::string("native:level.") + ex] = std::move(rb); } } }
         if (std::getenv("DH_PLAY") && !std::getenv("DH_NORIDER") && !std::getenv("DH_RIDER") && !std::getenv("DH_RIDER_NGP")) {   // piloto nativo por defecto al jugar (pose APROXIMADA, hipótesis: docs/formats/rider-live.md); DH_NORIDER=1 lo quita
             bool okr = true; for (const char* ex : {"NGP", "PTR", "TEX", "RTX"}) { std::vector<uint8_t> rb; if (isoSrc.read("LVL/" + lvl + "." + ex, rb)) vfs[std::string("native:level.") + ex] = std::move(rb); else okr = false; }
             if (okr) { setenv("DH_RIDER_NGP", "native:level.NGP", 1); setenv("DH_RIDER_POSE", "approx", 0); } }
@@ -238,7 +248,8 @@ int main(int argc, char** argv) {
             if (ok) {
                 std::vector<gfx::TextureId> rtids;   // índice compacto = orden de primera aparición de (id, CBP)
                 for (const auto& key : resolver.firstKeys) { gfx::TextureId id = -1; for (const tex::Material& m : TL.mats) if (m.tid == key.first && m.cbp == key.second) { uint32_t W, H; std::vector<uint8_t> px; if (tex::makeTexture(TL, m, W, H, px)) id = gr.createTexture({(int)W, (int)H, px}); break; } rtids.push_back(id); }
-                riderVerts = native.vertices; riderMesh = gr.createMesh(riderVerts, native.indices, rtids, true);
+                riderVerts = native.vertices; if (!std::getenv("DH_PED_NOFLIP")) for (size_t i = 4; i < riderVerts.size(); i += 10) riderVerts[i] = 1.f - riderVerts[i];   // UV de personajes sin la inversión de V de las mallas de nivel (ver src/peds.hpp)
+                riderMesh = gr.createMesh(riderVerts, native.indices, rtids, true);
                 if (skRoot != none && riderSk.load(nraw, skRoot) && native.boneIds.size() == 3 * (riderVerts.size() / 10)) {   // piel y esqueleto nativos
                     const size_t nv = riderVerts.size() / 10; riderSkin.resize(nv); riderBind.resize(3 * nv);
                     for (size_t i = 0; i < nv; i++) { for (int k = 0; k < 3; k++) { riderSkin[i].bone[k] = native.boneIds[3*i+k]; riderSkin[i].w[k] = native.weights[3*i+k]; riderBind[3*i+k] = riderVerts[10*i+k]; } }
@@ -320,6 +331,13 @@ int main(int argc, char** argv) {
     if (walk) { float g = groundY(px, pz, py); if (!std::isnan(g)) py = g + eye; std::printf("walk: suelo en (%.0f, %.0f) = %.1f\n", px, pz, g); }
     std::vector<float> overlay;   // DH_PTS=archivo: floats x y z sueltos, se dibujan encima del modelo (rutas, puntos de control)
     if (const char* op = std::getenv("DH_PTS")) { std::vector<uint8_t> r; if (readFile(op, r)) { overlay.resize(r.size() / 4); std::memcpy(overlay.data(), r.data(), overlay.size() * 4); if (!rawAxes) for (size_t i = 0; i + 2 < overlay.size(); i += 3) { float y = overlay[i+1], z = overlay[i+2]; overlay[i+1] = z; overlay[i+2] = -y; } } }
+    peds::Set pedSet;   // peatones: puntos PED del nivel + modelos de personaje del NGP (solo con ISO; DH_NOPEDS=1 los quita). HIPÓTESIS: docs/formats/gs-dump.md
+    { std::vector<uint8_t> pn, pp, pt, pr, pd; if (!std::getenv("DH_NOPEDS") && readFile("native:level.PED", pd) && readFile("native:level.NGP", pn) && readFile("native:level.PTR", pp) && readFile("native:level.TEX", pt) && readFile("native:level.RTX", pr)) {
+        if (pedSet.load(gr, pn, pp, pt, pr, pd)) std::fprintf(stderr, "peatones: %zu puntos, %zu modelos (%zu tipos)\n", pedSet.pts.size(), pedSet.models.size(), pedSet.byType.size()); } }
+    dust::Emitter dustE; GLuint dustTex = 0;   // polvo de la rueda trasera (src/dust.hpp; DH_NODUST=1 lo quita)
+    std::vector<peds::Racer> aiRacers; std::vector<ghosts::Rider> aiRiders; ghosts::Line aiLine;   // rivales fantasma (src/ghosts.hpp): modelos de piloto del NGP con la pose del jugador
+    if (riderApprox && !std::getenv("DH_NOAI")) { std::vector<uint8_t> pn, pp, pt, pr; if (readFile("native:level.NGP", pn) && readFile("native:level.PTR", pp) && readFile("native:level.TEX", pt) && readFile("native:level.RTX", pr)) {
+        if (peds::loadRacers(gr, pn, pp, pt, pr, {4095, 4100, 4105, 4110, 4090}, aiRacers)) std::fprintf(stderr, "rivales: %zu modelos de piloto\n", aiRacers.size()); } }
     // --- Modo bici (R): punto material que baja por el terreno. Unidades del juego sin confirmar: la separación de carriles de la línea PTS (~22 u) sugiere 10 u = 1 m (DH_UNIT cambia el valor) ---
     const float G = 9.8f * U;
     bool ride = false; float rx0 = 0, ry0 = 0, rz0 = 0, rh = 0, rs = 0, rvy = 0, lastSlope = 0, goodX = 0, goodY = 0, goodZ = 0, goodH = 0; bool air = false;
@@ -330,9 +348,10 @@ int main(int argc, char** argv) {
     float worldMinY = 1e30f; for (size_t i = 1; i < v.size(); i += 3) worldMinY = std::fmin(worldMinY, v[i]);
     // --- Modo jugable (P, o DH_PLAY=1): la moto de src/bike.hpp con teclado. FÍSICA APROXIMADA (docs/formats/bike-physics.md). W acelerar, S frenar, A/D girar, Q/E inclinar (morro arriba/abajo),
     // Espacio saltar, Enter reiniciar en el último punto bueno, T volver a la rejilla de salida. DH_PLAYIN="acelerador freno giro inclinar" fija los mandos sin teclado (capturas DH_SHOT) ---
+    std::vector<V3> startSlots;   // todas las plazas de la rejilla (espacio del visor); la primera es la del jugador
     bool play = false, hopPressed = false, finishedMsg = false; Race race; Run& prun = race.run; V3 camPos{}, startPt{}; float camHead = 0, leanVis = 0; bool haveStart = false, gateOpened = false;
     { std::vector<uint8_t> sraw; std::string sp0 = mdl ? std::string(argv[1]).substr(0, std::string(argv[1]).size() - 4) + ".start.pts" : std::string();   // primera plaza de la rejilla (tools/markers.py), espacio NGP -> Y arriba
-      if (!sp0.empty() && readFile(sp0, sraw) && sraw.size() >= 12) { float f[3]; std::memcpy(f, sraw.data(), 12); startPt = {f[0], f[2], -f[1]}; haveStart = true; } }
+      if (!sp0.empty() && readFile(sp0, sraw) && sraw.size() >= 12) { float f[3]; std::memcpy(f, sraw.data(), 12); startPt = {f[0], f[2], -f[1]}; haveStart = true; for (size_t i = 0; i + 12 <= sraw.size(); i += 12) { std::memcpy(f, sraw.data() + i, 12); startSlots.push_back({f[0], f[2], -f[1]}); } } }
     float surfTab[32][8] = {}; bool haveSurfTab = false;   // tabla de clases de superficie del nivel (RST+0xCA4): rodadura por clase del motor
     { std::vector<uint8_t> tr; std::string tp = mdl ? std::string(argv[1]).substr(0, std::string(argv[1]).size() - 4) + ".surftab" : std::string();
       if (!tp.empty() && readFile(tp, tr) && tr.size() == sizeof surfTab) { std::memcpy(surfTab, tr.data(), sizeof surfTab); haveSurfTab = true; } }
@@ -353,6 +372,17 @@ int main(int argc, char** argv) {
         // DH_REAL=1: fuerzas de suelo del motor (T6, docs/formats/physics-module.md); por defecto el perfil empírico, que el oráculo de repetición predice mejor (2.2-2.5 u frente a 2.7-3.1 u a 0.5 s: faltan las pérdidas por contacto con el terreno)
         if (!std::getenv("DH_FEEL0")) { BikeParams& bp = prun.bike.P; useEngineProfile(bp); if (haveSurfTab && std::getenv("DH_REAL")) useRealForces(bp, surfTab); bp.hop = 32.f; bp.grip = 8.f; bp.reverseAccel = 18.f; bp.reverseMax = 7.f; }   // ajuste «para jugar a mano»: controlador de dirección del motor (leído de RAM) y salto de 2.45·13 = 32 u/s (FUN_00136330); agarre y marcha atrás = HIPÓTESIS. DH_FEEL0=1 usa los valores del arnés
         race.loadLen = std::getenv("DH_LOADHOLD") ? (float)std::atof(std::getenv("DH_LOADHOLD")) : (shot ? 0.f : 1.5f);   // pantalla de carga: duración mínima provisional (no sale del ELF); 0 en capturas DH_SHOT
+        aiRiders.clear();   // rivales fantasma en las plazas vecinas de la rejilla (a ≤ 40 u de la del jugador), sobre la línea de carrera; DH_AI=N (por defecto 5), DH_NOAI=1 los quita
+        if (!aiRacers.empty() && overlay.size() >= 9 && haveStart) {
+            aiLine = ghosts::build(overlay); const size_t nAi = std::getenv("DH_AI") ? (size_t)std::atoi(std::getenv("DH_AI")) : 5; const float s0 = ghosts::project(aiLine, startPt);
+            std::vector<V3> near; for (size_t k = 1; k < startSlots.size(); k++) if (std::fabs(startSlots[k].x - startPt.x) + std::fabs(startSlots[k].z - startPt.z) < 60.f) near.push_back(startSlots[k]);
+            for (size_t used = 0; used < nAi; used++) {
+                ghosts::Rider r; r.model = used; r.pace = 0.80f + 0.04f * (float)used; V3 lp, ld;
+                if (used < near.size()) { r.s = std::fmax(0.f, ghosts::project(aiLine, near[used]) - 3.f * (float)(used % 2)); ghosts::at(aiLine, r.s, lp, ld);
+                    r.lane = std::fmax(-6.f, std::fmin(6.f, (near[used].x - lp.x) * -ld.z + (near[used].z - lp.z) * ld.x)); }
+                else { r.s = std::fmax(0.f, s0 - 6.f * (float)(used - near.size() + 1)); r.lane = (used % 2 ? 3.f : -3.f); }   // sin plazas vecinas suficientes: detrás del jugador en dos carriles
+                aiRiders.push_back(r); }
+        }
         race.load(gcol, &gts, haveStart ? startPt : V3{px, py, pz}, h0);   // cuenta atrás de 3 s con la moto en la parrilla y reloj a cero al «¡Ya!» (src/race.hpp) camHead = h0; leanVis = 0; finishedMsg = false;
         if (std::getenv("DH_DEMO_RESULTS")) { race.res.finished = true; race.res.time = 430.98; race.res.gates = race.res.totalGates = gts.size(); race.res.respawns = 0; race.res.maxSpeed = 111.f; race.res.splits = {16.00f, 26.26f, 39.66f}; race.state = RaceState::Results; }   // solo para capturas de la maquetación (valores de muestra)
         if (std::getenv("DH_DEBUG")) { const V3 fw = prun.bike.fwd; V3 d0 = overlay.size() >= 6 ? V3{overlay[3] - overlay[0], 0, overlay[5] - overlay[2]} : V3{}; std::fprintf(stderr, "salida: pos=(%.1f %.1f %.1f) rumbo=%.2f fwd=(%.2f %.2f) puerta0 n=(%.2f %.2f %.2f) d=%.1f dist=%.1f línea0->1=(%.1f %.1f) startPts=%d startPt=(%.1f %.1f %.1f) linea[0]=(%.1f %.1f %.1f) linea[fin]=(%.1f %.1f %.1f)\n", prun.bike.pos.x, prun.bike.pos.y, prun.bike.pos.z, h0, fw.x, fw.z, g0 ? g0->n.x : 0.f, g0 ? g0->n.y : 0.f, g0 ? g0->n.z : 0.f, g0 ? g0->d : 0.f, g0 ? gateDist(*g0, prun.bike.pos) : 0.f, d0.x, d0.z, (int)haveStart, startPt.x, startPt.y, startPt.z, overlay.size() >= 3 ? overlay[0] : 0.f, overlay.size() >= 3 ? overlay[1] : 0.f, overlay.size() >= 3 ? overlay[2] : 0.f, overlay.size() >= 3 ? overlay[overlay.size()-3] : 0.f, overlay.size() >= 3 ? overlay[overlay.size()-2] : 0.f, overlay.size() >= 3 ? overlay[overlay.size()-1] : 0.f); }
@@ -506,6 +536,8 @@ int main(int argc, char** argv) {
             if (ev > 0) { evCheck++; std::printf("puerta %zu/%zu cruzada a los %.1f s\n", prun.gs.counter, gts.size(), prun.t); if (sfxLib) mixer.play(sfxLib->get("PCKP_S", "P_CHECKPOINT"), 0.9f); }
             if (race.state >= RaceState::Finished && !finishedMsg) { finishedMsg = true; std::printf("META %s (%zu/%zu puertas, reinicios %u, máx %.0f km/h)\n", formatTime(race.res.time).c_str(), race.res.gates, race.res.totalGates, race.res.respawns, 1.0973f * race.res.maxSpeed); }
             Bike& bk = prun.bike; Axes ax = bk.axes(); V3 vv = bk.vel(); float hs = std::sqrt(vv.x * vv.x + vv.z * vv.z);
+            { static const bool noDust = std::getenv("DH_NODUST") != nullptr; if (!noDust && race.state == RaceState::Riding) dust::emit(dustE, bk.pos - ax.f * 1.6f - ax.u * 1.2f, vv, bk.speed(), bk.grounded, ddt, bk.surface & 0x1Fu); else if (race.state != RaceState::Riding) dustE.puffs.clear(); dust::update(dustE, ddt); }
+            for (auto& r : aiRiders) { if (race.state == RaceState::Riding) ghosts::step(r, aiLine, ddt); else if (race.state == RaceState::Countdown) r.v = 0.f; }   // rivales fantasma
             if (sfxLib) {   // material del suelo: por defecto el primero disponible del banco (comportamiento de siempre); con DH_SURF_MAT=1, la clase de superficie -> material (hipótesis)
                 static const char* mats[] = {"DIRT", "GRAS", "SNOW", "ROCK"}; static std::string matDef; if (matDef.empty()) { matDef = "DIRT"; for (const char* m : mats) if (sfxLib->has(sfxBank, std::string("B_") + m + "_TERRAIN")) { matDef = m; break; } }
                 static const bool useSurfMat = std::getenv("DH_SURF_MAT") != nullptr;   // tabla clase->material en pruebas: docs/formats/audio.md
@@ -525,14 +557,21 @@ int main(int argc, char** argv) {
             static float lastSteer = 0; { uint8_t lb = packKeys(ky, false); lastSteer = unpackInput(lb).steer; } leanVis += (-lastSteer * std::fmin(0.45f, bk.speed() * 0.012f) * (bk.grounded ? 1.f : 0.f) - leanVis) * std::fmin(1.f, 6.f * ddt);   // inclinación visual al girar (sólo dibujo)
             float want = hs > 4.f ? std::atan2(vv.x, -vv.z) : bk.heading(), df = want - camHead; while (df > 3.14159f) df -= 6.28318f; while (df < -3.14159f) df += 6.28318f;
             camHead += df * std::fmin(1.f, 3.f * ddt);
-            V3 tgt = bk.pos + ax.u * 0.5f, cp = tgt + V3{-std::sin(camHead) * 11.f, 4.5f, std::cos(camHead) * 11.f}; camPos = camPos + (cp - camPos) * std::fmin(1.f, 24.f * ddt);   // seguimiento firme: con 8/s el retraso crecía con la velocidad (a 90 u/s la cámara iba a ~22 u en vez de 11)
+            // Cámara del juego (savestates, docs/formats/gs-dump.md): |cámara - piloto| = 11,81 = √(11²+4,3²) en ALPINEMX y 10,66 = √(10²+3,7²) en ALPINE, con el offset medido en el marco de la CÁMARA
+            // (guiñada del rumbo, cabeceo ≈ el de la pendiente del piloto, sin alabeo) y orientada hacia delante en ese marco, no apuntando al piloto. DH_CAM_OLD=1 vuelve a la cámara horizontal anterior.
+            static const bool camOld = std::getenv("DH_CAM_OLD") != nullptr; static const bool mxLvl = std::string(argv[1]).find("MX") != std::string::npos; static float camPitch = 0.f;
+            { const float vl = std::sqrt(dot(vv, vv)); const float fy = (!bk.grounded && vl > 5.f) ? vv.y / vl : ax.f.y;   // en el aire la moto puede girar: se sigue la dirección de la trayectoria
+              const float tp = std::fmax(-1.0f, std::fmin(0.8f, std::asin(std::fmax(-1.f, std::fmin(1.f, fy))))); camPitch += (tp - camPitch) * std::fmin(1.f, 4.f * ddt); }
+            const float camBack = mxLvl ? 11.f : 10.f, camUp = mxLvl ? 4.3f : 3.7f, cpi = std::cos(camPitch), spi = std::sin(camPitch), sh0 = std::sin(camHead), ch0 = std::cos(camHead);
+            const V3 camFwd{sh0 * cpi, spi, -ch0 * cpi}, camUpV{-sh0 * spi, cpi, ch0 * spi};
+            V3 tgt = bk.pos + ax.u * 0.5f, cp = camOld ? tgt + V3{-std::sin(camHead) * 11.f, 4.5f, std::cos(camHead) * 11.f} : tgt - camFwd * camBack + camUpV * camUp; camPos = camPos + (cp - camPos) * std::fmin(1.f, 24.f * ddt);   // seguimiento firme: con 8/s el retraso crecía con la velocidad (a 90 u/s la cámara iba a ~22 u en vez de 11)
             static const bool camLegacy = std::getenv("DH_CAM_LEGACY") != nullptr;   // pruebas: la cámara antigua (solo suelo, consultando desde +60 u)
             if (camLegacy) { auto gq = gcol.groundQuery(camPos.x, camPos.y + 60.f, camPos.z, 0.f, 400.f); if (gq.hit && camPos.y < gq.height + 3.f) camPos.y = gq.height + 3.f; } else
             { const V3 org = tgt + V3{0.f, 2.5f, 0.f}, toCam = camPos - org; const auto sh = gcol.sweep(org, camPos, 0.8f);   // la cámara no atraviesa el terreno: se acerca a la moto hasta el primer impacto (esfera de 1.2 u de la moto a la cámara)
               if (sh.hit && sh.frac >= 0.f && sh.frac < 1.f) camPos = org + toCam * std::fmax(0.4f, sh.frac);
               auto gq = gcol.groundQuery(camPos.x, camPos.y + 8.f, camPos.z, 0.f, 40.f); if (gq.hit && camPos.y < gq.height + 1.5f) camPos.y = gq.height + 1.5f; }   // y no baja del suelo (antes consultaba desde +60 u: podía saltar a un techo o puente)
             if (std::getenv("DH_CAMCHECK")) { static long n = 0, bad = 0; n++; auto q = gcol.groundQuery(camPos.x, camPos.y + 30.f, camPos.z, 0.f, 60.f); if (q.hit && camPos.y < q.height - 0.1f) { bad++; if (bad <= 3) std::fprintf(stderr, "camara: bajo el suelo en el fotograma %ld (cam y=%.1f, suelo %.1f, moto y=%.1f)\n", n, camPos.y, q.height, tgt.y); } if (n % 1000 == 0) std::fprintf(stderr, "camara: %ld/%ld fotogramas bajo el suelo\n", bad, n); }   // cuenta fotogramas con la cámara bajo la superficie de debajo (prueba)
-            V3 d = tgt - camPos; px = camPos.x; py = camPos.y; pz = camPos.z; yaw = std::atan2(d.x, -d.z); pitch = std::atan2(d.y, std::sqrt(d.x * d.x + d.z * d.z));
+            V3 d = tgt - camPos; px = camPos.x; py = camPos.y; pz = camPos.z; yaw = camOld ? std::atan2(d.x, -d.z) : camHead; pitch = camOld ? std::atan2(d.y, std::sqrt(d.x * d.x + d.z * d.z)) : camPitch;
             rx0 = bk.pos.x; ry0 = bk.pos.y - 2.05f; rz0 = bk.pos.z; rh = bk.heading();
             if (frame % 10 == 0) { char t[200]; std::snprintf(t, sizeof t, "dhview JUGAR  [%s%s]  %s  %.0f km/h  puertas %zu/%zu  %s  reinicios %u", raceStateName(race.state), race.state == RaceState::Countdown ? (" " + std::to_string(race.countdownDigit())).c_str() : "", formatTime(race.displayTime()).c_str(), 1.0973f * bk.speed(), prun.gs.counter, gts.size(), bk.grounded ? "suelo" : "aire", prun.respawns); SDL_SetWindowTitle(w, t); }
         } else if (ride && useCol && overlay.size() >= 6) {
@@ -614,8 +653,8 @@ int main(int argc, char** argv) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);   // DH_BG="r g b": color de fondo (p. ej. magenta para ver huecos) glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glEnable(GL_DEPTH_TEST); glDepthFunc(GL_LEQUAL);   // LEQUAL: las capas superpuestas del juego comparten posición con el suelo
         glMatrixMode(GL_PROJECTION); glLoadIdentity();
-        float asp = (float)ww / hh, nr = mdl ? (play ? 1.5f : (ride || walk || std::getenv("DH_CAM")) ? std::fmax(0.3f, 0.03f * U) : std::fmax(0.05f, 0.002f * scale)) : 5, fr = play ? 40000.f : 60000.f, t = nr * std::tan(0.5f * (std::getenv("DH_FOV") ? (float)std::atof(std::getenv("DH_FOV")) : 1.1f));   // DH_FOV: ángulo vertical en rad
-        if (const char* e = std::getenv("DH_NEAR")) { nr = (float)std::atof(e); t = nr * std::tan(0.5f * (std::getenv("DH_FOV") ? (float)std::atof(std::getenv("DH_FOV")) : 1.1f)); } if (const char* e = std::getenv("DH_FAR")) fr = (float)std::atof(e);   // pruebas de precisión de profundidad
+        float asp = (float)ww / hh, nr = mdl ? (play ? 1.5f : (ride || walk || std::getenv("DH_CAM")) ? std::fmax(0.3f, 0.03f * U) : std::fmax(0.05f, 0.002f * scale)) : 5, fr = play ? 40000.f : 60000.f, t = nr * std::tan(0.5f * (std::getenv("DH_FOV") ? (float)std::atof(std::getenv("DH_FOV")) : kDefaultFov));   // DH_FOV: ángulo vertical en rad
+        if (const char* e = std::getenv("DH_NEAR")) { nr = (float)std::atof(e); t = nr * std::tan(0.5f * (std::getenv("DH_FOV") ? (float)std::atof(std::getenv("DH_FOV")) : kDefaultFov)); } if (const char* e = std::getenv("DH_FAR")) fr = (float)std::atof(e);   // pruebas de precisión de profundidad
         glFrustum(-t*asp, t*asp, -t, t, nr, fr);
         glMatrixMode(GL_MODELVIEW); glLoadIdentity();
         { static float fg[5]; static const bool fog = std::getenv("DH_FOG") && std::sscanf(std::getenv("DH_FOG"), "%f %f %f %f %f", fg, fg+1, fg+2, fg+3, fg+4) == 5;   // DH_FOG="r g b inicio fin" (unidades del mundo): niebla lineal, HIPÓTESIS sin evidencia del motor (FOGCOL del GS no localizado); el panorama (cielo) se dibuja sin niebla
@@ -677,6 +716,25 @@ int main(int argc, char** argv) {
             }
             if (!sky.mi.empty() && !std::getenv("DH_NOSKY")) { glDepthMask(GL_FALSE); drawModel(sky); glDepthMask(GL_TRUE); }   // telón de fondo/cielo: primero y sin escribir profundidad
             drawModel(M);
+            if (!pedSet.empty()) {   // peatones en reposo, de cara a la línea de carrera (sin animación; HIPÓTESIS)
+                static const float pedGain = std::getenv("DH_PED_GAIN") ? (float)std::atof(std::getenv("DH_PED_GAIN")) : 2.f;
+                static const float pedR = std::getenv("DH_PED_RADIUS") ? (float)std::atof(std::getenv("DH_PED_RADIUS")) : 400.f; static const size_t pedN = std::getenv("DH_PED_MAX") ? (size_t)std::atoi(std::getenv("DH_PED_MAX")) : 40;
+                // Orientación: el «arriba» del personaje es la normal del terreno bajo sus pies (en la captura real están de pie sobre la ladera, no verticales al mundo: HIPÓTESIS, docs/formats/gs-dump.md),
+                // «adelante» = hacia la línea de carrera proyectado en el plano del suelo; el modelo es X der., Y adelante, Z arriba y se pasa directo como matriz modelo->visor; pies en el origen (HIPÓTESIS).
+                if (std::getenv("DH_PED_LINEUP")) {   // depuración: todos los modelos de personaje en fila delante de la cámara, de cara a ella (DH_PED_LINEUP=distancia)
+                    const float dist = (float)std::atof(std::getenv("DH_PED_LINEUP")), sy2 = std::sin(yaw), cy2 = std::cos(yaw); const size_t nm = pedSet.models.size();
+                    for (size_t i = 0; i < nm; i++) { const float lat = ((float)i - 0.5f * (float)(nm - 1)) * 2.6f; const V3 f{-sy2, 0.f, cy2}, up{0, 1, 0}, r = cross(f, up);
+                        const float pm[16] = {r.x, r.y, r.z, 0, f.x, f.y, f.z, 0, up.x, up.y, up.z, 0, px + sy2 * dist + cy2 * lat, py - 3.f, pz - cy2 * dist + sy2 * lat, 1}; gr.draw(pedSet.models[i].mesh, pm, pedGain); }
+                } else
+                for (const peds::Inst& in : pedSet.select(px, py, pz, overlay, pedR, pedN, (float)frame / 60.f)) {
+                    V3 up{0, 1, 0}; float yy = in.y;
+                    if (!gcol.tris().empty()) { auto gi = gcol.groundQuery(in.x, in.y + 3.f, in.z, 0.f, 12.f); if (gi.hit) { up = gi.normal; yy = gi.height; } }
+                    V3 d{in.tx - in.x, 0.f, in.tz - in.z}; V3 f{d.x - up.x * dot(d, up), d.y - up.y * dot(d, up), d.z - up.z * dot(d, up)}; float fl = std::sqrt(dot(f, f));
+                    if (fl < 1e-4f) { f = {0, 0, -1}; fl = 1.f; } f = {f.x / fl, f.y / fl, f.z / fl}; V3 r = cross(f, up);
+                    const float pm[16] = {r.x, r.y, r.z, 0, f.x, f.y, f.z, 0, up.x, up.y, up.z, 0, in.x, yy, in.z, 1};
+                    { const auto& pmod = pedSet.models[in.model]; gr.draw(in.cheer && pmod.meshUp >= 0 ? pmod.meshUp : pmod.mesh, pm, pedGain); }
+                }
+            }
             if (play && !bike.mi.empty()) {                 // la bici ensamblada orientada con el cuerpo de la simulación (modelo: adelante = -Z, arriba = +Y)
                 static float minY = [&] { float m = 1e30f; for (size_t i = 1; i < bike.mv.size(); i += 10) m = std::fmin(m, bike.mv[i]); return m; }();
                 const Bike& bk = prun.bike; Axes ax = bk.axes(); V3 r = rotateAbout(ax.r, ax.f, leanVis), u = rotateAbout(ax.u, ax.f, leanVis); float bs = 0.28f * U;
@@ -693,7 +751,33 @@ int main(int argc, char** argv) {
                         conv[12] = tx; conv[13] = tz; conv[14] = -ty;
                     }
                     glPushMatrix(); glMultMatrixf(m); glScalef(bs, bs, bs); gr.draw(riderMesh, conv, 2.6f); glPopMatrix();
+                    for (const ghosts::Rider& ar : aiRiders) {   // rivales fantasma: misma pose y moto que el jugador, otro modelo de piloto
+                        V3 p, d; ghosts::at(aiLine, ar.s, p, d); V3 rt{-d.z, 0.f, d.x}; const float rl = std::sqrt(rt.x * rt.x + rt.z * rt.z); if (rl > 1e-4f) rt = rt * (1.f / rl);
+                        V3 q{p.x + rt.x * ar.lane, p.y, p.z + rt.z * ar.lane}; V3 up{0, 1, 0};
+                        if (auto gi = gcol.groundQuery(q.x, q.y + 6.f, q.z, 0.f, 20.f); gi.hit) { up = gi.normal; q.y = gi.height; }
+                        V3 f{d.x - up.x * dot(d, up), d.y - up.y * dot(d, up), d.z - up.z * dot(d, up)}; const float fl = std::sqrt(dot(f, f)); if (fl < 1e-4f) continue; f = f * (1.f / fl); const V3 r2 = cross(f, up);
+                        const GLfloat am[16] = {r2.x, r2.y, r2.z, 0, up.x, up.y, up.z, 0, -f.x, -f.y, -f.z, 0, q.x - up.x * minY * bs, q.y - up.y * minY * bs, q.z - up.z * minY * bs, 1};
+                        peds::Racer& rc = aiRacers[ar.model % aiRacers.size()]; rider::applySkin(rc.sk.skin(riderPose.data(), riderPose.size()), rc.skin, rc.bind, rc.verts); gr.updateVertices(rc.mesh, rc.verts);
+                        glTexEnvf(GL_TEXTURE_ENV, GL_RGB_SCALE, 2.6f); glPushMatrix(); glMultMatrixf(am); glScalef(bs, bs, bs); drawModel(bike); gr.draw(rc.mesh, conv, 2.6f); glPopMatrix();
+                    }
                 }
+            }
+            if (std::getenv("DH_DUST_DEBUG") && frame % 60 == 0) std::fprintf(stderr, "polvo: %zu bocanadas (suelo=%d v=%.0f estado=%d) primera=(%.1f %.1f %.1f) camara=(%.1f %.1f %.1f) moto=(%.1f %.1f %.1f)\n", dustE.puffs.size(), (int)prun.bike.grounded, prun.bike.speed(), (int)race.state, dustE.puffs.empty() ? 0.f : dustE.puffs[0].pos.x, dustE.puffs.empty() ? 0.f : dustE.puffs[0].pos.y, dustE.puffs.empty() ? 0.f : dustE.puffs[0].pos.z, px, py, pz, prun.bike.pos.x, prun.bike.pos.y, prun.bike.pos.z);
+            if (!dustE.puffs.empty()) {   // polvo: cuadrados orientados a la cámara, de lejos a cerca, mezcla alfa y sin escribir profundidad
+                if (!dustTex) { std::vector<uint8_t> px(64 * 64 * 4); for (int y = 0; y < 64; y++) for (int x = 0; x < 64; x++) { const float dx = (x - 31.5f) / 32.f, dy = (y - 31.5f) / 32.f, d = std::sqrt(dx * dx + dy * dy), a = d >= 1.f ? 0.f : std::pow(1.f - d, 1.2f); uint8_t* q = &px[4 * (y * 64 + x)]; q[0] = q[1] = q[2] = 255; q[3] = (uint8_t)(255.f * a); }
+                    glGenTextures(1, &dustTex); glBindTexture(GL_TEXTURE_2D, dustTex); glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 64, 64, 0, GL_RGBA, GL_UNSIGNED_BYTE, px.data()); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR); }
+                const float cy = std::cos(yaw), sy = std::sin(yaw), cpp = std::cos(pitch), spp = std::sin(pitch); const V3 rt{cy, 0.f, sy}, upc{-sy * spp, cpp, cy * spp};
+                std::vector<const dust::Puff*> order; for (const dust::Puff& pf : dustE.puffs) order.push_back(&pf);
+                std::sort(order.begin(), order.end(), [&](const dust::Puff* a, const dust::Puff* b) { const float da = (a->pos.x - px) * (a->pos.x - px) + (a->pos.y - py) * (a->pos.y - py) + (a->pos.z - pz) * (a->pos.z - pz), db = (b->pos.x - px) * (b->pos.x - px) + (b->pos.y - py) * (b->pos.y - py) + (b->pos.z - pz) * (b->pos.z - pz); return da > db; });
+                if (std::getenv("DH_DUST_FLAT")) { glDisable(GL_TEXTURE_2D); glDisable(GL_DEPTH_TEST); } else { glEnable(GL_TEXTURE_2D); glBindTexture(GL_TEXTURE_2D, dustTex); if (std::getenv("DH_DUST_NODEPTH")) glDisable(GL_DEPTH_TEST); } glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE); glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); glDepthMask(GL_FALSE);
+                glBegin(GL_QUADS);
+                for (const dust::Puff* pf : order) { static const float dustBoost = std::getenv("DH_DUST_BOOST") ? (float)std::atof(std::getenv("DH_DUST_BOOST")) : 1.f;
+                    const float t = pf->age / pf->life, sz = (pf->s0 + (pf->s1 - pf->s0) * t) * 0.5f * dustBoost, dcx = pf->pos.x - px, dcy = pf->pos.y - py, dcz = pf->pos.z - pz;
+                    const float nearFade = std::fmax(0.f, std::fmin(1.f, (std::sqrt(dcx * dcx + dcy * dcy + dcz * dcz) - 4.f) / 8.f)), a = std::fmin(1.f, pf->a0 * dustBoost * nearFade * (1.f - t) * (1.f - t)); glColor4f(pf->r, pf->g, pf->b, a);
+                    const V3 c = pf->pos, e1 = rt * sz, e2 = upc * sz;
+                    glTexCoord2f(0, 0); glVertex3f(c.x - e1.x - e2.x, c.y - e1.y - e2.y, c.z - e1.z - e2.z); glTexCoord2f(1, 0); glVertex3f(c.x + e1.x - e2.x, c.y + e1.y - e2.y, c.z + e1.z - e2.z);
+                    glTexCoord2f(1, 1); glVertex3f(c.x + e1.x + e2.x, c.y + e1.y + e2.y, c.z + e1.z + e2.z); glTexCoord2f(0, 1); glVertex3f(c.x - e1.x + e2.x, c.y - e1.y + e2.y, c.z - e1.z + e2.z); }
+                glEnd(); glDepthMask(GL_TRUE); glEnable(GL_DEPTH_TEST);
             }
             if (ride && !bike.mi.empty()) {                 // la bici ensamblada: 1 unidad del modelo ~ 0.28 m; rueda más baja a ras de suelo
                 static float minY = [&] { float m = 1e30f; for (size_t i = 1; i < bike.mv.size(); i += 10) m = std::fmin(m, bike.mv[i]); return m; }();
