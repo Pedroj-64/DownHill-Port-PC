@@ -38,3 +38,4 @@ Coverage inferred from file names only (documents were not opened).
 | Plan del cargador nativo / Native loader plan | [native-loader-plan](../native-loader-plan.md) | same |
 | Decisiones / Decisions | [DECISIONS](../DECISIONS.md) | same |
 | Audio: VAGp, VPK, pistas / Audio: VAGp, VPK, tracks | [audio.md](audio.md) |
+| Volcados GS, oráculo visual, peatones / GS dumps, visual oracle, pedestrians | [gs-dump.md](gs-dump.md) |
