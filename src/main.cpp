@@ -25,6 +25,7 @@
 #include "menuart.hpp"
 #include "tex.hpp"
 #include "controls.hpp"
+#include "gamepad.hpp"
 #include "text.hpp"
 #include "hud.hpp"
 #include "loadscreen.hpp"
@@ -169,7 +170,8 @@ int main(int argc, char** argv) {
     };
     // El NGP (y por tanto el .mdl, el .PTS y la colisión) usa Z arriba (docs/formats/coordinates.md); dhview trabaja en Y arriba: (x,y,z) -> (x,z,-y). DH_RAW=1 desactiva la conversión.
     const bool rawAxes = std::getenv("DH_RAW") != nullptr;
-    auto toYUp = [&](Model& m) { if (rawAxes) return; for (size_t k = 0; k + 9 < m.mv.size(); k += 10) { float y = m.mv[k+1], z = m.mv[k+2]; m.mv[k+1] = z; m.mv[k+2] = -y; }
+    auto toYUp = [&](Model& m) { if (!std::getenv("DH_NOUFLIP")) for (size_t k = 0; k + 9 < m.mv.size(); k += 10) m.mv[k+3] = 1.f - m.mv[k+3];   // las U de las mallas de nivel salen reflejadas respecto al juego (el texto de carteles y puertas se leía al revés; comprobado con visual_diff): se invierten al cargar
+        if (rawAxes) return; for (size_t k = 0; k + 9 < m.mv.size(); k += 10) { float y = m.mv[k+1], z = m.mv[k+2]; m.mv[k+1] = z; m.mv[k+2] = -y; }
         for (auto& c : m.chunks) for (auto& q : c.sels) { float y = q[1], z = q[2]; q[1] = z; q[2] = -y; } };
     Model M, sky, dome, bike;   // bike: DH_BIKE=bici_ensamblada.mdl (tools/assemble_bike.py), se dibuja en el modo bici
     {
@@ -207,7 +209,7 @@ int main(int argc, char** argv) {
         float t = (v[i*3+1] - ymin) / (ymax - ymin);
         col[i*3] = 0.3f + 0.7f * t; col[i*3+1] = 0.9f - 0.5f * t; col[i*3+2] = 0.4f + 0.4f * (1 - t);
     }
-    if (!SDL_Init(SDL_INIT_VIDEO)) return 1;
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) return 1;
     int winW = 1280, winH = 720; if (const char* ws = std::getenv("DH_SIZE")) std::sscanf(ws, "%d %d", &winW, &winH);   // DH_SIZE="640 480": ventana para comparar con capturas 4:3 del juego
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);   // profundidad de 24 bits explícita (el valor por defecto depende del controlador)
     SDL_Window* w = SDL_CreateWindow("dhview", winW, winH, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
@@ -286,6 +288,7 @@ int main(int argc, char** argv) {
         }
         float r = 0.5f * std::sqrt((mx[0]-mn[0])*(mx[0]-mn[0]) + (mx[1]-mn[1])*(mx[1]-mn[1]) + (mx[2]-mn[2])*(mx[2]-mn[2])) + 1e-3f;
         px = 0.5f * (mn[0] + mx[0]); py = 0.5f * (mn[1] + mx[1]); pz = 0.5f * (mn[2] + mx[2]) + 2.2f * r; scale = r;
+        if (std::getenv("DH_PRINTCAM")) std::fprintf(stderr, "escena: caja [%.1f %.1f %.1f]..[%.1f %.1f %.1f], centro %.1f %.1f %.1f, radio %.1f\n", mn[0], mn[1], mn[2], mx[0], mx[1], mx[2], px, py, pz - 2.2f * r, r);
         if (const char* ob = std::getenv("DH_ORBIT")) {          // DH_ORBIT="yaw pitch" (rad): cámara en órbita alrededor del centro del modelo, mirándolo
             float oy = 0, op = 0; std::sscanf(ob, "%f %f", &oy, &op);
             float cx = px, cy = py, cz = pz - 2.2f * r, d = 2.2f * r;
@@ -455,15 +458,33 @@ int main(int argc, char** argv) {
     }
     int frame = 0;
     Uint64 last = SDL_GetTicks();
+    // Mando (src/gamepad.hpp): se abre el primero conectado y se vigilan altas/bajas. DH_PADLEAN=-1 invierte inclinar arriba/abajo (HIPÓTESIS del sentido), DH_NOPAD=1 lo desactiva.
+    SDL_Gamepad* pad = nullptr; const float padLeanSign = std::getenv("DH_PADLEAN") && std::atoi(std::getenv("DH_PADLEAN")) < 0 ? -1.f : 1.f; float padSteerVis = 0; bool padRtPrev = false, padHop = false;
+    auto openPad = [&]() { if (pad || std::getenv("DH_NOPAD")) return; int n = 0; SDL_JoystickID* ids = SDL_GetGamepads(&n); if (ids && n > 0) { pad = SDL_OpenGamepad(ids[0]); if (pad) std::fprintf(stderr, "mando: %s\n", SDL_GetGamepadName(pad)); } SDL_free(ids); };
+    openPad();
     auto backToMenu = [&](const char* level = nullptr) {   // resultados -> selector: cierra audio y SDL como al salir y relanza dhview "<iso>" (sin nivel); false si no se partió de una ISO o falla el exec
         if (!isoArg.ends_with(".iso") && !isoArg.ends_with(".ISO")) return false;
         unsetenv("DH_FLOW_BACK"); unsetenv("DH_FLOW_FINISH");
         for (const char* v : {"DH_BIKE", "DH_PTS", "DH_RIDER_NGP", "DH_RIDER_KIND", "DH_RIDER_POSE"}) unsetenv(v);   // las fija el propio dhview al cargar (ISO): si se heredan, el nivel siguiente no ensambla bici ni piloto (cubo rojo) y usa la línea PTS del anterior   // las banderas de prueba solo valen para esta ejecución
-        music.stop(); mixer.close(); SDL_GL_DestroyContext(gl); SDL_DestroyWindow(w); SDL_Quit();
+        if (pad) SDL_CloseGamepad(pad); music.stop(); mixer.close(); SDL_GL_DestroyContext(gl); SDL_DestroyWindow(w); SDL_Quit();
         char* args[] = {const_cast<char*>(exePath.c_str()), const_cast<char*>(isoArg.c_str()), const_cast<char*>(level), nullptr}; execv(exePath.c_str(), args); return false;   // level == nullptr corta la lista tras la ISO
     };
     for (bool run = true; run;) {
         for (SDL_Event e; SDL_PollEvent(&e);) {
+            if (e.type == SDL_EVENT_GAMEPAD_ADDED) openPad();
+            if (e.type == SDL_EVENT_GAMEPAD_REMOVED && pad && e.gdevice.which == SDL_GetGamepadID(pad)) { SDL_CloseGamepad(pad); pad = nullptr; openPad(); }
+            if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {   // menús y resultados con el mando: se traducen a las teclas que ya manejan (cola propia del proceso, nada virtual del sistema)
+                const bool results = play && race.state == RaceState::Results; SDL_Keycode kc = SDLK_UNKNOWN;
+                switch (e.gbutton.button) {
+                    case SDL_GAMEPAD_BUTTON_DPAD_LEFT: if (menuMode) kc = SDLK_LEFT; break; case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: if (menuMode) kc = SDLK_RIGHT; break;
+                    case SDL_GAMEPAD_BUTTON_DPAD_UP: if (menuMode) kc = SDLK_UP; break; case SDL_GAMEPAD_BUTTON_DPAD_DOWN: if (menuMode) kc = SDLK_DOWN; break;
+                    case SDL_GAMEPAD_BUTTON_SOUTH: if (menuMode || results) kc = SDLK_RETURN; break;      // Cruz: aceptar / repetir
+                    case SDL_GAMEPAD_BUTTON_EAST: if (results) kc = SDLK_M; break;                       // Círculo: volver al selector
+                    case SDL_GAMEPAD_BUTTON_START: kc = SDLK_RETURN; break;                              // Start: reaparecer en el último punto bueno / repetir
+                    case SDL_GAMEPAD_BUTTON_BACK: if (play) kc = SDLK_T; break;                          // Select: volver a la rejilla de salida
+                    case SDL_GAMEPAD_BUTTON_WEST: if (play) kc = SDLK_R; break;                          // Cuadrado: último punto bueno
+                    default: break; }
+                if (kc != SDLK_UNKNOWN) { SDL_Event ke{}; ke.type = SDL_EVENT_KEY_DOWN; ke.key.key = kc; ke.key.down = true; SDL_PushEvent(&ke); } }
             if (e.type == SDL_EVENT_QUIT || (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE)) run = false;
             if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_R && mdl) { static bool fromPlay = false; if (!ride) { fromPlay = play; ride = true; play = false; startRide(); } else { ride = false; if (fromPlay) startPlay(); } }   // R: bici automática y de vuelta al modo jugable (antes la segunda R dejaba la cámara libre sin bici)   // R: modo bici (demo cinemática)
             if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_P && mdl) { play = !play; if (play) startPlay(); }   // P: modo jugable
@@ -493,12 +514,19 @@ int main(int argc, char** argv) {
             if (!inInit) { inInit = true; if (const char* rp = std::getenv("DH_INPUT_REPLAY")) { if (!loadInputs(rp, inReplay)) std::fprintf(stderr, "aviso: no se pudo leer %s\n", rp); } }
             Keys ky; ky.up = k[SDL_SCANCODE_UP]; ky.down = k[SDL_SCANCODE_DOWN]; ky.left = k[SDL_SCANCODE_LEFT]; ky.right = k[SDL_SCANCODE_RIGHT]; ky.w = k[SDL_SCANCODE_W]; ky.s = k[SDL_SCANCODE_S]; ky.a = k[SDL_SCANCODE_A]; ky.d = k[SDL_SCANCODE_D];
             ky.q = k[SDL_SCANCODE_Q]; ky.e = k[SDL_SCANCODE_E]; ky.space = k[SDL_SCANCODE_SPACE]; ky.shift = k[SDL_SCANCODE_LSHIFT] || k[SDL_SCANCODE_RSHIFT];
-            bool hopEdge = hopPressed; hopPressed = false; acc += ddt;
+            PadState ps; if (pad) { auto ax = [&](SDL_GamepadAxis a) { return (float)SDL_GetGamepadAxis(pad, a) / 32767.f; }; auto bt = [&](SDL_GamepadButton b) { return SDL_GetGamepadButton(pad, b); };
+                ps.lx = ax(SDL_GAMEPAD_AXIS_LEFTX); ps.ly = ax(SDL_GAMEPAD_AXIS_LEFTY); ps.rt = ax(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER);
+                ps.dl = bt(SDL_GAMEPAD_BUTTON_DPAD_LEFT); ps.dr = bt(SDL_GAMEPAD_BUTTON_DPAD_RIGHT); ps.du = bt(SDL_GAMEPAD_BUTTON_DPAD_UP); ps.dd = bt(SDL_GAMEPAD_BUTTON_DPAD_DOWN);
+                ps.south = bt(SDL_GAMEPAD_BUTTON_SOUTH); ps.north = bt(SDL_GAMEPAD_BUTTON_NORTH); ps.r1 = bt(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER); ps.r3 = bt(SDL_GAMEPAD_BUTTON_RIGHT_STICK);
+                const bool rtNow = ps.rt > 0.5f; if (rtNow && !padRtPrev) padHop = true; padRtPrev = rtNow; }   // R2 = salto (flanco)
+            const bool padOn = pad && padActive(ps);
+            bool hopEdge = hopPressed || padHop; hopPressed = false; padHop = false; acc += ddt;
             for (int n = 0; acc >= 1.0 / 60.0 && n < 6; n++, acc -= 1.0 / 60.0) {
                 BikeInput in; uint8_t bits = 0;
                 if (!inReplay.empty()) bits = inTick < inReplay.size() ? inReplay[inTick] : (uint8_t)0;      // repetición: se acabó el registro = sin mandos
                 else bits = packKeys(ky, hopEdge);
                 hopEdge = false; in = unpackInput(bits);
+                if (inReplay.empty() && pad) { applyPad(in, ps, padLeanSign); bits = quantizeInput(in); padSteerVis = in.steer; }   // el mando se mezcla con el teclado; el registro guarda la versión cuantizada
                 if (const char* pi = std::getenv("DH_PLAYIN")) std::sscanf(pi, "%f %f %f %f", &in.throttle, &in.brake, &in.steer, &in.lean);
                 if (std::getenv("DH_AUTOPLAY") && overlay.size() >= 9 && inReplay.empty()) {   // piloto automático del modo juego (pruebas, sin teclado): sigue la línea de carrera PTS con acelerador a fondo; sólo para el humo de tools/smoke_levels.sh
                     static size_t apK = 0; const Bike& b = prun.bike; const size_t n = overlay.size() / 3;
@@ -554,7 +582,7 @@ int main(int argc, char** argv) {
                 if (std::getenv("DH_SFX_DEBUG") && frame % 120 == 0) std::fprintf(stderr, "sfx: voces=%zu v=%.0f u/s suelo=%d puertas=%zu estado=%s t=%.1f | sup=%#06x clase=%u mat=%s\n", mixer.activeVoices(), sp, (int)bk.grounded, prun.gs.counter, raceStateName(race.state), race.raceTime, bk.surface, (unsigned)(bk.surface & 0x1F), mat.c_str());
             }
             if (maxTicks > 0 && tickCount >= maxTicks) { std::fprintf(stderr, "sfx resumen: ticks=%ld t=%.1f s puertas=%zu/%zu reinicios=%u vel máx=%.0f | eventos: checkpoint=%lu aterrizaje=%lu choque=%lu | fotogramas: rodadura=%lu aire=%lu | voces máx=%zu\n", tickCount, race.raceTime, prun.gs.counter, gts.size(), prun.respawns, 1.0973f * race.maxSpeed, evCheck, evLand, evCrash, framesRoll, framesAir, maxVoices); run = false; }
-            static float lastSteer = 0; { uint8_t lb = packKeys(ky, false); lastSteer = unpackInput(lb).steer; } leanVis += (-lastSteer * std::fmin(0.45f, bk.speed() * 0.012f) * (bk.grounded ? 1.f : 0.f) - leanVis) * std::fmin(1.f, 6.f * ddt);   // inclinación visual al girar (sólo dibujo)
+            static float lastSteer = 0; { uint8_t lb = packKeys(ky, false); lastSteer = unpackInput(lb).steer; if (padOn && std::fabs(padSteerVis) > std::fabs(lastSteer)) lastSteer = padSteerVis; } leanVis += (-lastSteer * std::fmin(0.45f, bk.speed() * 0.012f) * (bk.grounded ? 1.f : 0.f) - leanVis) * std::fmin(1.f, 6.f * ddt);   // inclinación visual al girar (sólo dibujo)
             float want = hs > 4.f ? std::atan2(vv.x, -vv.z) : bk.heading(), df = want - camHead; while (df > 3.14159f) df -= 6.28318f; while (df < -3.14159f) df += 6.28318f;
             camHead += df * std::fmin(1.f, 3.f * ddt);
             // Cámara del juego (savestates, docs/formats/gs-dump.md): |cámara - piloto| = 11,81 = √(11²+4,3²) en ALPINEMX y 10,66 = √(10²+3,7²) en ALPINE, con el offset medido en el marco de la CÁMARA
@@ -894,6 +922,6 @@ int main(int argc, char** argv) {
         SDL_GL_SwapWindow(w);
     }
     if (const char* lp = std::getenv("DH_INPUT_LOG")) if (!g_inLogSaved && !g_inLog.empty()) { g_inLogSaved = saveInputs(lp, g_inLog); std::fprintf(stderr, "registro de entradas (al salir): %zu ticks -> %s (%s)\n", g_inLog.size(), lp, g_inLogSaved ? "ok" : "error"); }
-    music.stop(); mixer.close();   // cerrar el audio ANTES de SDL_Quit (destruir un flujo tras SDL_Quit puede provocar un fallo)
+    if (pad) SDL_CloseGamepad(pad); music.stop(); mixer.close();   // cerrar el audio ANTES de SDL_Quit (destruir un flujo tras SDL_Quit puede provocar un fallo)
     SDL_GL_DestroyContext(gl); SDL_DestroyWindow(w); SDL_Quit();
 }

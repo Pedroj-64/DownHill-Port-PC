@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Juega un nivel a mano con un comando: tools/play.sh [NIVEL=ALP2] [imagen.iso]   (WASD/flechas, Espacio = salto, Mayús = esfuerzo; DH_INPUT_LOG=archivo guarda las entradas)
 # Todo NATIVO, sin extraer ni exportar nada: lee la imagen ISO del jugador (la *.iso de la raíz del repo o la que indiques), descomprime los contenedores IE y construye nivel y bici en memoria. Abre una ventana.
+#   Mando (SDL gamepad, src/gamepad.hpp): stick izq./cruceta = girar e inclinar, Cruz = pedalear, Triángulo = freno, R2 = salto, R1/R3 = esfuerzo, Start = reaparecer, Select = salida, Cuadrado = último punto bueno; en menús: cruceta + Cruz.
 # Respaldo: carpeta extraída unpacked/ (unpacked/LVL/<N>.NGP) y, como último recurso, el export antiguo out/maps/<N>.mdl + out/play/bike1.mdl. La imagen es del jugador: no se versiona (regla 4).
 set -e; cd "$(dirname "$0")/.."; N=${1:-ALP2}
 [ -f build/dhview ] || { echo "falta build/dhview (cmake --build build)" >&2; exit 1; }
