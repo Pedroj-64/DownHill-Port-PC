@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <array>
 #include <map>
 #include <vector>
 #include "renderer.hpp"
@@ -87,12 +88,17 @@ inline bool loadRacers(gfx::Renderer& gr, const std::vector<uint8_t>& ngp, const
 
 struct Set {
     struct Model { gfx::MeshId mesh, meshUp; int type; float height; };   // meshUp = la misma malla con los brazos en alto (ovación); -1 si no hay esqueleto
-    std::vector<Model> models; std::vector<Point> pts; std::map<int, std::vector<size_t>> byType;
+    std::vector<Model> models; std::vector<Point> pts; std::map<int, std::vector<size_t>> byType; std::map<uint32_t, std::array<float, 6>> gbox;   // caja (min xyz, max xyz) de cada grupo
     bool empty() const { return models.empty() || pts.empty(); }
 
     // Carga todas las plantillas de personaje del NGP del nivel (cada una con su textura) y los puntos PED. Devuelve false si no hay nada que dibujar.
     bool load(gfx::Renderer& gr, const std::vector<uint8_t>& ngp, const std::vector<uint8_t>& ptr, const std::vector<uint8_t>& texd, const std::vector<uint8_t>& rtx, const std::vector<uint8_t>& ped) {
         pts = parse(ped); if (pts.empty()) return false;
+        // FUN_001963f8: cada grupo (campo `sub`) guarda como mucho 0x18 = 24 puntos (los primeros del archivo; en ALPINEMX el grupo 0 son 84 sueltos y solo valen 24) y su caja englobante crece 200 u por lado;
+        // FUN_00127d70 instancia el grupo (a lo sumo 24 grupos activos) cuando se activa. HIPÓTESIS: se activa con el jugador dentro de la caja.
+        { std::map<uint32_t, int> cnt; std::vector<Point> keep; for (const Point& q : pts) if (cnt[q.sub]++ < 24) keep.push_back(q); pts.swap(keep);
+          gbox.clear(); for (const Point& q : pts) { auto it = gbox.find(q.sub); if (it == gbox.end()) it = gbox.emplace(q.sub, std::array<float, 6>{q.x, q.y, q.z, q.x, q.y, q.z}).first; auto& b = it->second;
+              b[0] = std::fmin(b[0], q.x); b[1] = std::fmin(b[1], q.y); b[2] = std::fmin(b[2], q.z); b[3] = std::fmax(b[3], q.x); b[4] = std::fmax(b[4], q.y); b[5] = std::fmax(b[5], q.z); } }
         tex::Level TL; rider_mesh::TextureResolver base; if (!loadTex(ngp, ptr, texd, rtx, TL, base)) return false;
         const size_t none = std::numeric_limits<size_t>::max();
         for (uint32_t kind = 4000; kind < 4500; kind += 5) {
@@ -131,6 +137,7 @@ struct Set {
         for (size_t i = 0; i < pts.size(); i++) {
             if (!byType.count(pts[i].type)) continue;
             const float dx = pts[i].x - cx, dy = pts[i].y - cy, dz = pts[i].z - cz, d2 = dx * dx + dy * dy + dz * dz;
+            const auto gb = gbox.find(pts[i].sub); if (!std::getenv("DH_PED_NOGROUPS") && gb != gbox.end()) { const auto& b = gb->second; if (cx < b[0] - 200.f || cx > b[3] + 200.f || cy < b[1] - 200.f || cy > b[4] + 200.f || cz < b[2] - 200.f || cz > b[5] + 200.f) continue; }   // grupo activo = jugador dentro de su caja + 200 u
             if (d2 < radius * radius) cand.push_back({d2, i});
         }
         std::sort(cand.begin(), cand.end()); if (cand.size() > budget) cand.resize(budget);
