@@ -104,6 +104,7 @@ int main(int argc, char** argv) {
         for (auto& kv : M) { Acc& a = kv.second; if (a.refA.size() < 8) continue; std::printf("%5d %5d %5zu | %10.2f %6.2f %8.2f | %10.2f %6.2f | %8.2f || %8.2f %8.2f | %8.2f\n", kv.first.first, kv.first.second, a.refA.size(), pct(a.refA, .5f), pct(a.portA, .5f), pct(a.diffA, .5f), pct(a.refP, .5f), pct(a.portP, .5f), pct(a.predRoll, .5f), pct(a.codeA, .5f), pct(a.codeL, .5f), pct(a.portTA, .5f)); }
         return 0;
     }
+    std::vector<std::pair<float, float>> sgnV;
     for (size_t i = 0; i < R.size(); i++) {
         if (R[i].t < nextStart) continue;
         double tEnd = R[i].t + winS; if (R.back().t < tEnd) break;
@@ -118,7 +119,7 @@ int main(int argc, char** argv) {
         Bike b; if (!std::getenv("DH_NOENGINE")) useEngineProfile(b.P); b.P.hop = 32.f; applySet(b.P); b.rb.restitution = b.P.restitution; b.rb.friction = b.P.friction;
         b.pos = R[i].p; b.fwd = unit(R[i].f); b.rb.vel = R[i].v; b.rb.linMom = R[i].v * b.P.mass; b.rb.omega = b.rb.angMom = V3{}; b.rb.com = b.pos;
         const bool ground0 = R[i].air < 0.5f; b.grounded = ground0; b.coyote = ground0 ? 0.1f : 0.f; b.groundN = unit(R[i].u);
-        bool allGround = true, g05 = true; float v05 = 0, al = 0, la = 0; bool hasLean = false; size_t k = i; int airTicks = 0; float e05 = 0, e10 = 0, eW = 0, b05 = 0, b10 = 0, bW = 0;
+        bool allGround = true, g05 = true; float v05 = 0, sg05 = 0, al = 0, la = 0; bool hasLean = false; size_t k = i; int airTicks = 0; float e05 = 0, e10 = 0, eW = 0, b05 = 0, b10 = 0, bW = 0;
         for (int s = 0; s < steps; s++) {
             double ts = R[i].t + s * DT; k = at(ts + 1e-4, k); const Rec& in = R[k];
             BikeInput bi; bi.steer = in.steer; bi.lean = (float)sign * in.lean; bi.throttle = in.pedal; bi.sprint = in.sprint > 0.5f; if (std::getenv("DH_BRAKE796")) bi.brake = in.b796;
@@ -129,13 +130,15 @@ int main(int argc, char** argv) {
             const double te = (s + 1) * DT;
             if (s + 1 == (int)std::lround(0.5 / DT) || s + 1 == (int)std::lround(1.0 / DT) || s + 1 == steps) {
                 size_t m = at(R[i].t + te + 1e-4, k); float e = dist(b.pos, R[m].p), bl = dist(R[i].p + R[i].v * (float)te, R[m].p);
-                if (s + 1 == (int)std::lround(0.5 / DT)) { e05 = e; b05 = bl; v05 = std::fabs(std::sqrt(dot(b.rb.vel, b.rb.vel)) - std::sqrt(dot(R[m].v, R[m].v))); V3 d = b.pos - R[m].p, u0 = unit(R[i].v); al = dot(d, u0); V3 pr = d - u0 * al; la = std::sqrt(dot(pr, pr)); } if (s + 1 == (int)std::lround(1.0 / DT)) { e10 = e; b10 = bl; } if (s + 1 == steps) { eW = e; bW = bl; }
+                if (s + 1 == (int)std::lround(0.5 / DT)) { e05 = e; b05 = bl; sg05 = std::sqrt(dot(b.rb.vel, b.rb.vel)) - std::sqrt(dot(R[m].v, R[m].v)); v05 = std::fabs(sg05); V3 d = b.pos - R[m].p, u0 = unit(R[i].v); al = dot(d, u0); V3 pr = d - u0 * al; la = std::sqrt(dot(pr, pr)); } if (s + 1 == (int)std::lround(1.0 / DT)) { e10 = e; b10 = bl; } if (s + 1 == steps) { eW = e; bW = bl; }
             }
             (void)airTicks;
         }
         float vend = std::sqrt(dot(b.rb.vel, b.rb.vel)), vref = std::sqrt(dot(R[j].v, R[j].v));
+        if (g05) sgnV.push_back({sp0, sg05});   // sesgo con signo de |v| al final de la ventana (solo ventanas enteras en suelo)
         W.push_back({i, e05, e10, eW, b05, b10, bW, std::fabs(vend - vref), std::fabs(sp0 - vref), allGround, g05, v05, al, la, hasLean, std::fabs(b.fwd.y - R[j].f.y)});
     }
+    { const float lo[4] = {8, 25, 40, 60}, hi[4] = {25, 40, 60, 1e9f}; for (int q = 0; q < 4; q++) { std::vector<float> d; for (auto& pr : sgnV) if (pr.first >= lo[q] && pr.first < hi[q]) d.push_back(pr.second); if (d.size() >= 3) std::printf("VBIAS v0 %3.0f-%3.0f n=%zu sesgo(port-ref) mediana %+.2f u/s\n", lo[q], hi[q] > 1e8f ? 999.f : hi[q], d.size(), pct(d, .5f)); } }
     auto report = [&](const char* name, bool onlyGround, bool onlyAir) {
         std::vector<float> a05, a10, aW, c10, cW, ev; size_t ok = 0, cnt = 0;
         for (const Win& w : W) { if (onlyGround && !w.allGround) continue; if (onlyAir && w.allGround) continue; a05.push_back(w.e05); a10.push_back(w.e10); aW.push_back(w.eW); c10.push_back(w.b10); cW.push_back(w.bW); ev.push_back(w.ev); cnt++; if (w.eW <= 0.05f * winS * 60.f) ok++; }
