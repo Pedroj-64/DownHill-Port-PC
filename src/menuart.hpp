@@ -32,7 +32,7 @@ inline bool load(const nativelevel::Reader& rd, Art& A) {
     std::vector<uint8_t> n, p, t, c; const std::string b = "SHELL/UI";
     if (!rd(b + ".NGP", n) || !rd(b + ".PTR", p) || !rd(b + ".TEX", t) || !rd(b + ".RTX", c)) return false;
     tex::Level L; if (!tex::load(n, p, t, c, L)) return false;
-    const std::set<int> want = {136, 137, 138, 125, 224, 233, 222, 223, 225, 226, 227, 228, 229, 230, 231, 232, 234, 235, 236, 237, 238, 239, 240, 241};   // el arte de cada circuito son DOS mitades consecutivas (izquierda, derecha) de 256x256
+    const std::set<int> want = {18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 53, 136, 137, 138, 125, 224, 233, 222, 223, 225, 226, 227, 228, 229, 230, 231, 232, 234, 235, 236, 237, 238, 239, 240, 241};   // el arte de cada circuito son DOS mitades consecutivas (izquierda, derecha) de 256x256
     std::set<std::pair<uint32_t, uint32_t>> seen; int k = 0;
     for (const tex::Material& m : L.mats) {
         if (!seen.insert({m.tid, m.cbp}).second) continue; k++; if (!want.count(k)) continue;
@@ -51,6 +51,13 @@ inline bool load(const nativelevel::Reader& rd, Art& A) {
         for (size_t i = 0; i < labels.size() && i < bands.size(); i++) { const Band& bd = bands[i];
             A.names[labels[i]] = {it->second, (float)bd.x0 / g.w, (float)bd.y0 / g.h, (float)bd.x1 / g.w, (float)bd.y1 / g.h, (float)(bd.x1 - bd.x0), (float)(bd.y1 - bd.y0)}; }
     }
+    // nombres de piloto con bandera (hojas 18-21, 256x256 ya volteadas) y retratos 22-34: rectángulos medidos a ojo (x0, y0, x1, y1) sobre la hoja; el ORDEN retrato <-> nombre es HIPÓTESIS (orden de la tabla de nombres del ELF en 0x16C1B8)
+    struct RN { const char* name; int sheet, x0, y0, x1, y1; };
+    static const RN riders[] = {{"COSMO", 18, 8, 145, 245, 195}, {"AJAX", 18, 40, 5, 205, 70}, {"JONNIE", 18, 10, 198, 235, 252}, {"KALOLO", 19, 2, 3, 188, 75}, {"T-BAG", 19, 8, 95, 178, 165},
+        {"ERIC CARTER", 20, 0, 178, 238, 255}, {"TARA LLANES", 20, 15, 92, 245, 175}, {"DRUD", 18, 8, 80, 240, 140}, {"BRIAN LOPES", 20, 10, 0, 250, 85}, {"MISSY GIOVE", 21, 5, 65, 255, 160},
+        {"RICHIE SCHLEY", 21, 5, 165, 250, 255}, {"KINETICLOPS", 21, 5, 5, 250, 60}, {"RAXEL", 19, 8, 185, 190, 250}, {"MAI", 19, 190, 10, 248, 185}};
+    for (const RN& r : riders) { auto it = A.byIndex.find(r.sheet); if (it == A.byIndex.end()) continue; const gfx::Texture& g = A.tex[it->second];
+        A.names[std::string("R:") + r.name] = {it->second, (float)r.x0 / g.w, (float)r.y0 / g.h, (float)r.x1 / g.w, (float)r.y1 / g.h, (float)(r.x1 - r.x0), (float)(r.y1 - r.y0)}; }
     A.ok = A.byIndex.count(136) && !A.names.empty(); return A.ok;
 }
 inline Sprite whole(const Art& A, int index) { Sprite s; auto it = A.byIndex.find(index); if (it == A.byIndex.end()) return s; s.tex = it->second; s.w = (float)A.tex[it->second].w; s.h = (float)A.tex[it->second].h; return s; }

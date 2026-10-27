@@ -75,6 +75,7 @@ int main(int argc, char** argv) {
         {"JAPAN", 236, {"FUJI", nullptr, nullptr}, {"JAPAN FR", nullptr, nullptr}},
         {"USA", 238, {"CITY", "CITYMX", "CITYTDH"}, {"USA FR", "USA MX", "USA TD"}},
         {"BRITISH COLUMBIA", 240, {"BC", "BCTDX", nullptr}, {"BRITISH COLUMBIA FR", "BRITISH COLUMBIA MX", nullptr}}};
+    int menuStage = std::getenv("DH_MENU_STAGE") ? std::atoi(std::getenv("DH_MENU_STAGE")) : 0, menuCur = 0, menuRider = std::getenv("DH_MENU_RIDER") ? std::atoi(std::getenv("DH_MENU_RIDER")) : 0; float menuT = 0.f;   // etapas: 0 título, 1 menú principal, 2 piloto, 3 partida, 4 modo, 5 evento, 6 circuito (selector de nivel)
     int menuLoc = 0, menuMd = 0; menuart::Art menuArt; std::vector<int> menuTex;   // circuito y modo elegidos; arte cargado de SHELL/UI   // selector sobre la escena real SHELL/UI (plan M2)   // para volver al selector (plan M2): se relanza el propio binario solo con la ISO
     std::vector<float> v, col;
     std::map<std::string, std::vector<uint8_t>> vfs;   // archivos virtuales de la carga nativa (<nivel>.NGP -> .mdl, .sky.mdl, .dome.mdl, .col, .gates, .start.pts, .chain0.pts): readFile los sirve antes que el disco
@@ -464,8 +465,9 @@ int main(int argc, char** argv) {
     openPad();
     auto backToMenu = [&](const char* level = nullptr) {   // resultados -> selector: cierra audio y SDL como al salir y relanza dhview "<iso>" (sin nivel); false si no se partió de una ISO o falla el exec
         if (!isoArg.ends_with(".iso") && !isoArg.ends_with(".ISO")) return false;
-        unsetenv("DH_FLOW_BACK"); unsetenv("DH_FLOW_FINISH");
+        unsetenv("DH_FLOW_BACK"); unsetenv("DH_FLOW_FINISH"); { char nb[16]; std::snprintf(nb, sizeof nb, "%d", menuRider); setenv("DH_MENU_RIDER", nb, 1); setenv("DH_MENU_STAGE", "6", 1); }   // de vuelta al selector de circuito con el mismo piloto
         for (const char* v : {"DH_BIKE", "DH_PTS", "DH_RIDER_NGP", "DH_RIDER_KIND", "DH_RIDER_POSE"}) unsetenv(v);   // las fija el propio dhview al cargar (ISO): si se heredan, el nivel siguiente no ensambla bici ni piloto (cubo rojo) y usa la línea PTS del anterior   // las banderas de prueba solo valen para esta ejecución
+        if (level && !std::getenv("DH_NO_MENU_RIDER")) { static const char* kK[5] = {"4090", "4095", "4100", "4105", "4110"}; setenv("DH_RIDER_KIND", kK[menuRider % 5], 1); }   // el piloto elegido (HIPÓTESIS: solo hay 5 modelos de personaje por nivel; el resto repite)
         if (pad) SDL_CloseGamepad(pad); music.stop(); mixer.close(); SDL_GL_DestroyContext(gl); SDL_DestroyWindow(w); SDL_Quit();
         char* args[] = {const_cast<char*>(exePath.c_str()), const_cast<char*>(isoArg.c_str()), const_cast<char*>(level), nullptr}; execv(exePath.c_str(), args); return false;   // level == nullptr corta la lista tras la ISO
     };
@@ -479,6 +481,7 @@ int main(int argc, char** argv) {
                     case SDL_GAMEPAD_BUTTON_DPAD_LEFT: if (menuMode) kc = SDLK_LEFT; break; case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: if (menuMode) kc = SDLK_RIGHT; break;
                     case SDL_GAMEPAD_BUTTON_DPAD_UP: if (menuMode) kc = SDLK_UP; break; case SDL_GAMEPAD_BUTTON_DPAD_DOWN: if (menuMode) kc = SDLK_DOWN; break;
                     case SDL_GAMEPAD_BUTTON_SOUTH: if (menuMode || results) kc = SDLK_RETURN; break;      // Cruz: aceptar / repetir
+                    case SDL_GAMEPAD_BUTTON_NORTH: if (menuMode) kc = SDLK_BACKSPACE; break;             // Triángulo: atrás en los menús (como el juego)
                     case SDL_GAMEPAD_BUTTON_EAST: if (results) kc = SDLK_M; break;                       // Círculo: volver al selector
                     case SDL_GAMEPAD_BUTTON_START: kc = SDLK_RETURN; break;                              // Start: reaparecer en el último punto bueno / repetir
                     case SDL_GAMEPAD_BUTTON_BACK: if (play) kc = SDLK_T; break;                          // Select: volver a la rejilla de salida
@@ -491,9 +494,18 @@ int main(int argc, char** argv) {
             if (play && e.type == SDL_EVENT_KEY_DOWN) { if (e.key.key == SDLK_SPACE) hopPressed = true; if (e.key.key == SDLK_R && race.state == RaceState::Riding) { prun.respawn(); std::fprintf(stderr, "R: de vuelta al último punto bueno\n"); } if (e.key.key == SDLK_T) { startPlay(); std::fprintf(stderr, "T: salida (%.0f %.0f %.0f)\n", prun.bike.pos.x, prun.bike.pos.y, prun.bike.pos.z); } if (e.key.key == SDLK_M && race.state == RaceState::Results) backToMenu(); if (e.key.key == SDLK_RETURN && race.state == RaceState::Results) { startPlay(); std::fprintf(stderr, "Enter: repetir la carrera\n"); } else if (e.key.key == SDLK_RETURN) { prun.respawn(); std::fprintf(stderr, "Enter: reaparece en (%.0f %.0f %.0f), reapariciones %d\n", prun.bike.pos.x, prun.bike.pos.y, prun.bike.pos.z, (int)prun.respawns); } }
             if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_F && mdl) { walk = !walk; vy = 0; ride = false; play = false; }   // F: volar <-> caminar con gravedad
             if (menuMode && e.type == SDL_EVENT_KEY_DOWN) { const SDL_Keycode kc = e.key.key; const int NL = (int)(sizeof kLocs / sizeof kLocs[0]);
-                if (kc == SDLK_RIGHT) { menuLoc = (menuLoc + 1) % NL; menuMd = 0; } else if (kc == SDLK_LEFT) { menuLoc = (menuLoc + NL - 1) % NL; menuMd = 0; }
-                else if (kc == SDLK_DOWN || kc == SDLK_UP) { const int d = kc == SDLK_DOWN ? 1 : 2; for (int i = 1; i <= 3; i++) { const int m = (menuMd + d * i) % 3; if (menuHas(menuLoc, m)) { menuMd = m; break; } } }
-                else if ((kc == SDLK_RETURN || kc == SDLK_KP_ENTER) && menuHas(menuLoc, menuMd)) backToMenu(kLocs[menuLoc].file[menuMd]); }   // relanza dhview "<iso>" NIVEL: con ISO + nivel se juega por defecto
+                const bool ok = kc == SDLK_RETURN || kc == SDLK_KP_ENTER, back = kc == SDLK_BACKSPACE, up = kc == SDLK_UP, dn = kc == SDLK_DOWN, lf = kc == SDLK_LEFT, rt = kc == SDLK_RIGHT;
+                static const int kItems[7] = {0, 3, 0, 2, 6, 3, 0};   // nº de entradas de cada etapa (1 principal: SINGLE PLAYER / MULTI-PLAYER / OPTIONS; 3 partida; 4 modo; 5 evento)
+                if (menuStage == 0) { if (ok) { menuStage = 1; menuCur = 0; } }
+                else if (menuStage == 1) { if (dn) menuCur = (menuCur + 1) % 3; if (up) menuCur = (menuCur + 2) % 3; if (ok && menuCur == 0) { menuStage = 2; menuCur = 0; } if (back) menuStage = 0; }
+                else if (menuStage == 2) { const int NR = 13; if (rt) menuRider = (menuRider + 1) % NR; if (lf) menuRider = (menuRider + NR - 1) % NR; if (ok) { menuStage = 3; menuCur = 0; } if (back) { menuStage = 1; menuCur = 0; } }
+                else if (menuStage == 3 || menuStage == 4 || menuStage == 5) { const int n = kItems[menuStage]; if (dn) menuCur = (menuCur + 1) % n; if (up) menuCur = (menuCur + n - 1) % n;
+                    if (ok && menuCur == 0) { menuStage++; menuCur = 0; } if (back) { menuStage--; menuCur = 0; } }   // solo la primera entrada de cada lista está implementada (NEW GAME / SINGLE EVENT / RACE); el resto sale en gris
+                else if (menuStage == 6) {
+                if (back) { menuStage = 5; menuCur = 0; }
+                else if (rt) { menuLoc = (menuLoc + 1) % NL; menuMd = 0; } else if (lf) { menuLoc = (menuLoc + NL - 1) % NL; menuMd = 0; }
+                else if (dn || up) { const int d = dn ? 1 : 2; for (int i = 1; i <= 3; i++) { const int m = (menuMd + d * i) % 3; if (menuHas(menuLoc, m)) { menuMd = m; break; } } }
+                else if (ok && menuHas(menuLoc, menuMd)) backToMenu(kLocs[menuLoc].file[menuMd]); } }   // relanza dhview "<iso>" NIVEL: con ISO + nivel se juega por defecto   // relanza dhview "<iso>" NIVEL: con ISO + nivel se juega por defecto
             if (!menuMode && e.type == SDL_EVENT_MOUSE_MOTION) { yaw += e.motion.xrel * 0.003f; pitch -= e.motion.yrel * 0.003f; }
         }
         pitch = std::fmax(-1.55f, std::fmin(1.55f, pitch));
@@ -902,6 +914,35 @@ int main(int argc, char** argv) {
             static bool artTried = false; if (!artTried) { artTried = true; if (menuart::load(assetRd, menuArt)) for (auto& t : menuArt.tex) menuTex.push_back(gr.createTexture(t)); else std::fprintf(stderr, "aviso: sin arte de menú (SHELL/UI)\n"); }
             const float W = (float)ww, H = (float)hh, S = std::fmax(2.f, std::floor(H / 240.f)); std::vector<gfx::Quad> mq; std::vector<gfx::TexQuad> tqs;
             auto sprite = [&](const menuart::Sprite& sp, float x, float y, float h, float r, float g2, float b2, float a2, float maxW = 1e9f) { if (sp.tex < 0) return 0.f; if (h * sp.w / sp.h > maxW) h = maxW * sp.h / sp.w; const float w2 = h * sp.w / sp.h; gr.drawTexQuads2D(menuTex[sp.tex], {{x, y, w2, h, sp.u0, sp.v0, sp.u1, sp.v1, r, g2, b2, a2}}, (int)ww, (int)hh); return w2; };
+            menuT += (float)std::fmin(dt, 0.05f);
+            auto txt = [&](const std::string& t, float cx, float y, float sc, float r, float g2, float b2) { gfx::textQuadsCentered(t, cx, y, S * sc, r, g2, b2, 1.f, mq); };
+            auto list = [&](const char* title, const std::vector<std::pair<std::string, bool>>& items) {   // lista vertical al estilo del juego: título, entradas (gris = no implementada), cursor resaltado
+                mq.push_back({0, 0, W, H, 0.f, 0.f, 0.f, 0.35f}); const float lh = H * 0.19f; gr.drawQuads2D(mq, (int)ww, (int)hh); mq.clear();
+                for (int i = 0; i < 3; i++) sprite(menuart::whole(menuArt, 136 + i), W * 0.5f - lh * 1.35f + lh * 0.9f * i, H * 0.03f, lh, 1, 1, 1, 1);
+                txt(title, W * 0.5f, H * 0.30f, 1.8f, 1.f, 0.85f, 0.2f);
+                for (size_t i = 0; i < items.size(); i++) { const bool on = (int)i == menuCur; const float y = H * (0.40f + 0.085f * (float)i);
+                    if (on) mq.push_back({W * 0.30f, y - H * 0.012f, W * 0.40f, H * 0.062f, 0.25f, 0.3f, 0.55f, 0.85f});
+                    const float v = items[i].second ? (on ? 1.f : 0.75f) : 0.35f; txt(items[i].first, W * 0.5f, y, 1.6f, v, v, v); }
+                txt("UP/DOWN = SELECT   X = OK   TRIANGLE = BACK", W * 0.5f, H * 0.95f, 0.8f, 0.7f, 0.7f, 0.7f); gr.drawQuads2D(mq, (int)ww, (int)hh); mq.clear(); };
+            if (menuArt.ok && menuStage == 0) {   // título: logo grande y «PRESS X TO START» parpadeando
+                mq.push_back({0, 0, W, H, 0.f, 0.f, 0.f, 0.25f}); gr.drawQuads2D(mq, (int)ww, (int)hh); mq.clear(); const float lh = H * 0.34f;
+                for (int i = 0; i < 3; i++) sprite(menuart::whole(menuArt, 136 + i), W * 0.5f - lh * 1.35f + lh * 0.9f * i, H * 0.18f, lh, 1, 1, 1, 1);
+                if (std::fmod(menuT, 1.0f) < 0.65f) txt("PRESS X TO START", W * 0.5f, H * 0.72f, 2.0f, 1.f, 1.f, 1.f);
+                gr.drawQuads2D(mq, (int)ww, (int)hh); mq.clear();
+            } else if (menuArt.ok && menuStage == 1) list("MAIN MENU", {{"SINGLE PLAYER", true}, {"MULTI-PLAYER", false}, {"OPTIONS", false}});
+            else if (menuArt.ok && menuStage == 2) {   // PLAYER ONE: SELECT RIDER — retrato y nombre con bandera
+                static const char* kN[13] = {"DRUD", "AJAX", "KALOLO", "TARA LLANES", "ERIC CARTER", "RICHIE SCHLEY", "COSMO", "MAI", "KINETICLOPS", "T-BAG", "MISSY GIOVE", "RAXEL", "JONNIE"};   // asignación retrato -> nombre por aspecto/género: HIPÓTESIS (13 retratos, 14 nombres; falta Brian Lopes)
+                mq.push_back({0, 0, W, H, 0.f, 0.f, 0.f, 0.35f}); gr.drawQuads2D(mq, (int)ww, (int)hh); mq.clear();
+                txt("PLAYER ONE", W * 0.5f, H * 0.06f, 2.0f, 1.f, 0.85f, 0.2f); txt("SELECT RIDER", W * 0.5f, H * 0.14f, 1.6f, 1.f, 1.f, 1.f);
+                const float ph = H * 0.42f, px0 = W * 0.5f - ph * 0.5f; mq.push_back({px0 - 6, H * 0.24f - 6, ph + 12, ph + 12, 0.1f, 0.12f, 0.2f, 0.9f}); gr.drawQuads2D(mq, (int)ww, (int)hh); mq.clear();
+                sprite(menuart::whole(menuArt, 22 + menuRider), px0, H * 0.24f, ph, 1, 1, 1, 1);
+                auto it = menuArt.names.find(std::string("R:") + kN[menuRider]); if (it != menuArt.names.end()) sprite(it->second, W * 0.5f - W * 0.2f, H * 0.70f, H * 0.14f, 1, 1, 1, 1, W * 0.4f); else txt(kN[menuRider], W * 0.5f, H * 0.74f, 2.0f, 1.f, 1.f, 1.f);
+                for (int sd = 0; sd < 2; sd++) for (int r = -6; r <= 6; r++) { const float wq = (7 - std::abs(r)) * S * 2.f, cx = W * 0.5f + (sd ? 1.f : -1.f) * (ph * 0.5f + W * 0.07f), x = sd ? cx - wq * 0.5f - (7 - std::abs(r)) * 0.f : cx - wq * 0.5f; mq.push_back({sd ? cx - (7 * S) : cx + (7 * S) - wq, H * 0.42f + r * S * 1.5f, wq, S * 1.5f, 1.f, 1.f, 1.f, 1.f}); (void)x; }   // flechas < >
+                txt("LEFT/RIGHT = RIDER   X = OK   TRIANGLE = BACK", W * 0.5f, H * 0.95f, 0.8f, 0.7f, 0.7f, 0.7f); gr.drawQuads2D(mq, (int)ww, (int)hh); mq.clear();
+            } else if (menuArt.ok && menuStage == 3) list("SELECT GAME", {{"START NEW GAME", true}, {"CONTINUE SAVED GAME", false}});
+            else if (menuArt.ok && menuStage == 4) list("SINGLE PLAYER GAME MODE", {{"SINGLE EVENT", true}, {"CAREER", false}, {"ARCADE", false}, {"MOSHBOWL", false}, {"SUPER JUMP", false}, {"TRAINING", false}});
+            else if (menuArt.ok && menuStage == 5) list("SINGLE EVENT", {{"RACE", true}, {"FREERIDE", false}, {"TIME TRIAL", false}});
+            else
             if (menuArt.ok) {
                 mq.push_back({0, 0, W, H, 0.f, 0.f, 0.f, 0.35f}); gr.drawQuads2D(mq, (int)ww, (int)hh); mq.clear();
                 const float lh = H * 0.19f; for (int i = 0; i < 3; i++) sprite(menuart::whole(menuArt, 136 + i), W * 0.04f + lh * 0.9f * i, H * 0.03f, lh, 1, 1, 1, 1);   // logo: tres mosaicos de 128x128
