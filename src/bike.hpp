@@ -33,7 +33,7 @@ inline void preStep(integ::Body& b, float kLin = linDamp(), float kAng = angDamp
 // Impulso del salto del motor (FUN_00136330, validado contra 89 saltos de telemetría: pred - |dv| = 2.3..3.7 u/s = un tick de gravedad y resistencia): carga = min(ticks mantenidos, 25)·0.04,
 // J = 13 + carga·6.25 (·(1 - 0.08·ticks_en_aire) si ya se ha despegado, solo con < 12.5), Δv = 2.47·J a lo largo del eje de la moto: 32.1 (toque) .. 47.55 u/s (≥ 25 ticks = 0.5 s).
 inline float hopSpeed(int heldTicks, int airTicks = 0) { float c = std::fmin((float)heldTicks, 25.f) * 0.04f; return 2.47f * (13.f + c * (1.f - (float)airTicks * 0.08f) * 6.25f); }
-struct BikeInput { float throttle = 0, brake = 0, steer = 0, lean = 0; bool hop = false, sprint = false; };   // steer > 0 = derecha; lean > 0 = morro arriba; hop = un solo paso
+struct BikeInput { float throttle = 0, brake = 0, steer = 0, lean = 0; bool hop = false, sprint = false; float hopPower = 1.f; bool trick = false; };   // hopPower = hopSpeed(carga)/hopSpeed(0) (1 = salto mínimo); trick = Quick 360: izq+der pulsadas a la vez durante la carga (jump_obj+0x28 = 0x01010000 al soltar, docs/telemetry-awiiwa.md)   // steer > 0 = derecha; lean > 0 = morro arriba; hop = un solo paso
 
 struct BikeParams {
     // --- del savestate (rider+0x6420, docs/p2s-savestates.md y bike-physics.md) ---
@@ -114,7 +114,7 @@ inline float comp(V3 v, int i) { return i == 0 ? v.x : i == 1 ? v.y : v.z; }
 struct Bike {
     BikeParams P; RigidBody rb; V3 pos; V3 fwd{0, 0, -1};
     float sprintT = 0;                                     // segundos de esfuerzo extra seguidos (rampa del arrastre, realDrag)
-    float yawW = 0, pitchW = 0;                            // estados del controlador del motor (rad/tick)
+    float yawW = 0, pitchW = 0; bool trick = false; float trickT = 0.f;      // estados del controlador del motor (rad/tick)
     bool grounded = false, wheelF = false, wheelR = false; float coyote = 0, tF = 0, tR = 0;   // grounded/wheelF/wheelR = contacto en los últimos 0.1 s (en reposo el barrido a veces no llega a tocar en un sub-paso)
     V3 groundN{0, 1, 0}; uint16_t surface = 0; float fricRamp = 0.25f;   // ctrl+0x48C: rampa de entrada del rozamiento (FUN_00135D28)
     uint32_t sweeps = 0, hits = 0, overlaps = 0; double airTime = 0;
@@ -177,11 +177,13 @@ private:
                 if (P.wheelFricLong && (P.fricGate == 2 || dot(cross(vh, lat), n) * (P.fricGate == 3 ? -1.f : 1.f) > 0.f)) { float df = std::fmin(std::fabs(vf) * fricRamp * P.fricE, capV * sc); v = v - lon * (vf < 0 ? -df : df); }
             }
         }   // fuerza de suelo empírica: anula (1-groundShare) de la gravedad tangente (hipótesis)
-        if (in.hop && first && gr) { v = v + A.u * P.hop; coyote = 0; }
+        if (in.hop && first && gr) { v = v + A.u * (P.hop * in.hopPower); coyote = 0; trick = in.trick; trickT = 0.f; }
+        trickT += h; if (gr && trickT > 0.2f) trick = false;   // aterrizar apaga el truco (el contacto sigue unos ticks tras el despegue)
         rb.vel = v; rb.linMom = v * P.mass;
         float wp = dot(rb.omega, A.r), wy = rb.omega.y;
         if (P.engineSteer) {                                   // controlador del motor: estados de velocidad angular con aceleración, máximo y decaimiento
             float nt = engine::kTickHz * h, acc = gr ? P.steerAccelGround : P.steerAccelAir, mx = gr ? P.steerMaxGround : P.steerMaxAir;
+            if (!gr && in.steer == 0.f && trickT > 0.1f) trick = false; else if (!gr && trick) { acc *= 2.8f; mx *= 2.8f; }   // ctrl+0x49C = 2.8 (FUN_00137C48) mientras dura el truco; se apaga sin giro
             if (in.steer != 0.f) yawW = std::fmax(-mx, std::fmin(mx, yawW + acc * in.steer * nt)); else yawW *= gr ? 0.f : std::pow(P.steerDecayAir, nt);
             float yawRate = -yawW * 1.2f * engine::kTickHz; wy = 0.f;   // derecha = giro negativo sobre Y; la guiñada se aplica directa a la orientación (FUN_00137F70), no como velocidad angular
             const float ang = yawRate * h; const V3 yaxis{0, ang < 0.f ? -1.f : 1.f, 0};   // rotateAbout ignora ángulos negativos: se pasa el eje invertido

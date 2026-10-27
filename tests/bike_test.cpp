@@ -43,6 +43,11 @@ int main() {
     // --- salto: en el suelo despega y vuelve a caer; en el aire el impulso no se aplica ---
     { Ground g = plane(0); Bike b; b.place({0, 4.f, 0}, 0); run(b, g, {}, 2.f); float y0 = b.pos.y; BikeInput in; in.hop = true; b.step(g, in, 1.f / 60.f); in.hop = false;
       float maxy = b.pos.y; for (int i = 0; i < 40; i++) { b.step(g, in, 1.f / 60.f); maxy = std::fmax(maxy, b.pos.y); } CHECK(maxy > y0 + 0.5f); run(b, g, {}, 2.f); CHECK(b.grounded); }
+    // --- salto cargado (hopPower) y Quick 360: más carga = más altura; el truco gira ~2,8 veces más rápido en el aire y se apaga al soltar el giro ---
+    { auto apex = [&](float pw) { Ground g = plane(0); Bike b; b.place({0, 4.f, 0}, 0); run(b, g, {}, 2.f); BikeInput in; in.hop = true; in.hopPower = pw; b.step(g, in, 1.f / 60.f); in.hop = false; float m = b.pos.y; for (int i = 0; i < 80; i++) { b.step(g, in, 1.f / 60.f); m = std::fmax(m, b.pos.y); } return m; };
+      CHECK(apex(1.4f) > apex(1.f) + 0.3f); }
+    { auto turn = [&](bool trick) { Ground g = plane(0); Bike b; b.place({0, 4.f, 0}, 0); b.P.engineSteer = true; b.P.hop = 32.f; run(b, g, {}, 2.f); BikeInput in; in.hop = true; in.hopPower = 1.4f; in.trick = trick; in.steer = 1.f; b.step(g, in, 1.f / 60.f); in.hop = false; for (int i = 0; i < 10; i++) b.step(g, in, 1.f / 60.f); CHECK(!b.grounded); float h0 = b.heading(); for (int i = 0; i < 12; i++) b.step(g, in, 1.f / 60.f); return std::fabs(b.heading() - h0); };
+      CHECK(turn(true) > 1.5f * turn(false)); }
     // --- Run: el reinicio devuelve a la moto al último punto bueno y cuenta ---
     { Ground g = plane(0); Run r; r.start(g, {0, 0, 0}, 0); BikeInput in; in.throttle = 1; for (int i = 0; i < 60 * 4; i++) r.update(g, in, 1.f / 60.f);
       V3 good = r.goodPos; CHECK(good.z < -3.f); r.bike.place({500, -300, 500}, 0); r.update(g, in, 1.f / 60.f); CHECK(r.respawns == 1); CHECK(std::fabs(r.bike.pos.z - good.z) < 5.f); }

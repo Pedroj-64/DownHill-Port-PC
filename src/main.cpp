@@ -352,7 +352,7 @@ int main(int argc, char** argv) {
     // --- Modo jugable (P, o DH_PLAY=1): la moto de src/bike.hpp con teclado. FÍSICA APROXIMADA (docs/formats/bike-physics.md). W acelerar, S frenar, A/D girar, Q/E inclinar (morro arriba/abajo),
     // Espacio saltar, Enter reiniciar en el último punto bueno, T volver a la rejilla de salida. DH_PLAYIN="acelerador freno giro inclinar" fija los mandos sin teclado (capturas DH_SHOT) ---
     std::vector<V3> startSlots;   // todas las plazas de la rejilla (espacio del visor); la primera es la del jugador
-    bool play = false, hopPressed = false, finishedMsg = false; Race race; Run& prun = race.run; V3 camPos{}, startPt{}; float camHead = 0, leanVis = 0; bool haveStart = false, gateOpened = false;
+    float hopPow = 1.f; bool hopTrick = false; bool play = false, hopPressed = false, finishedMsg = false; Race race; Run& prun = race.run; V3 camPos{}, startPt{}; float camHead = 0, leanVis = 0; bool haveStart = false, gateOpened = false;
     { std::vector<uint8_t> sraw; std::string sp0 = mdl ? std::string(argv[1]).substr(0, std::string(argv[1]).size() - 4) + ".start.pts" : std::string();   // primera plaza de la rejilla (tools/markers.py), espacio NGP -> Y arriba
       if (!sp0.empty() && readFile(sp0, sraw) && sraw.size() >= 12) { float f[3]; std::memcpy(f, sraw.data(), 12); startPt = {f[0], f[2], -f[1]}; haveStart = true; for (size_t i = 0; i + 12 <= sraw.size(); i += 12) { std::memcpy(f, sraw.data() + i, 12); startSlots.push_back({f[0], f[2], -f[1]}); } } }
     float surfTab[32][8] = {}; bool haveSurfTab = false;   // tabla de clases de superficie del nivel (RST+0xCA4): rodadura por clase del motor
@@ -524,8 +524,13 @@ int main(int argc, char** argv) {
             for (int n = 0; acc >= 1.0 / 60.0 && n < 6; n++, acc -= 1.0 / 60.0) {
                 BikeInput in; uint8_t bits = 0;
                 if (!inReplay.empty()) bits = inTick < inReplay.size() ? inReplay[inTick] : (uint8_t)0;      // repetición: se acabó el registro = sin mandos
-                else bits = packKeys(ky, hopEdge);
-                hopEdge = false; in = unpackInput(bits);
+                else {   // salto como el juego: se CARGA mientras se mantiene (espacio / R2) y salta al soltar con hopSpeed(carga); izq+der juntas durante la carga = Quick 360
+                    static int hopCh = 0; static bool hopPrev = false, sawL = false, sawR = false, relNow = false; const bool held = ky.space || (pad && ps.rt > 0.5f);
+                    if (held) { hopCh++; sawL |= ky.left || ky.a || (pad && ps.dl); sawR |= ky.right || ky.d || (pad && ps.dr); }
+                    relNow = !held && hopPrev; hopPrev = held; (void)hopEdge;
+                    bits = packKeys(ky, relNow); if (relNow) { hopPow = hopSpeed(hopCh, 0) / hopSpeed(0, 0); hopTrick = sawL && sawR; hopCh = 0; sawL = sawR = false; }
+                }
+                hopEdge = false; in = unpackInput(bits); if ((bits & kInHop) && inReplay.empty()) { in.hopPower = hopPow; in.trick = hopTrick; }
                 if (inReplay.empty() && pad) { applyPad(in, ps, padLeanSign); bits = quantizeInput(in); padSteerVis = in.steer; }   // el mando se mezcla con el teclado; el registro guarda la versión cuantizada
                 if (const char* pi = std::getenv("DH_PLAYIN")) std::sscanf(pi, "%f %f %f %f", &in.throttle, &in.brake, &in.steer, &in.lean);
                 if (std::getenv("DH_AUTOPLAY") && overlay.size() >= 9 && inReplay.empty()) {   // piloto automático del modo juego (pruebas, sin teclado): sigue la línea de carrera PTS con acelerador a fondo; sólo para el humo de tools/smoke_levels.sh
