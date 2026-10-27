@@ -121,7 +121,7 @@ inline std::vector<float> fitCourse(const std::vector<float>& xyz, size_t maxPts
 // quiebres; interior negro de ~5 px con borde verde de ~2 px, sobre un panel translúcido de x 8-86, y 245-469 sin marco. El jugador es un punto verde en la cinta; abajo, la posición como «n» sobre una raya
 // sobre «total» en la fuente LCD (n alto 32 px, total 22 px, borde derecho x 54). HIPÓTESIS: el perfil de los quiebres (aquí: la forma lateral del recorrido PTS mezclada con la diagonal); el color exacto del panel.
 // course = pares (u, v) de fitCourse (puede estar vacío: diagonal recta); frac = 0..1 de avance (puertas cruzadas / total). `lcd` va con la textura kLcdFont.
-inline void progressPanel(int vw, int vh, const std::vector<float>& course, float frac, int rank, int total, std::vector<gfx::Quad>& out, std::vector<gfx::TexQuad>& lcd) {
+inline void progressPanel(int vw, int vh, const std::vector<float>& course, float frac, int rank, int total, std::vector<gfx::Quad>& out, std::vector<gfx::TexQuad>& lcd, const std::vector<float>& rivals = {}) {   // rivals = avance 0..1 de cada rival (puntos naranjas en la cinta)
     (void)vw; const float s = vh / 480.f; frac = std::fmin(1.f, std::fmax(0.f, frac));
     out.push_back({8 * s, 245 * s, 78 * s, 224 * s, 0.05f, 0.07f, 0.05f, 0.38f});
     std::vector<float> c = course; if (c.size() < 4) c = {0.5f, 0.f, 0.5f, 1.f};
@@ -133,6 +133,7 @@ inline void progressPanel(int vw, int vh, const std::vector<float>& course, floa
     auto trace = [&](float size, float r, float g, float b) { for (int i = 0; i < N; i++) { const int k = std::max(1, (int)(std::hypot(rx[i + 1] - rx[i], ry[i + 1] - ry[i]) / std::fmax(1.f, size * 0.5f)));
         for (int j = 0; j <= k; j++) out.push_back({rx[i] + (rx[i + 1] - rx[i]) * j / k - size * 0.5f, ry[i] + (ry[i + 1] - ry[i]) * j / k - size * 0.5f, size, size, r, g, b, 1.f}); } };
     trace(9.f * s, 0.2f, 0.5f, 0.24f); trace(5.f * s, 0.02f, 0.03f, 0.02f);   // borde verde y luego interior negro
+    for (float rf : rivals) { const float t = std::fmin(1.f, std::fmax(0.f, rf)) * N; const int i = std::min(N - 1, (int)t); const float f = t - i, x = rx[i] + (rx[i + 1] - rx[i]) * f, y = ry[i] + (ry[i + 1] - ry[i]) * f, r = 2.5f * s; out.push_back({x - r, y - r, 2 * r, 2 * r, 0.95f, 0.45f, 0.1f, 1.f}); }
     { const float t = frac * N; const int i = std::min(N - 1, (int)t); const float f = t - i, x = rx[i] + (rx[i + 1] - rx[i]) * f, y = ry[i] + (ry[i + 1] - ry[i]) * f, r = 3.f * s; out.push_back({x - r, y - r, 2 * r, 2 * r, 0.1f, 0.95f, 0.2f, 1.f}); }
     const float col[4] = {0.62f, 0.74f, 0.55f, 1.f}; char b[16];
     std::snprintf(b, sizeof b, "%d", std::max(1, rank)); lcdText(b, 54 * s, 405 * s, 32 * s, col, lcd);

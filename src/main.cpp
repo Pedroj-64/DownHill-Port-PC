@@ -886,7 +886,11 @@ int main(int argc, char** argv) {
                     std::snprintf(b, sizeof b, "GATES %zu/%zu", prun.gs.counter, gts.size()); line(b, ww * 0.03f, hh * 0.04f + 10 * S * 2.f, S, 0.8f, 1, 0.8f);
                 }
                 { static std::vector<float> course = hud::fitCourse(overlay); std::vector<gfx::Quad> pq; std::vector<gfx::TexQuad> plq;   // panel de progreso: cinta vertical medida sobre capturas (src/hud.hpp); sin rivales: posición 1 de 1
-                  hud::progressPanel((int)ww, (int)hh, course, gts.size() ? (float)prun.gs.counter / (float)gts.size() : 0.f, 1, 1, pq, plq); gr.drawQuads2D(pq, (int)ww, (int)hh);
+                  static ghosts::Line pline = ghosts::build(overlay); static size_t pk = 0; float pf = gts.size() ? (float)prun.gs.counter / (float)gts.size() : 0.f; std::vector<float> rf; int rank = 1;
+                  if (pline.p.size() > 2 && pline.total > 1.f) {   // avance continuo = vértice más cercano de la línea PTS (ventana alrededor del último, para no saltar a otro tramo)
+                      float best = 1e30f; const size_t lo = pk > 40 ? pk - 40 : 0, hi = std::min(pline.p.size(), pk + 120); for (size_t q = lo; q < hi; q++) { const V3 d{pline.p[q].x - prun.bike.pos.x, pline.p[q].y - prun.bike.pos.y, pline.p[q].z - prun.bike.pos.z}; const float dd = dot(d, d); if (dd < best) { best = dd; pk = q; } }
+                      pf = pline.s[pk] / pline.total; for (const ghosts::Rider& r : aiRiders) { rf.push_back(r.s / pline.total); if (r.s > pline.s[pk] + 1.f) rank++; } }
+                  hud::progressPanel((int)ww, (int)hh, course, pf, rank, 1 + (int)rf.size(), pq, plq, rf); gr.drawQuads2D(pq, (int)ww, (int)hh);
                   if (hudState == 1) gr.drawTexQuads2D(hudTex[hud::kLcdFont], plq, (int)ww, (int)hh); else line("1/1", ww * 0.02f, hh * 0.9f, S * 1.5f, 1, 1, 1); }
                 if (race.state == RaceState::Countdown) { std::snprintf(b, sizeof b, "%d", race.countdownDigit()); mid(b, hh * 0.3f, S * 8.f, 1, 0.85f, 0.2f); }
                 else if (race.state == RaceState::Riding && race.displayTime() < 1.0) mid("GO!", hh * 0.3f, S * 8.f, 0.3f, 1, 0.3f);                       // provisional (la cadena real del juego no está localizada)
