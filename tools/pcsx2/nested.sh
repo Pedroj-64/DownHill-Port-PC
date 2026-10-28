@@ -20,7 +20,7 @@ start)
   # headless: no crea ventana en el escritorio real. gles2 sobre un render node para que Vulkan/GL de PCSX2 funcione.
   WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=${DH_WLR_RENDERER:-gles2} \
   WLR_RENDER_DRM_DEVICE=${DH_RENDER_NODE:-/dev/dri/renderD128} \
-  nohup cage -- flatpak run net.pcsx2.PCSX2 -nogui ${ISO:+-- "$ISO"} >"$RT/dh-nested.log" 2>&1 &
+  nohup cage -- flatpak run ${DH_FLATPAK_ARGS:-} net.pcsx2.PCSX2 -nogui ${DH_PCSX2_ARGS:-} ${ISO:+-- "$ISO"} >"$RT/dh-nested.log" 2>&1 &
   pid=$!
   i=0
   while [ $i -lt 40 ]; do
