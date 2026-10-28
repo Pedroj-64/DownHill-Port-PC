@@ -86,6 +86,10 @@ inline bool loadRacers(gfx::Renderer& gr, const std::vector<uint8_t>& ngp, const
     return !out.empty();
 }
 
+// FUN_00127c60 (medido con un savestate: DAT_00329658/5C = Z del jugador): un grupo se instancia si la altura del jugador cae en [min Z, max Z) de su caja +200 u; X e Y no cuentan.
+// shortcut: la caja del juego incluye los puntos del grupo que no son peatones (aquí ya descartados), así que la nuestra puede ser algo más estrecha; con 1 jugador basta.
+inline bool groupActive(const std::array<float, 6>& b, float y) { return y >= b[1] - 200.f && y < b[4] + 200.f; }
+
 struct Set {
     struct Model { gfx::MeshId mesh, meshUp; int type; float height; };   // meshUp = la misma malla con los brazos en alto (ovación); -1 si no hay esqueleto
     std::vector<Model> models; std::vector<Point> pts; std::map<int, std::vector<size_t>> byType; std::map<uint32_t, std::array<float, 6>> gbox;   // caja (min xyz, max xyz) de cada grupo
@@ -137,7 +141,7 @@ struct Set {
         for (size_t i = 0; i < pts.size(); i++) {
             if (!byType.count(pts[i].type)) continue;
             const float dx = pts[i].x - cx, dy = pts[i].y - cy, dz = pts[i].z - cz, d2 = dx * dx + dy * dy + dz * dz;
-            const auto gb = gbox.find(pts[i].sub); if (!std::getenv("DH_PED_NOGROUPS") && gb != gbox.end()) { const auto& b = gb->second; if (cx < b[0] - 200.f || cx > b[3] + 200.f || cy < b[1] - 200.f || cy > b[4] + 200.f || cz < b[2] - 200.f || cz > b[5] + 200.f) continue; }   // grupo activo = jugador dentro de su caja + 200 u
+            const auto gb = gbox.find(pts[i].sub); if (!std::getenv("DH_PED_NOGROUPS") && gb != gbox.end()) { const auto& b = gb->second; if (!groupActive(b, cy)) continue; }   // grupo activo solo por altura (FUN_00127c60)
             if (d2 < radius * radius) cand.push_back({d2, i});
         }
         std::sort(cand.begin(), cand.end()); if (cand.size() > budget) cand.resize(budget);
