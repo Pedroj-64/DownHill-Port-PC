@@ -115,6 +115,7 @@ inline bool scanModel(const std::vector<uint8_t>& ngpD, const tex::Level& L, con
             for (size_t k = 0; k < pos.size(); k++) { uint32_t u = r.u32(i + 4 + 4 * k); float f; std::memcpy(&f, &u, 4); if (!std::isfinite(f) || std::fabs(f) >= 2e5f) fin = false; pos[k] = f; }
             if (fin) {
                 std::vector<const tex::Material*> group; for (const tex::Material& m : L.mats) if (prevEnd <= m.tex0Off && m.tex0Off < i) group.push_back(&m);
+                if (gUiSwitch && group.size() > 1) { std::vector<const tex::Material*> near; for (auto* g : group) if (i - g->tex0Off <= 0x200) near.push_back(g); if (!near.empty()) group = near; }   // UI: el material del lote es el pegado a él; los lejanos son restos del hueco desde el lote anterior
                 long tid = group.empty() ? lastTid : getTex(*group[0]);   // variant 0
                 bool haveIdx = false, haveHdr = false; std::vector<uint8_t> idx; long hdr = 0; std::set<long> flag; std::vector<std::pair<int16_t, int16_t>> uvs; bool haveUv = false; std::vector<std::array<double, 4>> cols; bool haveCol = false;
                 size_t end = i + 4 + psz;
