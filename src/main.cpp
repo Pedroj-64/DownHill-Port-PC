@@ -23,6 +23,7 @@
 #include "race.hpp"
 #include "menu.hpp"
 #include "menuart.hpp"
+#include "menufont.hpp"
 #include "tex.hpp"
 #include "controls.hpp"
 #include "gamepad.hpp"
@@ -131,7 +132,7 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "carga nativa: %s (%zu archivos virtuales)\n", a1.c_str(), vfs.size()); } }
     bool tris = std::string(argv[1]).ends_with(".msh");
     bool mdl = std::string(argv[1]).ends_with(".mdl");
-    struct Tex { int w, h; std::vector<unsigned char> px; GLuint id = 0; };
+    struct Tex { int w, h; std::vector<unsigned char> px; GLuint id = 0; bool light = false; };   // light: textura blanca de alfa variable = capa de luz del juego (GS ALPHA 0x49: destino x (1 + alfa)), no se mezcla como alfa normal
     struct Chunk { uint32_t first, count; std::vector<std::array<float, 5>> sels; };   // rango de índices + selectores de distancia (cx cy cz radio dist2_max)
     struct Model { std::vector<Tex> texs; std::vector<float> mv; std::vector<uint32_t> mi; std::vector<Chunk> chunks; };   // .mdl: 10 f32 por vértice (x y z u v r g b a tex)
     auto readFile = [&vfs](const std::string& path, std::vector<uint8_t>& raw) {
@@ -171,7 +172,9 @@ int main(int argc, char** argv) {
     };
     // El NGP (y por tanto el .mdl, el .PTS y la colisión) usa Z arriba (docs/formats/coordinates.md); dhview trabaja en Y arriba: (x,y,z) -> (x,z,-y). DH_RAW=1 desactiva la conversión.
     const bool rawAxes = std::getenv("DH_RAW") != nullptr;
-    auto toYUp = [&](Model& m) { if (!std::getenv("DH_NOUFLIP")) for (size_t k = 0; k + 9 < m.mv.size(); k += 10) m.mv[k+3] = 1.f - m.mv[k+3];   // las U de las mallas de nivel salen reflejadas respecto al juego (el texto de carteles y puertas se leía al revés; comprobado con visual_diff): se invierten al cargar
+    auto toYUp = [&](Model& m) { if (!std::getenv("DH_NOUFLIP")) for (size_t k = 0; k + 9 < m.mv.size(); k += 10) m.mv[k+3] = 1.f - m.mv[k+3];
+        if (!std::getenv("DH_NOHALFCOL")) for (size_t k = 0; k + 9 < m.mv.size(); k += 10) { static const float cg = std::getenv("DH_COLGAIN") ? (float)std::atof(std::getenv("DH_COLGAIN")) : 1.f; m.mv[k+5] *= 0.5f * cg; m.mv[k+6] *= 0.5f * cg; m.mv[k+7] *= 0.5f * cg; }   // color de vértice PS2 = 0..2 (128 = 1,0): OpenGL recorta a 1 el color primario, así que se guarda a la mitad y se compensa con RGB_SCALE 2 (gain por defecto 2 en niveles); sin esto el 27 % de los vértices perdía el sobrebrillo. DH_NOHALFCOL=1 lo desactiva
+          // las U de las mallas de nivel salen reflejadas respecto al juego (el texto de carteles y puertas se leía al revés; comprobado con visual_diff): se invierten al cargar
         if (rawAxes) return; for (size_t k = 0; k + 9 < m.mv.size(); k += 10) { float y = m.mv[k+1], z = m.mv[k+2]; m.mv[k+1] = z; m.mv[k+2] = -y; }
         for (auto& c : m.chunks) for (auto& q : c.sels) { float y = q[1], z = q[2]; q[1] = z; q[2] = -y; } };
     Model M, sky, dome, bike;   // bike: DH_BIKE=bici_ensamblada.mdl (tools/assemble_bike.py), se dibuja en el modo bici
@@ -219,9 +222,11 @@ int main(int argc, char** argv) {
     for (Model* m : {&M, &sky, &dome, &bike}) for (auto& t : m->texs) {
         glGenTextures(1, &t.id); glBindTexture(GL_TEXTURE_2D, t.id);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, t.w, t.h, 0, GL_RGBA, GL_UNSIGNED_BYTE, t.px.data());
+        if (m == &M && !std::getenv("DH_NOLIGHTTEX") && t.w * t.h >= 4096) { double sr = 0; size_t n = 0, tr = 0; for (size_t k = 0; k + 3 < t.px.size(); k += 4) { if (t.px[k + 3] > 8) { sr += t.px[k] + t.px[k + 1] + t.px[k + 2]; n++; } tr += t.px[k + 3] < 250; } t.light = n > 0 && sr / (3.0 * n) > 240 && tr * 10 >= (t.px.size() / 4) * 8; }   // blanca (>240) y >=80 % de píxeles translúcidos (en ALPINEMX: texturas 44 y 53)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     }
+    if (std::getenv("DH_LIGHTDBG")) { size_t n = 0; for (auto& t : M.texs) n += t.light; std::fprintf(stderr, "texturas de luz (ALPHA 0x49 hipótesis): %zu de %zu\n", n, M.texs.size()); }
     // --- Piloto (hito 4): DH_RIDER=modelo.mdl DH_RIDER_SKIN=modelo.skin DH_RIDER_NGP=nivel.NGP DH_RIDER_ROOT=0x9e2f40 [DH_RIDER_POSE=40 floats por línea/espacios] [DH_RIDER_AT="x y z"]. Sólo habla con gfx::Renderer (no GL).
     gfx::GLRenderer gr; gfx::MeshId riderMesh = -1; rider::Skeleton riderSk; std::vector<rider::SkinVertex> riderSkin; std::vector<float> riderBind, riderVerts, riderPose(40, 0.f); float riderAt[3] = {0.f, 2.0f, 0.f}; bool riderApprox = false, riderCadenceExplicit = false; float riderPhase = 0.f, riderCadence = 5.5f; rider::ApproxResult riderApproxResult; std::array<float, 3> riderPelvisZ{}, riderTorso{}, riderPelvisRot{}; const bool riderDebug = std::getenv("DH_RIDER_DEBUG") != nullptr;
     if (const char* rp = std::getenv("DH_RIDER")) {
@@ -513,6 +518,9 @@ int main(int argc, char** argv) {
         static const float fixedDt = std::getenv("DH_DT") ? (float)std::atof(std::getenv("DH_DT")) : 0.f; if (fixedDt > 0) dt = fixedDt;   // pruebas deterministas
         const bool* k = SDL_GetKeyboardState(nullptr);
         if (menuMode) { static const bool none[SDL_SCANCODE_COUNT] = {}; k = none; yaw += 0.02f * std::fmin(dt, 0.05f); }   // menú: sin vuelo libre; la cámara gira despacio sobre la escena
+        // Cámara real del título/menú principal (resuelta por DLT + RANSAC con 2511 correspondencias volcado GS <-> malla de SHELL/UI, error de reproyección 0,18 px; idéntica en dos volcados de días distintos = estática):
+        // posición NGP (4,77, -298,55, -44,90) -> espacio Y arriba (x, z, -y), adelante (0,279, 0,960, -0,038) NGP, fx 687,9 / fy 365,9 sobre 640 x 256 (FOV vertical 0,6726 rad, 4:3). DH_NOMENUCAM=1 la quita.
+        if (menuMode && menuStage <= 1 && !std::getenv("DH_NOMENUCAM")) { px = 4.77f; py = -44.90f; pz = 298.55f; yaw = 0.2832f; pitch = -0.0385f; }
         float sp = (mdl ? (k[SDL_SCANCODE_LSHIFT] ? 4.f : 1.f) * scale : (k[SDL_SCANCODE_LSHIFT] ? 4000.f : 800.f)) * dt;
         float fx = std::sin(yaw) * std::cos(pitch), fy = std::sin(pitch), fz = -std::cos(yaw) * std::cos(pitch);
         float rx = std::cos(yaw), rz = std::sin(yaw);
@@ -698,7 +706,7 @@ int main(int argc, char** argv) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);   // DH_BG="r g b": color de fondo (p. ej. magenta para ver huecos) glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glEnable(GL_DEPTH_TEST); glDepthFunc(GL_LEQUAL);   // LEQUAL: las capas superpuestas del juego comparten posición con el suelo
         glMatrixMode(GL_PROJECTION); glLoadIdentity();
-        float asp = (float)ww / hh, nr = mdl ? (play ? 1.5f : (ride || walk || std::getenv("DH_CAM")) ? std::fmax(0.3f, 0.03f * U) : std::fmax(0.05f, 0.002f * scale)) : 5, fr = play ? 40000.f : 60000.f, t = nr * std::tan(0.5f * (std::getenv("DH_FOV") ? (float)std::atof(std::getenv("DH_FOV")) : kDefaultFov));   // DH_FOV: ángulo vertical en rad
+        float asp = (float)ww / hh, nr = mdl ? (play ? 1.5f : (ride || walk || std::getenv("DH_CAM")) ? std::fmax(0.3f, 0.03f * U) : std::fmax(0.05f, 0.002f * scale)) : 5, fr = play ? 40000.f : 60000.f, t = nr * std::tan(0.5f * (std::getenv("DH_FOV") ? (float)std::atof(std::getenv("DH_FOV")) : (menuMode && menuStage <= 1 && !std::getenv("DH_NOMENUCAM")) ? 0.6726f : kDefaultFov));   // DH_FOV: ángulo vertical en rad
         if (const char* e = std::getenv("DH_NEAR")) { nr = (float)std::atof(e); t = nr * std::tan(0.5f * (std::getenv("DH_FOV") ? (float)std::atof(std::getenv("DH_FOV")) : kDefaultFov)); } if (const char* e = std::getenv("DH_FAR")) fr = (float)std::atof(e);   // pruebas de precisión de profundidad
         glFrustum(-t*asp, t*asp, -t, t, nr, fr);
         glMatrixMode(GL_MODELVIEW); glLoadIdentity();
@@ -709,12 +717,14 @@ int main(int argc, char** argv) {
             glEnable(GL_TEXTURE_2D); glColor3f(1, 1, 1);
             { static const char* cm = std::getenv("DH_CULL"); if (cm && !std::strcmp(cm, "ccw")) { glEnable(GL_CULL_FACE); glFrontFace(GL_CCW); } else if (cm && !std::strcmp(cm, "cw")) { glEnable(GL_CULL_FACE); glFrontFace(GL_CW); } else glDisable(GL_CULL_FACE); }   // DH_CULL=ccw|cw: descarta caras traseras
             glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);   // alfa PS2 ya normalizado a 0-255 en el .mdl
-            { static float gain = std::getenv("DH_GAIN") ? (float)std::atof(std::getenv("DH_GAIN")) : (M.chunks.empty() ? 2.f : 1.f);   // los modelos que no son de nivel se aclaran x2 (sobrebrillo PS2)
+            float curGain = 1.f;
+            { static float gain = std::getenv("DH_GAIN") ? (float)std::atof(std::getenv("DH_GAIN")) : (M.chunks.empty() ? 2.f : (std::getenv("DH_NOHALFCOL") ? 1.f : 2.f));   // los modelos que no son de nivel se aclaran x2 (sobrebrillo PS2)
               glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE); glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_MODULATE);
-              glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_TEXTURE); glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_PRIMARY_COLOR); glTexEnvf(GL_TEXTURE_ENV, GL_RGB_SCALE, gain); }
+              glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_TEXTURE); glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_PRIMARY_COLOR); glTexEnvf(GL_TEXTURE_ENV, GL_RGB_SCALE, gain); curGain = gain; }
             glEnableClientState(GL_VERTEX_ARRAY); glEnableClientState(GL_TEXTURE_COORD_ARRAY); glEnableClientState(GL_COLOR_ARRAY);
             static const bool noCull = std::getenv("DH_NOCULL") != nullptr; static size_t drawnChunks = 0;
             auto drawModel = [&](const Model& m) {
+                { static bool once = std::getenv("DH_ALPHASTATS") != nullptr; if (once && !m.chunks.empty()) { once = false; size_t h[9] = {0}; for (size_t i = 8; i < m.mv.size(); i += 10) h[(int)std::min(8.f, m.mv[i] * 8.f)]++; std::fprintf(stderr, "alfa de vértice (nivel) en octavos 0..8:"); for (size_t k : h) std::fprintf(stderr, " %zu", k); std::fprintf(stderr, "\n"); } }
                 glVertexPointer(3, GL_FLOAT, 40, m.mv.data()); glTexCoordPointer(2, GL_FLOAT, 40, m.mv.data() + 3);
                 glColorPointer(4, GL_FLOAT, 40, m.mv.data() + 5);   // iluminación horneada por vértice
                 auto drawRange = [&](size_t lo, size_t hi) {
@@ -722,7 +732,12 @@ int main(int argc, char** argv) {
                         int tid = (int)m.mv[m.mi[t] * 10 + 9]; size_t e = t;
                         while (e + 2 < hi && (int)m.mv[m.mi[e] * 10 + 9] == tid) e += 3;
                         glBindTexture(GL_TEXTURE_2D, tid >= 0 && tid < (int)m.texs.size() ? m.texs[tid].id : 0);
-                        glDrawElements(GL_TRIANGLES, (GLsizei)(e - t), GL_UNSIGNED_INT, m.mi.data() + t); t = e;
+                        static const bool matHue = std::getenv("DH_MATHUE") != nullptr;   // depuración: cada textura de un color plano (r=tid*67, g=tid*131, b=tid*29 mod 256) para saber qué material cubre cada píxel
+                        if (matHue) { glDisable(GL_TEXTURE_2D); glDisableClientState(GL_COLOR_ARRAY); glColor3ub((tid * 67) & 255, (tid * 131) & 255, (tid * 29) & 255); }
+                        const bool lightTex = tid >= 0 && tid < (int)m.texs.size() && m.texs[tid].light && !m.chunks.empty();
+                        if (lightTex) { glBlendFunc(GL_DST_COLOR, GL_ONE); glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_SRC_ALPHA); glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_RGB, GL_SRC_ALPHA); glTexEnvf(GL_TEXTURE_ENV, GL_RGB_SCALE, 1.f); }   // GS ALPHA 0x49: Cd*(1+As), As = alfa de textura x alfa de vértice
+                        glDrawElements(GL_TRIANGLES, (GLsizei)(e - t), GL_UNSIGNED_INT, m.mi.data() + t); if (lightTex) { glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_SRC_COLOR); glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_RGB, GL_SRC_COLOR); glTexEnvf(GL_TEXTURE_ENV, GL_RGB_SCALE, curGain); }
+                        if (matHue) { glEnable(GL_TEXTURE_2D); glEnableClientState(GL_COLOR_ARRAY); } t = e;
                     }
                 };
                 if (m.chunks.empty()) { drawRange(0, m.mi.size()); return; }
@@ -757,7 +772,12 @@ int main(int argc, char** argv) {
             };
             if (!dome.mi.empty() && !std::getenv("DH_NOSKY")) {   // sigue a la cámara; DH_DOMEDY desplaza el centro en vertical (afinado)
                 static const float dy = std::getenv("DH_DOMEDY") ? (float)std::atof(std::getenv("DH_DOMEDY")) : 0.f;
-                glDisable(GL_DEPTH_TEST); glDisable(GL_FOG); glPushMatrix(); glTranslatef(px, py + dy, pz); drawModel(dome); glPopMatrix(); glEnable(GL_DEPTH_TEST); if (std::getenv("DH_FOG")) glEnable(GL_FOG);
+                glDisable(GL_DEPTH_TEST); glDisable(GL_FOG); glPushMatrix(); glTranslatef(px, py + dy, pz); drawModel(dome); glPopMatrix();
+                static const float skyDim = std::getenv("DH_SKYDIM") ? (float)std::atof(std::getenv("DH_SKYDIM")) : 0.4f;   // DH_SKYDIM=a (0 lo quita): velo negro de alfa a sobre la cúpula (el cielo del port sale ~1,8x más claro que el del juego en ALPINEMX: hipótesis, falta la causa)
+                if (skyDim > 0.f) { glDisable(GL_TEXTURE_2D); glDisableClientState(GL_COLOR_ARRAY); glDisableClientState(GL_TEXTURE_COORD_ARRAY); glDisableClientState(GL_VERTEX_ARRAY); glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity(); glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity();
+                    glColor4f(0.f, 0.f, 0.f, skyDim); glBegin(GL_QUADS); glVertex2f(-1, -1); glVertex2f(1, -1); glVertex2f(1, 1); glVertex2f(-1, 1); glEnd(); glPopMatrix(); glMatrixMode(GL_PROJECTION); glPopMatrix(); glMatrixMode(GL_MODELVIEW);
+                    glColor3f(1, 1, 1); glEnable(GL_TEXTURE_2D); glEnableClientState(GL_COLOR_ARRAY); glEnableClientState(GL_TEXTURE_COORD_ARRAY); glEnableClientState(GL_VERTEX_ARRAY); }
+                glEnable(GL_DEPTH_TEST); if (std::getenv("DH_FOG")) glEnable(GL_FOG);
             }
             if (!sky.mi.empty() && !std::getenv("DH_NOSKY")) { glDepthMask(GL_FALSE); drawModel(sky); glDepthMask(GL_TRUE); }   // telón de fondo/cielo: primero y sin escribir profundidad
             drawModel(M);
@@ -782,9 +802,23 @@ int main(int argc, char** argv) {
             }
             if (play && !bike.mi.empty()) {                 // la bici ensamblada orientada con el cuerpo de la simulación (modelo: adelante = -Z, arriba = +Y)
                 static float minY = [&] { float m = 1e30f; for (size_t i = 1; i < bike.mv.size(); i += 10) m = std::fmin(m, bike.mv[i]); return m; }();
+                // Sombra del piloto: el juego renderiza una sombra proyectada (mapa 64x64 desenfocado, luz fija del nivel (0,7035 -0,4062 0,92) en ejes Z arriba = DAT_0068E700, FUN_00223fa8); aquí una mancha suave orientada al suelo y desplazada contra la luz (aproximación; DH_NOSHADOW=1 la quita)
+                static GLuint shTex = 0; static const bool noShadow = std::getenv("DH_NOSHADOW") != nullptr;
+                auto shadowBlob = [&](const V3& c, const V3& up, const V3& fw, float sc) {
+                    if (noShadow) return;
+                    if (!shTex) { std::vector<uint8_t> px(64 * 64 * 4, 255); for (int y = 0; y < 64; y++) for (int x = 0; x < 64; x++) { const float dx = (x - 31.5f) / 32.f, dy = (y - 31.5f) / 32.f; px[(y * 64 + x) * 4 + 3] = (uint8_t)(255.f * std::exp(-3.5f * (dx * dx + dy * dy))); }
+                        glGenTextures(1, &shTex); glBindTexture(GL_TEXTURE_2D, shTex); glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 64, 64, 0, GL_RGBA, GL_UNSIGNED_BYTE, px.data()); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE); }
+                    glBindTexture(GL_TEXTURE_2D, shTex); glDepthMask(GL_FALSE); glEnable(GL_POLYGON_OFFSET_FILL); glPolygonOffset(-2.f, -8.f); glColor4f(0.f, 0.f, 0.f, 0.65f);
+                    const V3 rt = cross(fw, up); const float hl = 2.6f * sc, hw = 1.3f * sc;   // medio largo y ancho de la mancha (la bici mide ~2,2 m)
+                    const V3 o = c + up * (0.04f * U) + V3{-0.7035f, 0.f, -0.4062f} * (0.6f * sc);   // contra la luz: x -> x, y(juego) -> -z; desplazamiento ~ altura del cuerpo / 0,92
+                    glBegin(GL_QUADS);
+                    for (int k = 0; k < 4; k++) { const float a = (k == 0 || k == 3) ? -1.f : 1.f, b = (k < 2) ? -1.f : 1.f; const V3 q = o + rt * (a * hw) + fw * (b * hl); glTexCoord2f(a < 0 ? 0.f : 1.f, b < 0 ? 0.f : 1.f); glVertex3f(q.x, q.y, q.z); }
+                    glEnd(); glDisable(GL_POLYGON_OFFSET_FILL); glDepthMask(GL_TRUE); glColor4f(1.f, 1.f, 1.f, 1.f);
+                };
                 const Bike& bk = prun.bike; Axes ax = bk.axes(); V3 r = rotateAbout(ax.r, ax.f, leanVis), u = rotateAbout(ax.u, ax.f, leanVis); float bs = 0.28f * U;
                 V3 t = bk.pos + ax.u * (-2.05f - minY * bs);   // la rueda más baja a ras de la superficie de contacto (rueda -1.2-0.75 / -1.4-0.75 bajo el centro: promedio, hipótesis)
                 GLfloat m[16] = {r.x, r.y, r.z, 0, u.x, u.y, u.z, 0, -ax.f.x, -ax.f.y, -ax.f.z, 0, t.x, t.y, t.z, 1};
+                shadowBlob(bk.pos + ax.u * (-2.05f), ax.u, ax.f, U * 1.f);
                 glTexEnvf(GL_TEXTURE_ENV, GL_RGB_SCALE, 2.6f); glPushMatrix(); glMultMatrixf(m); glScalef(bs, bs, bs); drawModel(bike); glPopMatrix();
                 if (riderMesh >= 0) {                   // piloto: espacio del modelo (x der., y adelante, z arriba) -> espacio de la bici ensamblada (adelante = -Z, arriba = +Y); posición de la pelvis = HIPÓTESIS (DH_RIDER_AT)
                     rider::applySkin(riderSk.skin(riderPose.data(), riderPose.size()), riderSkin, riderBind, riderVerts); gr.updateVertices(riderMesh, riderVerts);
@@ -802,6 +836,7 @@ int main(int argc, char** argv) {
                         if (auto gi = gcol.groundQuery(q.x, q.y + 6.f, q.z, 0.f, 20.f); gi.hit) { up = gi.normal; q.y = gi.height; }
                         V3 f{d.x - up.x * dot(d, up), d.y - up.y * dot(d, up), d.z - up.z * dot(d, up)}; const float fl = std::sqrt(dot(f, f)); if (fl < 1e-4f) continue; f = f * (1.f / fl); const V3 r2 = cross(f, up);
                         const GLfloat am[16] = {r2.x, r2.y, r2.z, 0, up.x, up.y, up.z, 0, -f.x, -f.y, -f.z, 0, q.x - up.x * minY * bs, q.y - up.y * minY * bs, q.z - up.z * minY * bs, 1};
+                        shadowBlob(q, up, f, U * 1.f);
                         peds::Racer& rc = aiRacers[ar.model % aiRacers.size()]; rider::applySkin(rc.sk.skin(riderPose.data(), riderPose.size()), rc.skin, rc.bind, rc.verts); gr.updateVertices(rc.mesh, rc.verts);
                         glTexEnvf(GL_TEXTURE_ENV, GL_RGB_SCALE, 2.6f); glPushMatrix(); glMultMatrixf(am); glScalef(bs, bs, bs); drawModel(bike); gr.draw(rc.mesh, conv, 2.6f); glPopMatrix();
                     }
@@ -912,10 +947,33 @@ int main(int argc, char** argv) {
         }
         if (menuMode) {   // selector por circuito (ilustración real de SHELL/UI) y modo FR/MX/TD con los nombres del atlas original; si no hay arte, la lista de texto
             static bool artTried = false; if (!artTried) { artTried = true; if (menuart::load(assetRd, menuArt)) for (auto& t : menuArt.tex) menuTex.push_back(gr.createTexture(t)); else std::fprintf(stderr, "aviso: sin arte de menú (SHELL/UI)\n"); }
+            static menufont::Font mfont; static int mfTex = -1; static bool fontTried = false; if (!fontTried) { fontTried = true; if (!std::getenv("DH_NOREALFONT") && menufont::load(assetRd, mfont)) mfTex = gr.createTexture(mfont.atlas); else std::fprintf(stderr, "aviso: sin fuente real del menú, se usa la 5x7 provisional\n"); }
             const float W = (float)ww, H = (float)hh, S = std::fmax(2.f, std::floor(H / 240.f)); std::vector<gfx::Quad> mq; std::vector<gfx::TexQuad> tqs;
             auto sprite = [&](const menuart::Sprite& sp, float x, float y, float h, float r, float g2, float b2, float a2, float maxW = 1e9f) { if (sp.tex < 0) return 0.f; if (h * sp.w / sp.h > maxW) h = maxW * sp.h / sp.w; const float w2 = h * sp.w / sp.h; gr.drawTexQuads2D(menuTex[sp.tex], {{x, y, w2, h, sp.u0, sp.v0, sp.u1, sp.v1, r, g2, b2, a2}}, (int)ww, (int)hh); return w2; };
             menuT += (float)std::fmin(dt, 0.05f);
             auto txt = [&](const std::string& t, float cx, float y, float sc, float r, float g2, float b2) { gfx::textQuadsCentered(t, cx, y, S * sc, r, g2, b2, 1.f, mq); };
+            // Texto con la fuente real (espacio de sprites 640 x 256 del campo PS2: el eje Y del volcado GS va de 0 a 256, escalado a la ventana); color en unidades PS2 (128 = 1,0)
+            auto ftxt = [&](const std::string& t, float x, float y, const menufont::Style& st, float r, float g2, float b2) { if (mfTex < 0) return; std::vector<gfx::TexQuad> q; menufont::quads(mfont, t, x, y, st, W / 640.f, H / 256.f, r / 128.f, g2 / 128.f, b2 / 128.f, 1.f, q); gr.drawTexQuads2D(mfTex, q, (int)ww, (int)hh); };
+            // Menú principal (medido en el volcado GS del juego, validado a 0,02 px): entradas alineadas a la derecha en x = 530,1, 27,8 x 16,6 px, líneas cada 15 px desde y = 122,5; la seleccionada en (120, 95, 40), las demás en gris (70, 70, 70);
+            // barra inferior: tres tiras negras (y 223,5-240,5) y los textos de 21,8 x 10,4 px con avance 13,85 en y = 226,5 con iconos de botón.
+            auto mainMenuReal = [&]() {
+                static const char* kItems[3] = {"SINGLE PLAYER", "MULTI-PLAYER", "OPTIONS"}; const menufont::Style big{27.8f, 16.6f, 0.f}, bar{21.8f, 10.4f, 13.85f};
+                const float lh = H * (130.f / 448.f), lx = W * (213.f / 640.f), tw = W * (123.f / 640.f);
+                for (int i = 0; i < 3; i++) { menuart::Sprite sp = menuart::whole(menuArt, 136 + i); if (sp.tex >= 0) gr.drawTexQuads2D(menuTex[sp.tex], {{lx + tw * i, H * (33.f / 448.f), tw, lh, sp.u0, sp.v0, sp.u1, sp.v1, 1, 1, 1, 1}}, (int)ww, (int)hh); }
+                for (int i = 0; i < 3; i++) { const bool on = i == menuCur; const std::string t = kItems[i]; ftxt(t, 530.1f - menufont::width(t, big), 122.5f + 15.f * (float)i, big, on ? 120.f : 70.f, on ? 95.f : 70.f, on ? 40.f : 70.f); }
+                mq.push_back({0, H * (223.5f / 256.f), W, H * (2.f / 256.f), 0, 0, 0, 0.5f}); mq.push_back({0, H * (225.5f / 256.f), W, H * (13.f / 256.f), 0, 0, 0, 0.31f}); mq.push_back({0, H * (238.5f / 256.f), W, H * (2.f / 256.f), 0, 0, 0, 0.5f}); gr.drawQuads2D(mq, (int)ww, (int)hh); mq.clear();
+                ftxt(std::string("\x12 PREV \x13 NEXT"), 25.0f, 226.5f, bar, 56.f, 56.f, 56.f); ftxt(std::string("\x0e SELECT"), 357.8f, 226.5f, bar, 56.f, 56.f, 56.f); ftxt(std::string("\x10 BACK"), 497.1f, 226.5f, bar, 56.f, 56.f, 56.f); };
+            // Barra inferior real: tiras negras + textos de 21,8 x 10,4 px (avance 13,85) con iconos; `izq` en x = 25,0, `der` en x dado
+            auto barReal = [&](const std::string& izq, const std::string& der, float derX, float y) {
+                const menufont::Style bar{21.8f, 10.4f, 13.85f};
+                mq.push_back({0, H * (223.5f / 256.f), W, H * (2.f / 256.f), 0, 0, 0, 0.5f}); mq.push_back({0, H * (225.5f / 256.f), W, H * (13.f / 256.f), 0, 0, 0, 0.31f}); mq.push_back({0, H * (238.5f / 256.f), W, H * (2.f / 256.f), 0, 0, 0, 0.5f}); gr.drawQuads2D(mq, (int)ww, (int)hh); mq.clear();
+                ftxt(izq, 25.0f, y, bar, 56.f, 56.f, 56.f); ftxt(der, derX, y, bar, 56.f, 56.f, 56.f); };
+            // Pantalla de lista real (estados: 0 = disponible, 1 = bloqueada): títulos en x = 30 (gris 70) a las y dadas, entradas en x = 40 cada 15 px desde y0; seleccionada (120, 95, 40), disponibles 70, bloqueadas 38
+            struct RItem { const char* t; bool locked; };
+            auto listReal = [&](const std::vector<std::pair<const char*, float>>& titles, const std::vector<RItem>& items, float y0) {
+                const menufont::Style big{27.8f, 16.6f, 0.f}; for (const auto& tt : titles) ftxt(tt.first, 30.f, tt.second, big, 70.f, 70.f, 70.f);
+                for (size_t i = 0; i < items.size(); i++) { const bool on = (int)i == menuCur; const float v = items[i].locked ? 38.f : 70.f; ftxt(items[i].t, 40.f, y0 + 15.f * (float)i, big, on ? 120.f : v, on ? 95.f : v, on ? 40.f : v); }
+                barReal("\x12 PREV \x13 NEXT", "\x0e SELECT \x10 BACK", 357.8f, 226.5f); };
             auto list = [&](const char* title, const std::vector<std::pair<std::string, bool>>& items) {   // lista vertical al estilo del juego: título, entradas (gris = no implementada), cursor resaltado
                 mq.push_back({0, 0, W, H, 0.f, 0.f, 0.f, 0.35f}); const float lh = H * 0.19f; gr.drawQuads2D(mq, (int)ww, (int)hh); mq.clear();
                 for (int i = 0; i < 3; i++) sprite(menuart::whole(menuArt, 136 + i), W * 0.5f - lh * 1.35f + lh * 0.9f * i, H * 0.03f, lh, 1, 1, 1, 1);
@@ -929,19 +987,19 @@ int main(int argc, char** argv) {
                 for (int i = 0; i < 3; i++) sprite(menuart::whole(menuArt, 136 + i), W * 0.5f - lh * 1.35f + lh * 0.9f * i, H * 0.18f, lh, 1, 1, 1, 1);
                 if (std::fmod(menuT, 1.0f) < 0.65f) txt("PRESS X TO START", W * 0.5f, H * 0.72f, 2.0f, 1.f, 1.f, 1.f);
                 gr.drawQuads2D(mq, (int)ww, (int)hh); mq.clear();
-            } else if (menuArt.ok && menuStage == 1) list("MAIN MENU", {{"SINGLE PLAYER", true}, {"MULTI-PLAYER", false}, {"OPTIONS", false}});
+            } else if (menuArt.ok && menuStage == 1) { if (mfTex >= 0) mainMenuReal(); else list("MAIN MENU", {{"SINGLE PLAYER", true}, {"MULTI-PLAYER", false}, {"OPTIONS", false}}); }
             else if (menuArt.ok && menuStage == 2) {   // PLAYER ONE: SELECT RIDER — retrato y nombre con bandera
                 static const char* kN[13] = {"DRUD", "AJAX", "KALOLO", "TARA LLANES", "ERIC CARTER", "RICHIE SCHLEY", "COSMO", "MAI", "KINETICLOPS", "T-BAG", "MISSY GIOVE", "RAXEL", "JONNIE"};   // asignación retrato -> nombre por aspecto/género: HIPÓTESIS (13 retratos, 14 nombres; falta Brian Lopes)
                 mq.push_back({0, 0, W, H, 0.f, 0.f, 0.f, 0.35f}); gr.drawQuads2D(mq, (int)ww, (int)hh); mq.clear();
-                txt("PLAYER ONE", W * 0.5f, H * 0.06f, 2.0f, 1.f, 0.85f, 0.2f); txt("SELECT RIDER", W * 0.5f, H * 0.14f, 1.6f, 1.f, 1.f, 1.f);
+                if (mfTex >= 0) { const menufont::Style big{27.8f, 16.6f, 0.f}; ftxt("PLAYER ONE", 30.f, 10.f, big, 70.f, 70.f, 70.f); ftxt("SELECT RIDER", 30.f, 25.f, big, 70.f, 70.f, 70.f); } else { txt("PLAYER ONE", W * 0.5f, H * 0.06f, 2.0f, 1.f, 0.85f, 0.2f); txt("SELECT RIDER", W * 0.5f, H * 0.14f, 1.6f, 1.f, 1.f, 1.f); }
                 const float ph = H * 0.42f, px0 = W * 0.5f - ph * 0.5f; mq.push_back({px0 - 6, H * 0.24f - 6, ph + 12, ph + 12, 0.1f, 0.12f, 0.2f, 0.9f}); gr.drawQuads2D(mq, (int)ww, (int)hh); mq.clear();
                 sprite(menuart::whole(menuArt, 22 + menuRider), px0, H * 0.24f, ph, 1, 1, 1, 1);
                 auto it = menuArt.names.find(std::string("R:") + kN[menuRider]); if (it != menuArt.names.end()) sprite(it->second, W * 0.5f - W * 0.2f, H * 0.70f, H * 0.14f, 1, 1, 1, 1, W * 0.4f); else txt(kN[menuRider], W * 0.5f, H * 0.74f, 2.0f, 1.f, 1.f, 1.f);
                 for (int sd = 0; sd < 2; sd++) for (int r = -6; r <= 6; r++) { const float wq = (7 - std::abs(r)) * S * 2.f, cx = W * 0.5f + (sd ? 1.f : -1.f) * (ph * 0.5f + W * 0.07f), x = sd ? cx - wq * 0.5f - (7 - std::abs(r)) * 0.f : cx - wq * 0.5f; mq.push_back({sd ? cx - (7 * S) : cx + (7 * S) - wq, H * 0.42f + r * S * 1.5f, wq, S * 1.5f, 1.f, 1.f, 1.f, 1.f}); (void)x; }   // flechas < >
-                txt("LEFT/RIGHT = RIDER   X = OK   TRIANGLE = BACK", W * 0.5f, H * 0.95f, 0.8f, 0.7f, 0.7f, 0.7f); gr.drawQuads2D(mq, (int)ww, (int)hh); mq.clear();
-            } else if (menuArt.ok && menuStage == 3) list("SELECT GAME", {{"START NEW GAME", true}, {"CONTINUE SAVED GAME", false}});
-            else if (menuArt.ok && menuStage == 4) list("SINGLE PLAYER GAME MODE", {{"SINGLE EVENT", true}, {"CAREER", false}, {"ARCADE", false}, {"MOSHBOWL", false}, {"SUPER JUMP", false}, {"TRAINING", false}});
-            else if (menuArt.ok && menuStage == 5) list("SINGLE EVENT", {{"RACE", true}, {"FREERIDE", false}, {"TIME TRIAL", false}});
+                if (mfTex >= 0) { gr.drawQuads2D(mq, (int)ww, (int)hh); mq.clear(); const menufont::Style bar{21.8f, 10.4f, 13.85f}; barReal("\x14 PREV \x15 NEXT", "\x11 INFO \x0e SELECT \x10 BACK", 247.2f, 227.f); (void)bar; } else { txt("LEFT/RIGHT = RIDER   X = OK   TRIANGLE = BACK", W * 0.5f, H * 0.95f, 0.8f, 0.7f, 0.7f, 0.7f); gr.drawQuads2D(mq, (int)ww, (int)hh); mq.clear(); }
+            } else if (menuArt.ok && menuStage == 3) { if (mfTex >= 0) listReal({}, {{"START NEW GAME", false}, {"CONTINUE SAVED GAME", true}}, 85.f); else list("SELECT GAME", {{"START NEW GAME", true}, {"CONTINUE SAVED GAME", false}}); }
+            else if (menuArt.ok && menuStage == 4) { if (mfTex >= 0) listReal({{"SELECT", 9.5f}, {"SINGLE PLAYER GAME MODE", 24.5f}}, {{"SINGLE EVENT", false}, {"CAREER", false}, {"ARCADE", false}, {"MOSHBOWL", true}, {"SUPER JUMP", true}, {"TRAINING", false}}, 64.5f); else list("SINGLE PLAYER GAME MODE", {{"SINGLE EVENT", true}, {"CAREER", false}, {"ARCADE", false}, {"MOSHBOWL", false}, {"SUPER JUMP", false}, {"TRAINING", false}}); }
+            else if (menuArt.ok && menuStage == 5) { if (mfTex >= 0) listReal({{"SELECT", 9.5f}, {"SINGLE EVENT RACE", 24.5f}}, {{"RACE", false}, {"FREERIDE", false}, {"TIME TRIAL", false}}, 84.5f); else list("SINGLE EVENT", {{"RACE", true}, {"FREERIDE", false}, {"TIME TRIAL", false}}); }
             else
             if (menuArt.ok) {
                 mq.push_back({0, 0, W, H, 0.f, 0.f, 0.f, 0.35f}); gr.drawQuads2D(mq, (int)ww, (int)hh); mq.clear();
