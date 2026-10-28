@@ -50,19 +50,23 @@ inline bool localMat(const ngp::Reader& r, size_t o, Mat& m) {
     return false;
 }
 struct Anc { uint32_t layer = 0, kind = 0; double rad = 0; bool bd = false; };
+// Escena del menú (SHELL/UI*): los nodos tipo 6 son SWITCH (+8 = nº de hijos << 24 | hijo activo; hijos desde +0xC): el juego solo dibuja el hijo activo, que en RAM del menú principal es el 0 salvo en el nodo kind 9006 (= 1);
+// las instancias de capa 7 (cascarones de radio 1000) no se dibujan. Medido contra volcado GS: acuerdo con lo que dibuja el juego 77 % en vista (sin la regla 25 %). HIPÓTESIS parcial: faltan reglas (p. ej. 9004 dibuja también algo del hijo 1).
+inline bool gUiSwitch = false;
 inline void walkRec(const ngp::Reader& r, size_t o, const Mat& m, const std::vector<std::array<double, 5>>& sels, std::vector<size_t>& path, long rk, Anc anc, std::vector<Inst>& out) {
     if (std::find(path.begin(), path.end(), o) != path.end() || path.size() > 60) return;
     const uint32_t h = r.u32(o), t = h & 0x3f; if (rk < 0 && !path.empty()) rk = (long)o;
     if (t == 1) {
         const uint32_t lay = r.u32(o + 8) >> 16; const bool bd = anc.bd || lay == 2; anc = {bd ? 2u : lay, h >> 18, (double)f32at(r, o + 0x1c), bd};
         size_t ch; const bool has = r.ptr(o + 0x20, ch);
-        if (anc.kind == 0 && r.u16(o + 8) <= 1 && has && (r.u32(ch) & 0x3f) != 0) { Inst d; d.ptr = ch; d.m = m; d.sels = sels; d.layer = anc.layer; d.kind = anc.kind; d.rad = anc.rad; d.root = rk; out.push_back(std::move(d)); }
+        if (anc.kind == 0 && r.u16(o + 8) <= 1 && has && (r.u32(ch) & 0x3f) != 0 && !(gUiSwitch && anc.layer == 7)) { Inst d; d.ptr = ch; d.m = m; d.sels = sels; d.layer = anc.layer; d.kind = anc.kind; d.rad = anc.rad; d.root = rk; out.push_back(std::move(d)); }
     }
-    if (t == 0 && anc.kind == 0) { Inst d; d.ptr = o; d.m = m; d.sels = sels; d.layer = anc.layer; d.kind = anc.kind; d.rad = anc.rad; d.root = rk; out.push_back(std::move(d)); }
+    if (t == 0 && anc.kind == 0 && !(gUiSwitch && anc.layer == 7)) { Inst d; d.ptr = o; d.m = m; d.sels = sels; d.layer = anc.layer; d.kind = anc.kind; d.rad = anc.rad; d.root = rk; out.push_back(std::move(d)); }
     Mat l, m2 = m; if (localMat(r, o, l)) m2 = mulMat(l, m);
     std::vector<std::array<double, 5>> s2 = sels;
     if (t == 2) { const double cx = f32at(r, o + 0x10), cy = f32at(r, o + 0x14), cz = f32at(r, o + 0x18); std::array<double, 5> e; for (int k = 0; k < 3; k++) e[k] = cx * m[0 + k] + cy * m[4 + k] + cz * m[8 + k] + m[12 + k]; e[3] = f32at(r, o + 0x1c); e[4] = f32at(r, o + 0x24); s2.push_back(e); }
     std::vector<size_t> ch; ngp::sceneChildren(r, o, ch);
+    if (gUiSwitch && t == 6) { const uint32_t w = r.u32(o + 8), n = w >> 24; uint32_t sel = w & 0xFFFFFF; if ((h >> 18) == 9006) sel = 1; ch.clear(); size_t c; if (sel < n && r.ptr(o + 0xc + 4 * sel, c)) ch.push_back(c); }
     path.push_back(o); for (size_t c : ch) walkRec(r, c, m2, s2, path, rk, anc, out); path.pop_back();
 }
 struct Owners {

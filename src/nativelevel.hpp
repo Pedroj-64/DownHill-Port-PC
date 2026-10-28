@@ -27,7 +27,8 @@ inline bool loadFrom(const Reader& rd, const std::string& lvlDir, const std::str
     std::vector<uint8_t> n, p, t, c; const std::string f = lvlDir + "/" + name;
     if (!rd(f + ".NGP", n) || !rd(f + ".PTR", p) || !rd(f + ".TEX", t) || !rd(f + ".RTX", c)) { err = "faltan .NGP/.PTR/.TEX/.RTX de " + name; return false; }
     tex::Level L; if (!tex::load(n, p, t, c, L)) { err = "PTR/TEX inválido"; return false; }
-    mesh::LevelFiles lf; if (!mesh::extractLevel(n, L, lf)) { err = "NGP inválido (geometría)"; return false; }
+    mesh::gUiSwitch = name.rfind("UI", 0) == 0 && lvlDir == "SHELL" && !std::getenv("DH_NOUISWITCH");   // escena del menú: nodos switch (src/mesh.hpp)
+    mesh::LevelFiles lf; const bool exOk = mesh::extractLevel(n, L, lf); mesh::gUiSwitch = false; if (!exOk) { err = "NGP inválido (geometría)"; return false; }
     out.files[b + ".mdl"] = std::move(lf.main); if (lf.hasSky) out.files[b + ".sky.mdl"] = std::move(lf.sky); if (lf.hasDome) out.files[b + ".dome.mdl"] = std::move(lf.dome);
     std::vector<ngp::ColTri> tris; if (!ngp::collisionTrisInstanced(n, tris)) { err = "NGP inválido (colisión)"; return false; }
     std::vector<uint8_t> col(4 + 40 * tris.size(), 0); const uint32_t nt = (uint32_t)tris.size(); std::memcpy(col.data(), &nt, 4);

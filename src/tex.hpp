@@ -78,4 +78,17 @@ inline bool makeTexture(const Level& L, const Material& m, uint32_t& W, uint32_t
     }
     return true;
 }
+
+// Textura T8H (8 bits por píxel, lineal) guardada en el propio .RTX (además de las paletas): registro con id `texId` y más de 256 píxeles, datos a +0x80 (la fuente grande del menú/HUD es la 512x512 de id 2, paleta 1;
+// verificada contra el volcado de texturas de PCSX2: RGB idéntico en el 100 % de los píxeles, alfa con la regla PS2 de makeTexture). false = no existe o la paleta no está.
+inline bool makeRtxTexture(const std::vector<uint8_t>& rtx, uint32_t texId, const std::vector<uint8_t>& pal, uint32_t& W, uint32_t& H, std::vector<uint8_t>& rgba) {
+    for (const Rec& r : records(rtx, 0)) {
+        if ((r.lo & 0xffff) != texId) continue; const uint32_t w = 1u << (r.hi >> 8 & 15), h = 1u << (r.hi >> 12 & 15); if (w * h <= 256) continue;
+        const size_t s = r.off + 0x80, n = (size_t)w * h; if (s + n > rtx.size() || pal.size() < 1024) return false;
+        W = w; H = h; rgba.clear(); rgba.reserve(n * 4);
+        for (size_t k = 0; k < n; k++) { const uint8_t p = rtx[s + k]; const size_t e = (size_t)((p & ~0x18) | ((p & 8) << 1) | ((p & 16) >> 1)) * 4; rgba.push_back(pal[e]); rgba.push_back(pal[e + 1]); rgba.push_back(pal[e + 2]); rgba.push_back(pal[e + 3] >= 0x80 ? 255 : (uint8_t)(pal[e + 3] * 2)); }
+        return true;
+    }
+    return false;
+}
 }  // namespace tex
