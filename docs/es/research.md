@@ -86,6 +86,9 @@ Con archivos `.mdl` añade `DH_WALK=1` para empezar en modo caminar (colisión c
 - **`SKAT/DHSKAT.SKX` (101 MB) es audio:** magia `SKEX`, luego cabeceras `VAGp` (ADPCM de PS2) y la marca `KAudioDLL`; `DHSKAT.CTL` es su índice (tabla de offsets con paso de 0x44 bytes). No son datos de esqueleto ni de malla.
 - Visor: `DH_BIKE=ensamblada.mdl` dibuja la bici ensamblada en el modo bici; `DH_GAIN=n` (multiplicador de brillo; por defecto 2 en modelos sin chunks), `DH_ORBIT="yaw pitch"` (cámara orbital alrededor de un modelo), `DH_BG="r g b"` (color de fondo).
 
+## Salidas especiales (2026-10-28)
+Dos familias de niveles necesitan un trato especial en la línea de salida. **MOABTDH / MOABTDH2** no tienen nodo de rejilla de salida (kinds 8060-8068), así que la moto sale ahora del primer punto de la línea PTS y no de la posición de la cámara de depuración (antes caía sin fin). **JUNGLEMX / JUNGLEX2** (y JUNGLET2, JUNGLETD, FUJI y FUJI2, con la misma estructura) tienen el suelo bajo la plaza de salida en la superficie `0x681D`, la misma que la verja de la salida, así que quitar todos los triángulos `0x681D` dejaba sin suelo; ahora se conservan los `0x681D` casi horizontales a la altura de la salida o por debajo. El efecto solo se midió en JUNGLEMX/JUNGLEX2 (puertas del piloto automático 0/15 a 15/15) y DUAL; que el juego conserve ese suelo es una **hipótesis** hasta tener un oráculo.
+
 ## 6. Dónde ayudar ahora
 
 - Decodificar el resto de `PTS/` (salida/meta/puntos de control en `.PTS`, los archivos hermanos `.APT/.HDT/...`) y construir la lógica de vueltas/progreso sobre la línea del recorrido.
