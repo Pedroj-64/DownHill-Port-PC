@@ -1,0 +1,26 @@
+# Rider skins (jerseys) and the `R/` bundles / Skins del piloto y bloques `R/`
+Evidence: PCSX2 GS dumps (multi-frame, recorded while changing the skin in the bike shop *Bici / Maillots* screen) and byte comparison of the image uploads against the disc files. Dumps and decoded textures stay outside the repo. Uncited = hypothesis.
+
+## EN
+**What was measured.** When the shop changes the jersey, the GS dump shows one host→local upload of a 64×64 CT32 image (16 384 B, read later as a 128×128 8-bit texture) plus about 15 CLUT uploads. The 16 384 bytes are **byte-identical to a texture inside one `R/*.TEX` file**, always at the same offset (56 688 for most skins, 31 600 for others), and found in exactly one file. So a skin is **a disc file chosen by name, not composed at run time**.
+
+| Skin (Mai, shop order) | In-game name | File | Checked how |
+|---|---|---|---|
+| 1 (default) | "Introducir ropa 1": teal, "MAI" and 19 | `R/MNOS` (also preloaded in `SHELL/UI*.TEX`) | upload bytes + decoded texture |
+| 2 | "Introducir ropa 2": navy and yellow | `R/MNOW` | upload bytes + decoded texture |
+| 3 | Swatch: red | `R/MSW` | upload bytes + decoded texture |
+| 4 | Azonic: blue | `R/MHY` | upload bytes + decoded texture |
+| 5 | Smith: yellow | `R/MSN` | upload bytes + decoded texture |
+
+Each bundle (`.NGP .PTR .RTX .TEX`) holds the jersey/trousers atlas, the face and hair parts and the yellow Camelbak backpack. The file name looks like `<rider letter><skin code>` (`M` = Mai; `NOS` = no sponsor = default) but the sponsor codes do **not** follow the sponsor initials (`MHY` is Azonic), so each one must be captured; the table above is the only verified part. The 194 bundles in `R/` are therefore rider × skin combinations, **not "first-person hands"** as `rider.md` said.
+**Bike colours** are a separate option: the names (Cool White, Fire Red, Jet Black, Royal Blue, Basic Orange…) are a 16-entry per-language table at `0x274DA0` (English) and `0x274DE0` (French), and an id→index table at `0x274D00` maps unlock ids `0x2D–0x47` to indices 0–0x16. The bike CLUT uploads match the palettes in `BIKE/*.RTX`.
+**Not solved.** The rider body *mesh* inside `R/*.NGP` does not read with `rider_mesh::findChain` (different layout); the port still draws the per-level 64×64 rider. `0x4E7628` (values 9,10,11,12,13,… in the shop) is a **reload counter, not the skin id**. Other riders' letters and the remaining skin codes are not captured.
+**Method pitfalls found.** (1) Compare palette-independent structure, not colours: the game alters CLUTs on load. (2) Pages 269–275 and 508–511 of the GS memory change on their own (dynamic buffers). (3) The screenshot inside a GS dump is the state at the **start** of the recording. (4) In this PCSX2 the multi-frame dump records while the hotkey is held.
+
+## ES
+**Qué se midió.** Al cambiar de camiseta en la tienda, el volcado del GS muestra una subida de una imagen CT32 de 64×64 (16 384 B, leída luego como textura de 8 bits de 128×128) y unas 15 subidas de paletas. Esos 16 384 bytes son **idénticos byte a byte a una textura de un archivo `R/*.TEX`**, siempre en el mismo desplazamiento (56 688 en casi todas, 31 600 en otras) y en un solo archivo. Una skin es, entonces, **un archivo del disco elegido por nombre, no una composición en tiempo de ejecución**.
+
+La tabla de arriba da el archivo de cada skin de Mai (1 `R/MNOS`, 2 `R/MNOW`, 3 `R/MSW`, 4 `R/MHY`, 5 `R/MSN`); todas verificadas por los bytes subidos y por la textura decodificada. Cada bloque (`.NGP .PTR .RTX .TEX`) trae el atlas de camiseta y pantalón, la cara y el pelo, y la mochila amarilla Camelbak. El nombre parece `<letra del piloto><código de skin>` (`M` = Mai; `NOS` = sin patrocinador = por defecto), pero los códigos de patrocinador **no** siguen las iniciales (`MHY` es Azonic), así que hay que capturarlos uno a uno; solo la tabla es verificada. Los 194 bloques de `R/` son combinaciones piloto × skin, **no «manos en primera persona»** como decía `rider.md`.
+**Los colores de la bici** son otra opción: los nombres están en una tabla de 16 entradas por idioma en `0x274DA0` (inglés) y `0x274DE0` (francés), y una tabla id→índice en `0x274D00` lleva los ids `0x2D–0x47` a los índices 0–0x16. Las paletas de la bici coinciden con `BIKE/*.RTX`.
+**Sin resolver.** La *malla* del cuerpo dentro de `R/*.NGP` no se lee con `rider_mesh::findChain` (otra disposición); el port sigue dibujando el piloto de 64×64 de cada nivel. `0x4E7628` (9, 10, 11, 12, 13… en la tienda) es un **contador de recargas, no el id de la skin**. Faltan las letras de los demás pilotos y los códigos de las demás skins.
+**Trampas del método.** (1) Comparar estructura independiente de la paleta, no colores: el juego altera las paletas al cargar. (2) Las páginas 269–275 y 508–511 de la memoria del GS cambian solas (búferes dinámicos). (3) La captura dentro de un volcado es el estado al **empezar** la grabación. (4) En este PCSX2 el volcado multifotograma graba mientras se mantiene la tecla.
