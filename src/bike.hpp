@@ -56,6 +56,7 @@ struct BikeParams {
     bool engineSteer = false; // suelo = 0.75 * (0.00873, 0.03316) medido en telemetría (docs/telemetry-awiiwa.md); aire y cabeceo coinciden con los de RAM
     float steerAccelGround = 0.006545f, steerMaxGround = 0.024871f, steerAccelAir = 0.00524f, steerMaxAir = 0.04608f, steerDecayAir = 0.675f;
     float pitchAccelAir = 0.00873f, pitchMaxAir = 0.04608f, pitchDecayAir = 0.8f;
+    bool blockReverse = false;                             // el juego NO deja ir hacia atrás: la velocidad a lo largo de la pista nunca es negativa en suelo (la moto se bloquea); false en el arnés de regresión y bike_test
     float reverseAccel = 0.f, reverseMax = 0.f;            // marcha atrás al frenar parado (HIPÓTESIS; 0 = desactivada: el arnés de regresión y bike_test no la usan)
     float brakeDecel = 47.f;                               // u/s^2 NETOS con el freno a fondo en suelo, sea cual sea la pendiente (nunca invierte el sentido). MEDIDO en el juego (pedtrace/braketrace, 12 frenadas en una bajada de ~39 grados): mediana 46,8, de 44 a 51 con la velocidad y la pendiente; el 28 anterior era provisional y la gravedad lo vencía
     float rolling = 0.f;                                   // rodadura 1/s (hipótesis; 0: el término de suelo de abajo ya la cubre)
@@ -178,6 +179,7 @@ private:
                 if (P.wheelFricLong && (P.fricGate == 2 || dot(cross(vh, lat), n) * (P.fricGate == 3 ? -1.f : 1.f) > 0.f)) { float df = std::fmin(std::fabs(vf) * fricRamp * P.fricE, capV * sc); v = v - lon * (vf < 0 ? -df : df); }
             }
         }   // fuerza de suelo empírica: anula (1-groundShare) de la gravedad tangente (hipótesis)
+        if (gr && P.blockReverse) { const float back = dot(v, brakeF); if (back < 0.f) v = v - brakeF * back; }   // hacia delante o nada
         if (brakeOn && brakeSf0 > 0.f) { const float target = std::fmax(0.f, brakeSf0 - P.brakeDecel * in.brake * h), now = dot(v, brakeF); if (now > target) v = v - brakeF * (now - target); }   // deceleración NETA mínima a lo largo de la pista: el freno vence la pendiente
         if (in.hop && first && gr) { v = v + A.u * (P.hop * in.hopPower); coyote = 0; trick = in.trick; trickT = 0.f; }
         trickT += h; if (gr && trickT > 0.2f) trick = false;   // aterrizar apaga el truco (el contacto sigue unos ticks tras el despegue)

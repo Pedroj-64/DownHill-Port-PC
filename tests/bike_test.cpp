@@ -41,6 +41,11 @@ int main() {
     // --- freno en una bajada fuerte (80%, ~39 grados, como las del juego): la velocidad debe caer a ritmo neto ~47 u/s2 aunque la pendiente tire hacia abajo (antes, con 28 u/s2, seguía acelerando) ---
     { Ground g = plane(0.8f); Bike b; b.place({0, 4.f, 0}, 1.5708f); run(b, g, {}, 4.f); const float v0 = b.speed(); CHECK(v0 > 40.f && b.grounded);
       BikeInput in; in.brake = 1; run(b, g, in, 1.f); CHECK(v0 - b.speed() > 35.f); CHECK(v0 - b.speed() < 60.f); run(b, g, in, 3.f); CHECK(b.speed() < 3.f); }
+    // --- sin marcha atrás (el juego bloquea): mirando cuesta arriba en una rampa fuerte sin mandos, o frenando parado en llano, la moto no rueda hacia atrás ---
+    { Ground g = plane(0.8f); Bike b; b.P.blockReverse = true; b.place({0, 4.f, 0}, -1.5708f); float minsf = 1e9f;
+      for (int i = 0; i < 60 * 4; i++) { b.step(g, {}, 1.f / 60.f); if (i >= 60) minsf = std::fmin(minsf, dot(b.vel(), b.axes().f)); } CHECK(minsf > -0.3f); CHECK(b.pos.x < 2.f);   // tras el asentamiento no baja la pendiente de espaldas (sin el bloqueo rueda decenas de unidades)
+      Ground g0 = plane(0); Bike c; c.P.blockReverse = true; c.place({0, 4.f, 0}, 0); BikeInput in; in.brake = 1; float m2 = 1e9f;
+      for (int i = 0; i < 60 * 3; i++) { c.step(g0, in, 1.f / 60.f); if (i >= 60) m2 = std::fmin(m2, dot(c.vel(), c.axes().f)); } CHECK(m2 > -0.2f && c.speed() < 0.5f); }
     // --- el balanceo se mantiene bloqueado: tras girar en rampa el eje lateral es horizontal ---
     { Ground g = plane(0.2f); Bike b; b.place({0, 4.f, 0}, 1.5708f); BikeInput in; in.throttle = 1; in.steer = 0.6f; run(b, g, in, 4.f); CHECK(std::fabs(b.axes().r.y) < 1e-4f); }
     // --- salto: en el suelo despega y vuelve a caer; en el aire el impulso no se aplica ---
