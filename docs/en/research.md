@@ -84,9 +84,6 @@ For `.mdl` files add `DH_WALK=1` to start in walk mode (terrain collision, gravi
 - **`SKAT/DHSKAT.SKX` (101 MB) is audio:** magic `SKEX`, then `VAGp` (PS2 ADPCM) headers and the `KAudioDLL` tag; `DHSKAT.CTL` is its index (offset table with 0x44-byte stride). Not skeleton/mesh data.
 - Viewer: `DH_BIKE=assembled.mdl` draws the assembled bike in ride mode; `DH_GAIN=n` (brightness multiplier; default 2 for models without chunks), `DH_ORBIT="yaw pitch"` (orbit camera around a model), `DH_BG="r g b"` (background colour).
 
-## Level sweep (`tools/sweep_levels.py`)
-Runs `dhview` headless (offscreen video, dummy audio, autopilot) over every level of your disc image and prints one row per level: collision triangles loaded, start grid yes/no, rival models, pedestrian points, autopilot gates and errors. `python3 tools/sweep_levels.py game.iso --json now.json` saves the counters (no game data, no paths); `--baseline before.json` compares and exits with 1 on regressions (collision lost, start grid lost, fewer rivals or pedestrians, new errors, OK turned into ERROR). `--levels A B` limits the run (only those levels are compared). All 51 levels take about 1 minute with 6 jobs; it needs `build/dhview` and `build/iso_check`. A level without a start grid (`NO`) is information, not an error.
-
 ## 6. Where to help next
 
 - Decode the rest of `PTS/` (start/finish/checkpoints in `.PTS`, the sibling `.APT/.HDT/...` files) and build lap/progress logic on the course line.
@@ -98,6 +95,9 @@ Runs `dhview` headless (offscreen video, dummy audio, autopilot) over every leve
 - VU1 interpreter / VIF / GIF in the runtime, only if animated geometry needs it.
 - Formats still untouched: `.PTS`, `.RST`, `.REP`, `.BNK`, `.SKX`, `.CTL`, `.APT`, `.BHS`.
 - Architecture and language questions: see [`architecture.md`](architecture.md).
+
+## Level sweep (`tools/sweep_levels.py`)
+Runs `dhview` headless (offscreen video, dummy audio, autopilot) over every level of your disc image and prints one row per level: collision triangles loaded, start grid yes/no, rival models, pedestrian points, autopilot gates and errors. `python3 tools/sweep_levels.py game.iso --json now.json` saves the counters (no game data, no paths); `--baseline before.json` compares and exits with 1 on regressions (collision lost, start grid lost, fewer rivals or pedestrians, new errors, OK turned into ERROR). `--levels A B` limits the run (only those levels are compared). All 51 levels take about 1 minute with 6 jobs; it needs `build/dhview` and `build/iso_check`. A level without a start grid (`NO`) is information, not an error.
 
 ## 5. Tools and credits
 
