@@ -39,3 +39,4 @@ Coverage inferred from file names only (documents were not opened).
 | Decisiones / Decisions | [DECISIONS](../DECISIONS.md) | same |
 | Audio: VAGp, VPK, pistas / Audio: VAGp, VPK, tracks | [audio.md](audio.md) |
 | Volcados GS, oráculo visual, peatones / GS dumps, visual oracle, pedestrians | [gs-dump.md](gs-dump.md) |
+| Códigos de trucos / Cheat codes | [cheat-codes.md](cheat-codes.md) |
