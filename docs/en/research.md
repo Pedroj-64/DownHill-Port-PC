@@ -84,6 +84,9 @@ For `.mdl` files add `DH_WALK=1` to start in walk mode (terrain collision, gravi
 - **`SKAT/DHSKAT.SKX` (101 MB) is audio:** magic `SKEX`, then `VAGp` (PS2 ADPCM) headers and the `KAudioDLL` tag; `DHSKAT.CTL` is its index (offset table with 0x44-byte stride). Not skeleton/mesh data.
 - Viewer: `DH_BIKE=assembled.mdl` draws the assembled bike in ride mode; `DH_GAIN=n` (brightness multiplier; default 2 for models without chunks), `DH_ORBIT="yaw pitch"` (orbit camera around a model), `DH_BG="r g b"` (background colour).
 
+## Rival riders per level (2026-10-28)
+The ghost rivals load five rider models. Their kinds are `4090..4110` in 24 of the 51 level NGPs, and **`4000..4020` in the other 27** (AUBERSTD, AUBTDH2, CITYMX, CITYTDH, DUAL, JUNGLE*, MOAB*, PERU*, MONKEY, MOSH*, TRAINER); the player's rider already fell back to `4000+`, the rivals now do the same (`peds::loadRacers` is tried with `4095,4100,4105,4110,4090` and then `4005,4010,4015,4020,4000`). Rivals load in 48 of 51 levels (24 before); MOSH, MOSH2 and TRAINER have no race. Checked on screen in MOAB and PERUMX (several riders visible); that the five models are different riders in every level is an inference from the kind pattern, not yet checked against the game.
+
 ## 6. Where to help next
 
 - Decode the rest of `PTS/` (start/finish/checkpoints in `.PTS`, the sibling `.APT/.HDT/...` files) and build lap/progress logic on the course line.

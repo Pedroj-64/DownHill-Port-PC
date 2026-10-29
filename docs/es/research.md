@@ -86,6 +86,9 @@ Con archivos `.mdl` añade `DH_WALK=1` para empezar en modo caminar (colisión c
 - **`SKAT/DHSKAT.SKX` (101 MB) es audio:** magia `SKEX`, luego cabeceras `VAGp` (ADPCM de PS2) y la marca `KAudioDLL`; `DHSKAT.CTL` es su índice (tabla de offsets con paso de 0x44 bytes). No son datos de esqueleto ni de malla.
 - Visor: `DH_BIKE=ensamblada.mdl` dibuja la bici ensamblada en el modo bici; `DH_GAIN=n` (multiplicador de brillo; por defecto 2 en modelos sin chunks), `DH_ORBIT="yaw pitch"` (cámara orbital alrededor de un modelo), `DH_BG="r g b"` (color de fondo).
 
+## Rivales por nivel (2026-10-28)
+Los rivales fantasma cargan cinco modelos de piloto. Sus «kinds» son `4090..4110` en 24 de los 51 NGP de nivel, y **`4000..4020` en los otros 27** (AUBERSTD, AUBTDH2, CITYMX, CITYTDH, DUAL, JUNGLE*, MOAB*, PERU*, MONKEY, MOSH*, TRAINER); el piloto del jugador ya recurría a `4000+`, ahora los rivales también (`peds::loadRacers` se prueba con `4095,4100,4105,4110,4090` y luego con `4005,4010,4015,4020,4000`). Hay rivales en 48 de 51 niveles (24 antes); MOSH, MOSH2 y TRAINER no tienen carrera. Comprobado en pantalla en MOAB y PERUMX (varios pilotos a la vista); que los cinco modelos sean pilotos distintos en cada nivel es una inferencia del patrón de «kinds», aún no contrastada con el juego.
+
 ## 6. Dónde ayudar ahora
 
 - Decodificar el resto de `PTS/` (salida/meta/puntos de control en `.PTS`, los archivos hermanos `.APT/.HDT/...`) y construir la lógica de vueltas/progreso sobre la línea del recorrido.
