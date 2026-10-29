@@ -224,8 +224,18 @@ private:
 };
 
 // Reproduce la verja de salida cerrada de la malla estática (superficie 0x681D, collision.md "Demo"): se quita para poder salir de la rejilla (hipótesis: el juego la abre al empezar).
-inline void openStartGate(Ground& g, uint16_t surface = 0x681D) {
-    std::vector<Ground::Tri> t; for (const auto& q : g.tris()) if (q.surface != surface) t.push_back(q);
+// keepFloorBelowY: en JUNGLEMX/JUNGLET*/FUJI el suelo bajo la plaza de salida también es 0x681D; se conservan los triángulos casi horizontales a esa altura o por debajo (la verja es vertical). Por defecto se borra todo, como antes.
+inline void openStartGate(Ground& g, uint16_t surface = 0x681D, float keepFloorBelowY = -1e30f) {
+    std::vector<Ground::Tri> t;
+    for (const auto& q : g.tris()) {
+        bool keep = q.surface != surface;
+        if (!keep) {
+            const float ux = q.v[3] - q.v[0], uy = q.v[4] - q.v[1], uz = q.v[5] - q.v[2], wx = q.v[6] - q.v[0], wy = q.v[7] - q.v[1], wz = q.v[8] - q.v[2];
+            const float nx = uy * wz - uz * wy, ny = uz * wx - ux * wz, nz = ux * wy - uy * wx, len = std::sqrt(nx * nx + ny * ny + nz * nz);
+            keep = len > 1e-6f && std::fabs(ny) / len > 0.5f && std::fmax(q.v[1], std::fmax(q.v[4], q.v[7])) <= keepFloorBelowY;
+        }
+        if (keep) t.push_back(q);
+    }
     g.set(std::move(t));
 }
 

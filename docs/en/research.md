@@ -84,6 +84,9 @@ For `.mdl` files add `DH_WALK=1` to start in walk mode (terrain collision, gravi
 - **`SKAT/DHSKAT.SKX` (101 MB) is audio:** magic `SKEX`, then `VAGp` (PS2 ADPCM) headers and the `KAudioDLL` tag; `DHSKAT.CTL` is its index (offset table with 0x44-byte stride). Not skeleton/mesh data.
 - Viewer: `DH_BIKE=assembled.mdl` draws the assembled bike in ride mode; `DH_GAIN=n` (brightness multiplier; default 2 for models without chunks), `DH_ORBIT="yaw pitch"` (orbit camera around a model), `DH_BG="r g b"` (background colour).
 
+## Start-position fallbacks (2026-10-28)
+Two level families need special handling at the start line. **MOABTDH / MOABTDH2** have no start-grid node (kinds 8060-8068), so the bike now starts from the first point of the PTS line instead of the debug camera position (it used to fall for ever). **JUNGLEMX / JUNGLEX2** (and JUNGLET2, JUNGLETD, FUJI, FUJI2, which have the same layout) have the floor under the start slot in surface `0x681D`, the same surface as the gate fence, so removing every `0x681D` triangle left no ground; near-horizontal `0x681D` triangles at or below the start height are now kept. The effect was measured only on JUNGLEMX/JUNGLEX2 (autopilot gates 0/15 to 15/15) and DUAL; that the game itself keeps the floor is a **hypothesis** until there is an oracle.
+
 ## 6. Where to help next
 
 - Decode the rest of `PTS/` (start/finish/checkpoints in `.PTS`, the sibling `.APT/.HDT/...` files) and build lap/progress logic on the course line.
