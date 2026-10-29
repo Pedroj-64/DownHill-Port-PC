@@ -44,6 +44,7 @@ int main() {
     // --- sin marcha atrás (el juego bloquea): mirando cuesta arriba en una rampa fuerte sin mandos, o frenando parado en llano, la moto no rueda hacia atrás ---
     { Ground g = plane(0.8f); Bike b; b.P.blockReverse = true; b.place({0, 4.f, 0}, -1.5708f); float minsf = 1e9f;
       for (int i = 0; i < 60 * 4; i++) { b.step(g, {}, 1.f / 60.f); if (i >= 60) minsf = std::fmin(minsf, dot(b.vel(), b.axes().f)); } CHECK(minsf > -0.3f); CHECK(b.pos.x < 2.f);   // tras el asentamiento no baja la pendiente de espaldas (sin el bloqueo rueda decenas de unidades)
+      Ground g2 = plane(2.f); Bike e; e.P.blockReverse = true; e.place({0, 4.f, 0}, -1.5708f); for (int i = 0; i < 60 * 5; i++) e.step(g2, {}, 1.f / 60.f); CHECK(e.speed() < 0.6f && e.pos.x < 3.f);   // y en una pendiente extrema (63 grados), como la del volcado del 29-10
       Ground g0 = plane(0); Bike c; c.P.blockReverse = true; c.place({0, 4.f, 0}, 0); BikeInput in; in.brake = 1; float m2 = 1e9f;
       for (int i = 0; i < 60 * 3; i++) { c.step(g0, in, 1.f / 60.f); if (i >= 60) m2 = std::fmin(m2, dot(c.vel(), c.axes().f)); } CHECK(m2 > -0.2f && c.speed() < 0.5f); }
     // --- el balanceo se mantiene bloqueado: tras girar en rampa el eje lateral es horizontal ---
