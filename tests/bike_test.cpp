@@ -38,6 +38,9 @@ int main() {
     { Ground g = plane(0.36f); Bike b; b.place({0, 4.f, 0}, 1.5708f); run(b, g, {}, 5.f);
       CHECK(b.pos.x > 40.f); CHECK(b.speed() > 15.f); CHECK(b.grounded);
       float planeY = -0.36f * b.pos.x; CHECK(b.pos.y - planeY < 5.f && b.pos.y - planeY > 2.f); }
+    // --- freno en una bajada fuerte (80%, ~39 grados, como las del juego): la velocidad debe caer a ritmo neto ~47 u/s2 aunque la pendiente tire hacia abajo (antes, con 28 u/s2, seguía acelerando) ---
+    { Ground g = plane(0.8f); Bike b; b.place({0, 4.f, 0}, 1.5708f); run(b, g, {}, 4.f); const float v0 = b.speed(); CHECK(v0 > 40.f && b.grounded);
+      BikeInput in; in.brake = 1; run(b, g, in, 1.f); CHECK(v0 - b.speed() > 35.f); CHECK(v0 - b.speed() < 60.f); run(b, g, in, 3.f); CHECK(b.speed() < 3.f); }
     // --- el balanceo se mantiene bloqueado: tras girar en rampa el eje lateral es horizontal ---
     { Ground g = plane(0.2f); Bike b; b.place({0, 4.f, 0}, 1.5708f); BikeInput in; in.throttle = 1; in.steer = 0.6f; run(b, g, in, 4.f); CHECK(std::fabs(b.axes().r.y) < 1e-4f); }
     // --- salto: en el suelo despega y vuelve a caer; en el aire el impulso no se aplica ---
