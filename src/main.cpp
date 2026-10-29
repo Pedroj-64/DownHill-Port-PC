@@ -361,6 +361,7 @@ int main(int argc, char** argv) {
     float hopPow = 1.f; bool hopTrick = false; bool play = false, hopPressed = false, finishedMsg = false; Race race; Run& prun = race.run; V3 camPos{}, startPt{}; float camHead = 0, leanVis = 0; bool haveStart = false, gateOpened = false;
     { std::vector<uint8_t> sraw; std::string sp0 = mdl ? std::string(argv[1]).substr(0, std::string(argv[1]).size() - 4) + ".start.pts" : std::string();   // primera plaza de la rejilla (tools/markers.py), espacio NGP -> Y arriba
       if (!sp0.empty() && readFile(sp0, sraw) && sraw.size() >= 12) { float f[3]; std::memcpy(f, sraw.data(), 12); startPt = {f[0], f[2], -f[1]}; haveStart = true; for (size_t i = 0; i + 12 <= sraw.size(); i += 12) { std::memcpy(f, sraw.data() + i, 12); startSlots.push_back({f[0], f[2], -f[1]}); } } }
+    if (!haveStart && overlay.size() >= 9) { startPt = {overlay[0], overlay[1], overlay[2]}; haveStart = true; }   // MOABTDH(2) no trae rejilla 8060-8068: salir del primer punto de la línea PTS (antes: la posición de la cámara, a ~5400 u de la pista)
     float surfTab[32][8] = {}; bool haveSurfTab = false;   // tabla de clases de superficie del nivel (RST+0xCA4): rodadura por clase del motor
     { std::vector<uint8_t> tr; std::string tp = mdl ? std::string(argv[1]).substr(0, std::string(argv[1]).size() - 4) + ".surftab" : std::string();
       if (!tp.empty() && readFile(tp, tr) && tr.size() == sizeof surfTab) { std::memcpy(surfTab, tr.data(), sizeof surfTab); haveSurfTab = true; } }
@@ -369,7 +370,7 @@ int main(int argc, char** argv) {
     if (const char* rp0 = std::getenv("DH_REPLAY")) { std::vector<uint8_t> rr; if (readFile(rp0, rr)) { replay.resize(rr.size() / 4); std::memcpy(replay.data(), rr.data(), replay.size() * 4); } }
     auto startPlay = [&]() {
         if (!useCol) { std::fprintf(stderr, "modo jugable: hace falta la colisión (<modelo>.col o DH_COL)\n"); return; }
-        if (!gateOpened) { openStartGate(gcol); gateOpened = true; }   // la verja de salida (superficie 0x681D) está cerrada en la malla estática
+        if (!gateOpened) { openStartGate(gcol, 0x681D, haveStart ? startPt.y + 0.5f : -1e30f); gateOpened = true; }   // la verja de salida (superficie 0x681D) está cerrada en la malla estática
         const Gate* g0 = gts.courseGate(0); float h0 = g0 ? std::atan2(g0->n.x, -g0->n.z) : yaw;
         if (haveStart && overlay.size() >= 9 && !std::getenv("DH_HEADING_GATE")) {   // rumbo de salida = sentido de la línea de carrera PTS junto a la parrilla (la normal de la puerta 0 no siempre apunta en el sentido de la carrera: CITY, ALPINEMX)
             const size_t n = overlay.size() / 3; size_t k = 0; float best = 1e30f;
