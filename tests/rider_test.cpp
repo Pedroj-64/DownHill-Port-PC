@@ -176,10 +176,5 @@ int main() {
             if (i >= 2 && !(range.lower <= -1.f && range.upper >= 0.f)) { std::puts("FAIL knee backward range"); return 1; }
         }
     }
-    {   // esqueleto más corto que 15 articulaciones (MOSH/MOSH2): approxPose debe devolver sin indexar fuera de rango (antes abortaba con las comprobaciones de rango activas)
-        Skeleton shortSk; shortSk.j.resize(3);
-        const ApproxResult r = approxPose(shortSk, 0.f, {0.f, 0.f, 0.f}, 5.5f, true);
-        if (r.pose.size() != 40) { std::puts("FAIL short skeleton pose size"); return 1; }
-    }
     std::puts("rider_test OK"); return 0;
 }

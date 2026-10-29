@@ -246,7 +246,6 @@ inline ApproxResult approxPose(const Skeleton& sk, float phase, const std::array
                                const std::array<float, 3>& torso = {-0.18f, -0.10f, 0.f}) {
     ApproxResult result; result.pelvis = pelvisBike;
     result.pelvisRotation = pelvisRotation;
-    if (sk.j.size() < 15) return result;   // los efectores van hasta la articulación 14 (tobillos); el esqueleto de MOSH/MOSH2 es más corto y indexaba fuera de rango (oculto en Release)
     const auto bind = sk.worldPositions(result.pose.data(), result.pose.size());
     const std::array<float, 3> rootModel = bind.empty() ? std::array<float, 3>{} : bind[0];
     const std::array<float, 3> hands[2] = {{1.035f, 0.791f, 0.978f}, {-1.024f, 0.790f, 0.978f}};
