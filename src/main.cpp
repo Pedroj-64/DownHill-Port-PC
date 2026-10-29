@@ -370,7 +370,7 @@ int main(int argc, char** argv) {
     if (const char* rp0 = std::getenv("DH_REPLAY")) { std::vector<uint8_t> rr; if (readFile(rp0, rr)) { replay.resize(rr.size() / 4); std::memcpy(replay.data(), rr.data(), replay.size() * 4); } }
     auto startPlay = [&]() {
         if (!useCol) { std::fprintf(stderr, "modo jugable: hace falta la colisión (<modelo>.col o DH_COL)\n"); return; }
-        if (!gateOpened) { openStartGate(gcol); gateOpened = true; }   // la verja de salida (superficie 0x681D) está cerrada en la malla estática
+        if (!gateOpened) { openStartGate(gcol, 0x681D, haveStart ? startPt.y + 0.5f : -1e30f); gateOpened = true; }   // la verja de salida (superficie 0x681D) está cerrada en la malla estática
         const Gate* g0 = gts.courseGate(0); float h0 = g0 ? std::atan2(g0->n.x, -g0->n.z) : yaw;
         if (haveStart && overlay.size() >= 9 && !std::getenv("DH_HEADING_GATE")) {   // rumbo de salida = sentido de la línea de carrera PTS junto a la parrilla (la normal de la puerta 0 no siempre apunta en el sentido de la carrera: CITY, ALPINEMX)
             const size_t n = overlay.size() / 3; size_t k = 0; float best = 1e30f;
