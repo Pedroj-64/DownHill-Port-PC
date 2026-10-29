@@ -346,7 +346,8 @@ int main(int argc, char** argv) {
     dust::Emitter dustE; GLuint dustTex = 0;   // polvo de la rueda trasera (src/dust.hpp; DH_NODUST=1 lo quita)
     std::vector<peds::Racer> aiRacers; std::vector<ghosts::Rider> aiRiders; ghosts::Line aiLine;   // rivales fantasma (src/ghosts.hpp): modelos de piloto del NGP con la pose del jugador
     if (riderApprox && !std::getenv("DH_NOAI")) { std::vector<uint8_t> pn, pp, pt, pr; if (readFile("native:level.NGP", pn) && readFile("native:level.PTR", pp) && readFile("native:level.TEX", pt) && readFile("native:level.RTX", pr)) {
-        if (peds::loadRacers(gr, pn, pp, pt, pr, {4095, 4100, 4105, 4110, 4090}, aiRacers)) std::fprintf(stderr, "rivales: %zu modelos de piloto\n", aiRacers.size()); } }
+        // 27 de 51 niveles (JUNGLE, MOAB, PERU, DUAL...) no traen 4090-4110: sus cinco pilotos son 4000-4020, igual que el piloto del jugador cae a 4000+ (rider.md).
+        if (peds::loadRacers(gr, pn, pp, pt, pr, {4095, 4100, 4105, 4110, 4090}, aiRacers) || peds::loadRacers(gr, pn, pp, pt, pr, {4005, 4010, 4015, 4020, 4000}, aiRacers)) std::fprintf(stderr, "rivales: %zu modelos de piloto\n", aiRacers.size()); } }
     // --- Modo bici (R): punto material que baja por el terreno. Unidades del juego sin confirmar: la separación de carriles de la línea PTS (~22 u) sugiere 10 u = 1 m (DH_UNIT cambia el valor) ---
     const float G = 9.8f * U;
     bool ride = false; float rx0 = 0, ry0 = 0, rz0 = 0, rh = 0, rs = 0, rvy = 0, lastSlope = 0, goodX = 0, goodY = 0, goodZ = 0, goodH = 0; bool air = false;
