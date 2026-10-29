@@ -56,9 +56,8 @@ struct BikeParams {
     bool engineSteer = false; // suelo = 0.75 * (0.00873, 0.03316) medido en telemetría (docs/telemetry-awiiwa.md); aire y cabeceo coinciden con los de RAM
     float steerAccelGround = 0.006545f, steerMaxGround = 0.024871f, steerAccelAir = 0.00524f, steerMaxAir = 0.04608f, steerDecayAir = 0.675f;
     float pitchAccelAir = 0.00873f, pitchMaxAir = 0.04608f, pitchDecayAir = 0.8f;
-    bool blockReverse = false;                             // el juego NO deja ir hacia atrás: la velocidad a lo largo de la pista nunca es negativa en suelo (la moto se bloquea); false en el arnés de regresión y bike_test
     float reverseAccel = 0.f, reverseMax = 0.f;            // marcha atrás al frenar parado (HIPÓTESIS; 0 = desactivada: el arnés de regresión y bike_test no la usan)
-    float brakeDecel = 47.f;                               // u/s^2 NETOS con el freno a fondo en suelo, sea cual sea la pendiente (nunca invierte el sentido). MEDIDO en el juego (pedtrace/braketrace, 12 frenadas en una bajada de ~39 grados): mediana 46,8, de 44 a 51 con la velocidad y la pendiente; el 28 anterior era provisional y la gravedad lo vencía
+    float brakeDecel = 28.f;                               // u/s^2 con el freno a fondo (nunca invierte el sentido)
     float rolling = 0.f;                                   // rodadura 1/s (hipótesis; 0: el término de suelo de abajo ya la cubre)
     // Conducción (hito 3b, FUN_00136330; ride_force_check.py): el cuerpo de conducción NO usa el amortiguamiento lineal 0.975 de FUN_00134060 sino arrastre cuadrático -k|v|v (validado a 4.6e-7, k = ctrl+0x490 = 0.0063..0.0079).
     // groundShare = 0.46 (con k = 0.0063 del motor) se AJUSTÓ a 191 ventanas de 50 ticks de rodadura sin entrada (ride_s1/s5, roll_s1/s5/s5b): 72 % dentro del 15 % de la velocidad capturada (mediana 10.3 %; sin término de suelo 12 %). HIPÓTESIS.
@@ -157,9 +156,8 @@ private:
         bool gr = coyote > 0.f; V3 v = rb.vel; float kd = gr ? P.dragK : P.dragKAir;
         if (P.realDrag) { sprintT = in.sprint ? sprintT + h : 0.f; const float sf = in.sprint ? 1.15f * (1.f + std::fmin(1.f, sprintT / P.sprintRamp)) : 1.f; kd = (gr && P.gravityGround > 0.f ? P.gravityGround : P.gravity) / (P.vterm0 * P.vterm0 * sf * sf); }
         v = v * (1.f / (1.f + kd * std::sqrt(dot(v, v)) * h));   // arrastre cuadrático implícito (estable a cualquier h)
-        V3 brakeF{}; float brakeSf0 = 0.f; const bool brakeOn = gr && in.brake > 0.f;   // el freno se impone al final del paso, tras la gravedad
         if (gr) {
-            V3 f = unit(fwd - groundN * dot(fwd, groundN)); float sf = dot(v, f); brakeF = f; brakeSf0 = sf;
+            V3 f = unit(fwd - groundN * dot(fwd, groundN)); float sf = dot(v, f);
             if (in.throttle > 0 && P.pedalKick > 0.f && dot(v, v) < P.pedalKickV * P.pedalKickV) v = v + f * (P.pedalKickV * P.pedalKick * engine::kTickHz * h);
             if (in.throttle > 0) v = v + f * (P.pedalAccel * (in.sprint ? P.sprintMul : 1.f) * in.throttle * std::fmax(0.f, 1.f - sf / P.pedalMax) * h);
             if (in.brake > 0 && sf > 0) v = v - f * std::fmin(sf, P.brakeDecel * in.brake * h);
@@ -179,8 +177,6 @@ private:
                 if (P.wheelFricLong && (P.fricGate == 2 || dot(cross(vh, lat), n) * (P.fricGate == 3 ? -1.f : 1.f) > 0.f)) { float df = std::fmin(std::fabs(vf) * fricRamp * P.fricE, capV * sc); v = v - lon * (vf < 0 ? -df : df); }
             }
         }   // fuerza de suelo empírica: anula (1-groundShare) de la gravedad tangente (hipótesis)
-        if (gr && P.blockReverse) { const float back = dot(v, brakeF); if (back < 0.f) v = v - brakeF * back; }   // hacia delante o nada
-        if (brakeOn && brakeSf0 > 0.f) { const float target = std::fmax(0.f, brakeSf0 - P.brakeDecel * in.brake * h), now = dot(v, brakeF); if (now > target) v = v - brakeF * (now - target); }   // deceleración NETA mínima a lo largo de la pista: el freno vence la pendiente
         if (in.hop && first && gr) { v = v + A.u * (P.hop * in.hopPower); coyote = 0; trick = in.trick; trickT = 0.f; }
         trickT += h; if (gr && trickT > 0.2f) trick = false;   // aterrizar apaga el truco (el contacto sigue unos ticks tras el despegue)
         rb.vel = v; rb.linMom = v * P.mass;
