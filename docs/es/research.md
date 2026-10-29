@@ -86,6 +86,9 @@ Con archivos `.mdl` añade `DH_WALK=1` para empezar en modo caminar (colisión c
 - **`SKAT/DHSKAT.SKX` (101 MB) es audio:** magia `SKEX`, luego cabeceras `VAGp` (ADPCM de PS2) y la marca `KAudioDLL`; `DHSKAT.CTL` es su índice (tabla de offsets con paso de 0x44 bytes). No son datos de esqueleto ni de malla.
 - Visor: `DH_BIKE=ensamblada.mdl` dibuja la bici ensamblada en el modo bici; `DH_GAIN=n` (multiplicador de brillo; por defecto 2 en modelos sin chunks), `DH_ORBIT="yaw pitch"` (cámara orbital alrededor de un modelo), `DH_BG="r g b"` (color de fondo).
 
+## Barrido de niveles (`tools/sweep_levels.py`)
+Ejecuta `dhview` sin ventana (vídeo offscreen, audio simulado, piloto automático) sobre todos los niveles de tu imagen y muestra una fila por nivel: triángulos de colisión cargados, rejilla de salida sí/no, modelos de rival, puntos de peatones, puertas del piloto automático y errores. `python3 tools/sweep_levels.py juego.iso --json ahora.json` guarda los contadores (sin datos del juego ni rutas); `--baseline antes.json` compara y sale con 1 si hay regresiones (colisión perdida, rejilla de salida perdida, menos rivales o peatones, errores nuevos, OK convertido en ERROR). `--levels A B` limita la ejecución (solo se comparan esos niveles). Los 51 niveles tardan alrededor de 1 minuto con 6 trabajos; necesita `build/dhview` y `build/iso_check`. Un nivel sin rejilla de salida (`NO`) es información, no un error.
+
 ## 6. Dónde ayudar ahora
 
 - Decodificar el resto de `PTS/` (salida/meta/puntos de control en `.PTS`, los archivos hermanos `.APT/.HDT/...`) y construir la lógica de vueltas/progreso sobre la línea del recorrido.
