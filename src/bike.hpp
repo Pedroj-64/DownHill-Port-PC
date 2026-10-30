@@ -70,7 +70,10 @@ struct BikeParams {
     int fricApps = 0;                                       // aplicaciones por tick (0 = una por rueda en contacto; experimento)
     int fricGate = 1;                                       // 1 = (v̂×lateral)·n > 0 como Ghidra; 2 = siempre; 3 = signo invertido (experimento)
     float rampStart = 0.25f, rampMul = 1.3f;                // gp 0x8218 / 0x821C leídos de RAM (tools/fric_table_check.py)
-    float comLift = 1.4f;                                  // sube todos los puntos locales (baja el centro de masas efectivo): el motor da los puntos respecto al nodo y el centro de masas está desplazado (+0x50), desplazamiento desconocido: hipótesis de estabilidad
+    // Impulso de rampa MX y pedal por clase: FUN_00136C20 (clases 0x16 y 0x0B) y multiplicadores de FUN_00136A88 (22: x1.15, 11: x1.25). Adaptado de la lectura de Downhill Revived (func_00136C20 / func_00136790, GPL-3.0-or-later,
+    // github.com/skuza-oss/downhill-revived; USA = PAL - 0x2F8). a = pedalAccel·1.5·x4A0·factor[clase] a lo largo de la moto, x4A0 = |v|/(vterm0·1.4667) (FUN_001385B0). HIPÓTESIS hasta validar en MX; apagado por defecto.
+    bool classBoost = false; float boostFactor[32] = {};   // boostFactor = col 3 de DAT_0077A3D8 (0x0B -> 1.0, 0x16 -> 0.75 en RAM)
+    float comLift = 1.4f;                                 // sube todos los puntos locales (baja el centro de masas efectivo): el motor da los puntos respecto al nodo y el centro de masas está desplazado (+0x50), desplazamiento desconocido: hipótesis de estabilidad
     // T6 (VERIFICADO con la telemetría de 4 niveles): el arrastre del motor es k = g/vterm² (FUN_00136330: ctrl+0x490), con g = peso en suelo/aire y vterm = vterm0·1.15·(1 + min(t/3.84, 1)) mientras dura el esfuerzo extra (rider+0x7A69; t = ticks rider+0x7964·0.02)
     bool rollByClass = false; float rollTab[32] = {};      // rodadura lineal del motor (FUN_001380E0): a = -0.025·coef[col 2 de la clase]·v (1/s), coef de DAT_0077A3D8 = RST+0xCA4; VERIFICADO con 4 niveles (residuo ≈ 0.2 u/s² sin pedal)
     bool realDrag = false; float vterm0 = 112.36f, sprintRamp = 3.84f;   // vterm0 = sqrt(79.53/0.0063); el 0.0063 varía algo con el piloto/nivel (0.0063-0.0089 medido)
@@ -159,7 +162,9 @@ private:
         if (gr) {
             V3 f = unit(fwd - groundN * dot(fwd, groundN)); float sf = dot(v, f);
             if (in.throttle > 0 && P.pedalKick > 0.f && dot(v, v) < P.pedalKickV * P.pedalKickV) v = v + f * (P.pedalKickV * P.pedalKick * engine::kTickHz * h);
-            if (in.throttle > 0) v = v + f * (P.pedalAccel * (in.sprint ? P.sprintMul : 1.f) * in.throttle * std::fmax(0.f, 1.f - sf / P.pedalMax) * h);
+            const int cls = surface & 0x1F; const float pedCls = P.classBoost ? (cls == 22 ? 1.15f : cls == 11 ? 1.25f : 1.f) : 1.f;
+            if (in.throttle > 0) v = v + f * (P.pedalAccel * pedCls * (in.sprint ? P.sprintMul : 1.f) * in.throttle * std::fmax(0.f, 1.f - sf / P.pedalMax) * h);
+            if (P.classBoost && (cls == 22 || cls == 11)) { const float fc = P.boostFactor[cls] > 0.01f ? P.boostFactor[cls] : 1.f; v = v + f * (P.pedalAccel * 1.5f * std::sqrt(dot(v, v)) / (P.vterm0 * 1.4666667f) * fc * h); }
             if (in.brake > 0 && sf > 0) v = v - f * std::fmin(sf, P.brakeDecel * in.brake * h);
             else if (in.brake > 0 && in.throttle <= 0 && P.reverseAccel > 0 && sf > -P.reverseMax) v = v - f * std::fmin(P.reverseAccel * in.brake * h, sf + P.reverseMax);   // parado o casi: rueda hacia atrás despacio
             if (!P.wheelFric) v = v - A.r * (dot(v, A.r) * std::fmin(1.f, P.grip * h)); v = v * (1.f - (P.rollByClass ? 0.025f * P.rollTab[surface & 0x1F] : P.rolling) * h);

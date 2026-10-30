@@ -27,6 +27,7 @@ static void applySet(BikeParams& P) {
         if (f && !std::fseek(f, 0xCA4, SEEK_SET) && std::fread(t, sizeof t, 1, f) == 1) { P.wheelFric = true; for (int c = 0; c < 32; c++) P.fricCoef[c] = t[c][0]; } else std::fprintf(stderr, "DH_WHEELFRIC: no se puede leer %s\n", rst);
         if (f) std::fclose(f); }
     if (std::getenv("DH_REAL")) { P.groundShare = 1.f; P.rollConst = 0.f; P.pedalMax = 1e9f; P.realDrag = true; P.pedalKick = 0.1f; P.pedalKickV = 29.333f; }   // T6: fuerzas de suelo del motor (peso, arrastre g/vterm², rodadura por clase vía DH_ROLLTAB=1, pedal constante), sin términos empíricos
+    if (std::getenv("DH_CLASSBOOST")) { P.classBoost = true; P.boostFactor[11] = 1.f; P.boostFactor[22] = 0.75f; }   // FUN_00136C20 + pedal por clase (Downhill Revived, GPL-3.0+); factores de RAM
     const char* e = std::getenv("DH_SET"); if (!e) return; std::string str(e); size_t a = 0;
     while (a < str.size()) { size_t b = str.find(',', a); if (b == std::string::npos) b = str.size(); std::string kv = str.substr(a, b - a); a = b + 1; size_t q = kv.find('='); if (q == std::string::npos) continue;
         std::string k = kv.substr(0, q); float v = (float)std::atof(kv.c_str() + q + 1);
