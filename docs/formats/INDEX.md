@@ -24,6 +24,7 @@ Coverage inferred from file names only (documents were not opened).
 | Arte y vídeo del menú / Menu art and video | [menu-assets.md](menu-assets.md) |
 | Piloto en vivo / Rider live | [rider-live.md](rider-live.md) |
 | Piernas del piloto / Rider legs | [rider-legs.md](rider-legs.md) |
+| Skins del piloto y bloques `R/` / Rider skins and `R/` bundles | [rider-skins.md](rider-skins.md) |
 | Montaje del piloto / Rider mount | [rider-mount.md](rider-mount.md) |
 
 ## Otros documentos / Other documents
