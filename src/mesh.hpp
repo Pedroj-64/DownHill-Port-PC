@@ -184,7 +184,7 @@ inline std::vector<uint8_t> saveMdl(const ScanOut& so, const std::vector<std::pa
         tab.emplace_back(own, first, vs.size() / 10 - first);
     }
     const uint32_t nvv = (uint32_t)(vs.size() / 10), ntex = (uint32_t)txOrder.size(); std::vector<uint8_t> mdl;
-    mdl.assign({'D', 'H', 'M', chunks ? '3' : '2'}); auto put = [&](const void* p, size_t n) { const uint8_t* b = (const uint8_t*)p; mdl.insert(mdl.end(), b, b + n); };
+    mdl.assign({'D', 'H', 'M', (uint8_t)(chunks ? '3' : '2')}); auto put = [&](const void* p, size_t n) { const uint8_t* b = (const uint8_t*)p; mdl.insert(mdl.end(), b, b + n); };
     put(&ntex, 4); put(&nvv, 4); put(&nvv, 4);
     for (size_t t : txOrder) { const auto& [w, h, px] = so.textures[t]; put(&w, 4); put(&h, 4); put(px.data(), px.size()); }
     put(vs.data(), vs.size() * 4); for (uint32_t k = 0; k < nvv; k++) put(&k, 4);

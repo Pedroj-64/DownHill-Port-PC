@@ -96,6 +96,9 @@ For `.mdl` files add `DH_WALK=1` to start in walk mode (terrain collision, gravi
 - Formats still untouched: `.PTS`, `.RST`, `.REP`, `.BNK`, `.SKX`, `.CTL`, `.APT`, `.BHS`.
 - Architecture and language questions: see [`architecture.md`](architecture.md).
 
+## Level sweep (`tools/sweep_levels.py`)
+Runs `dhview` headless (offscreen video, dummy audio, autopilot) over every level of your disc image and prints one row per level: collision triangles loaded, start grid yes/no, rival models, pedestrian points, autopilot gates and errors. `python3 tools/sweep_levels.py game.iso --json now.json` saves the counters (no game data, no paths); `--baseline before.json` compares and exits with 1 on regressions (collision lost, start grid lost, fewer rivals or pedestrians, new errors, OK turned into ERROR). `--levels A B` limits the run (only those levels are compared). All 51 levels take about 1 minute with 6 jobs; it needs `build/dhview` and `build/iso_check`. A level without a start grid (`NO`) is information, not an error.
+
 ## 5. Tools and credits
 
 - **Pseudo-C of the executable: Ghidra** with [ghidra-emotionengine-reloaded](https://github.com/chaoticgd/ghidra-emotionengine-reloaded) (section 2). The `FUN_xxxxxxxx` / `DAT_xxxxxxxx` names cited in the docs are Ghidra's auto-names for the ELF.

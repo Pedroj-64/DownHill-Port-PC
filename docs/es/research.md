@@ -98,6 +98,9 @@ Con archivos `.mdl` añade `DH_WALK=1` para empezar en modo caminar (colisión c
 - Formatos aún sin tocar: `.PTS`, `.RST`, `.REP`, `.BNK`, `.SKX`, `.CTL`, `.APT`, `.BHS`.
 - Preguntas de arquitectura y lenguaje: ver [`architecture.md`](architecture.md).
 
+## Barrido de niveles (`tools/sweep_levels.py`)
+Ejecuta `dhview` sin ventana (vídeo offscreen, audio simulado, piloto automático) sobre todos los niveles de tu imagen y muestra una fila por nivel: triángulos de colisión cargados, rejilla de salida sí/no, modelos de rival, puntos de peatones, puertas del piloto automático y errores. `python3 tools/sweep_levels.py juego.iso --json ahora.json` guarda los contadores (sin datos del juego ni rutas); `--baseline antes.json` compara y sale con 1 si hay regresiones (colisión perdida, rejilla de salida perdida, menos rivales o peatones, errores nuevos, OK convertido en ERROR). `--levels A B` limita la ejecución (solo se comparan esos niveles). Los 51 niveles tardan alrededor de 1 minuto con 6 trabajos; necesita `build/dhview` y `build/iso_check`. Un nivel sin rejilla de salida (`NO`) es información, no un error.
+
 ## 5. Herramientas y créditos
 
 - **Pseudo-C del ejecutable: Ghidra** con [ghidra-emotionengine-reloaded](https://github.com/chaoticgd/ghidra-emotionengine-reloaded) (sección 2). Los nombres `FUN_xxxxxxxx` / `DAT_xxxxxxxx` que citan los docs son los nombres automáticos de Ghidra para el ELF.

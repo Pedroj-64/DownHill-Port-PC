@@ -63,7 +63,7 @@ private:
             if (!(nameLen == 1 && (d[o + 33] == 0 || d[o + 33] == 1))) {   // se saltan «.» y «..»
                 std::string name((const char*)&d[o + 33], nameLen); const size_t semi = name.find(';'); if (semi != std::string::npos) name.resize(semi);
                 if (!isDir && name.size() > 1 && name.back() == '.') name.pop_back();   // «NOMBRE.» = sin extensión (los extractores lo dejan como «NOMBRE»)
-                if (name.find('/') != std::string::npos || name.find('\\\\') != std::string::npos) return false;
+                if (name.find('/') != std::string::npos || name.find('\\') != std::string::npos) return false;
                 Entry e; e.path = prefix.empty() ? name : prefix + "/" + name; e.lba = elba; e.size = esize; e.dir = isDir;
                 if ((uint64_t)elba * kSector + esize > total_ && !isDir) return false;
                 out.push_back(e);

@@ -24,6 +24,7 @@ Coverage inferred from file names only (documents were not opened).
 | Arte y vídeo del menú / Menu art and video | [menu-assets.md](menu-assets.md) |
 | Piloto en vivo / Rider live | [rider-live.md](rider-live.md) |
 | Piernas del piloto / Rider legs | [rider-legs.md](rider-legs.md) |
+| Skins del piloto y bloques `R/` / Rider skins and `R/` bundles | [rider-skins.md](rider-skins.md) |
 | Montaje del piloto / Rider mount | [rider-mount.md](rider-mount.md) |
 
 ## Otros documentos / Other documents
@@ -40,3 +41,5 @@ Coverage inferred from file names only (documents were not opened).
 | Audio: VAGp, VPK, pistas / Audio: VAGp, VPK, tracks | [audio.md](audio.md) |
 | Volcados GS, oráculo visual, peatones / GS dumps, visual oracle, pedestrians | [gs-dump.md](gs-dump.md) |
 | Referencia cruzada con Downhill Revived / Cross-reference with Downhill Revived | [revived-crossref.md](revived-crossref.md) |
+| Códigos de trucos / Cheat codes | [cheat-codes.md](cheat-codes.md) |
+| Nombres de nivel y tipos de carrera / Level names and race types | [level-names.md](level-names.md) |
