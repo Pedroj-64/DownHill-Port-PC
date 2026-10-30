@@ -60,12 +60,13 @@ public:
         clips_[key] = out; return out;
     }
     bool hasBank(const std::string& bank) { return bank_(bank) != nullptr; }
+    std::shared_ptr<const bnk::Bank> sharedBank(const std::string& bank) { bank_(bank); auto it = banks_.find(bank); return it == banks_.end() ? nullptr : it->second; }   // para el motor de granos (snd989.hpp)
     bool has(const std::string& bank, const std::string& name) { const bnk::Bank* b = bank_(bank); return b && b->find(name) >= 0; }
 private:
-    Reader rd_; bool flat_ = false, pitch_ = false; std::map<std::string, std::unique_ptr<bnk::Bank>> banks_; std::map<std::string, ClipPtr> clips_;
+    Reader rd_; bool flat_ = false, pitch_ = false; std::map<std::string, std::shared_ptr<bnk::Bank>> banks_; std::map<std::string, ClipPtr> clips_;
     const bnk::Bank* bank_(const std::string& name) {
         auto it = banks_.find(name); if (it != banks_.end()) return it->second.get();
-        std::vector<uint8_t> raw; auto b = std::make_unique<bnk::Bank>(); if (!rd_("SND/" + name + ".BNK", raw) || !b->parse(std::move(raw))) b.reset();
+        std::vector<uint8_t> raw; auto b = std::make_shared<bnk::Bank>(); if (!rd_("SND/" + name + ".BNK", raw) || !b->parse(std::move(raw))) b.reset();
         return (banks_[name] = std::move(b)).get();
     }
     // Clip del sonido: suma de las muestras de sus granos GRAIN_TONE, con el volumen por tono (normalizado al mayor) y el panorama por tono.
@@ -133,8 +134,10 @@ public:
             }
         }
         voices_.erase(std::remove_if(voices_.begin(), voices_.end(), [](const Voice& v) { return !v.loop && !v.clip->loop && v.pos >= (double)v.clip->pcm.size(); }), voices_.end());
+        if (extra_) { extraBuf_.assign((size_t)frames * 2, 0); extra_(extraBuf_.data(), (size_t)frames); for (size_t i = 0; i < acc.size(); i++) acc[i] += (int32_t)(extraBuf_[i] * master_); }   // fuente externa (motor de granos snd989), mismo volumen maestro
         out.resize(acc.size()); for (size_t i = 0; i < acc.size(); i++) out[i] = (int16_t)std::clamp(acc[i], -32768, 32767);
     }
+    void setExtra(std::function<void(int16_t*, size_t)> f) { extra_ = std::move(f); }
     void update() {
         if (!stream_) return; const int target = (int)(kRate * 4 * 0.15);   // ~0.15 s en cola
         while (SDL_GetAudioStreamQueued(stream_) < target) { render(chunk_, kRate / 20); if (!SDL_PutAudioStreamData(stream_, chunk_.data(), (int)(chunk_.size() * 2))) return; }
@@ -143,6 +146,7 @@ public:
     static constexpr int kRate = 44100;
 private:
     struct Voice { ClipPtr clip; double pos; float pitch, gain; bool loop; int tag; };
+    std::function<void(int16_t*, size_t)> extra_; std::vector<int16_t> extraBuf_;
     SDL_AudioStream* stream_ = nullptr; float master_ = 0.7f; std::vector<Voice> voices_; std::vector<int16_t> chunk_;
 };
 

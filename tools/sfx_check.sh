@@ -12,7 +12,7 @@ ISO=$1; [ -n "$ISO" ] || ISO=$(ls ./*.iso 2>/dev/null | head -n 1 || true)
 [ -x build/dhview ] || { echo "falta build/dhview (cmake --build build)" >&2; exit 1; }
 LEVEL=${2:-JUNGLE}; TICKS=${3:-20000}
 tmp=$(mktemp); trap 'rm -f "$tmp"' EXIT
-env SDL_VIDEODRIVER=offscreen SDL_AUDIODRIVER=dummy DH_PLAY=1 DH_LOADHOLD=0 DH_MUSIC=OFF DH_SFX=1 \
+env SDL_VIDEODRIVER=offscreen SDL_AUDIODRIVER=dummy DH_PLAY=1 DH_LOADHOLD=0 DH_MUSIC=OFF DH_SFX=1 DH_NOBLOCKREV=1 \
     DH_DT=0.0166667 DH_TICKS="$TICKS" DH_PLAYIN="0 0 0 0" timeout 240 build/dhview "$ISO" "$LEVEL" 2>"$tmp" >/dev/null
 line=$(grep -o 'sfx resumen:.*' "$tmp" | head -n 1)
 [ -n "$line" ] || { echo "no se obtuvo el resumen de efectos (¿DH_TICKS demasiado alto o banco ausente?)" >&2; cat "$tmp" >&2; exit 1; }

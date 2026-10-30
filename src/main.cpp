@@ -42,6 +42,7 @@ static std::vector<uint8_t> g_inLog; static bool g_inLogSaved = false;   // regi
 #include "ghosts.hpp"
 #include "dust.hpp"
 #include "surfsound.hpp"
+#include "snd989.hpp"
 
 // Ángulo vertical de la cámara del juego (rad). Medido 2026-10-24: proyectando los puntos de contacto del piloto de un savestate (cámara de RAM 0x3A8D10..) sobre la
 // captura del propio juego coinciden con ~1,4 rad (80°); barrido de correlación estructural sobre 4 savestates con máximo en 1,35-1,5 (tools/visual_diff.py). Antes 1,1 (sin evidencia).
@@ -352,7 +353,7 @@ int main(int argc, char** argv) {
     // --- Modo jugable (P, o DH_PLAY=1): la moto de src/bike.hpp con teclado. FÍSICA APROXIMADA (docs/formats/bike-physics.md). W acelerar, S frenar, A/D girar, Q/E inclinar (morro arriba/abajo),
     // Espacio saltar, Enter reiniciar en el último punto bueno, T volver a la rejilla de salida. DH_PLAYIN="acelerador freno giro inclinar" fija los mandos sin teclado (capturas DH_SHOT) ---
     std::vector<V3> startSlots;   // todas las plazas de la rejilla (espacio del visor); la primera es la del jugador
-    float hopPow = 1.f; bool hopTrick = false; bool play = false, hopPressed = false, finishedMsg = false; Race race; Run& prun = race.run; V3 camPos{}, startPt{}; float camHead = 0, leanVis = 0; bool haveStart = false, gateOpened = false;
+    float hopPow = 1.f; bool hopTrick = false; bool play = false, hopPressed = false, finishedMsg = false; Race race; Run& prun = race.run; V3 camPos{}, startPt{}; float camHead = 0, leanVis = 0, gRollVis = 0; bool haveStart = false, gateOpened = false;
     { std::vector<uint8_t> sraw; std::string sp0 = mdl ? std::string(argv[1]).substr(0, std::string(argv[1]).size() - 4) + ".start.pts" : std::string();   // primera plaza de la rejilla (tools/markers.py), espacio NGP -> Y arriba
       if (!sp0.empty() && readFile(sp0, sraw) && sraw.size() >= 12) { float f[3]; std::memcpy(f, sraw.data(), 12); startPt = {f[0], f[2], -f[1]}; haveStart = true; for (size_t i = 0; i + 12 <= sraw.size(); i += 12) { std::memcpy(f, sraw.data() + i, 12); startSlots.push_back({f[0], f[2], -f[1]}); } } }
     if (!haveStart && overlay.size() >= 9) { startPt = {overlay[0], overlay[1], overlay[2]}; haveStart = true; }   // MOABTDH(2) no trae rejilla 8060-8068: salir del primer punto de la línea PTS (antes: la posición de la cámara, a ~5400 u de la pista)
@@ -375,7 +376,7 @@ int main(int argc, char** argv) {
             if (dx * dx + dz * dz > 1e-4f) h0 = std::atan2(dx, -dz);
         }
         // DH_REAL=1: fuerzas de suelo del motor (T6, docs/formats/physics-module.md); por defecto el perfil empírico, que el oráculo de repetición predice mejor (2.2-2.5 u frente a 2.7-3.1 u a 0.5 s: faltan las pérdidas por contacto con el terreno)
-        if (!std::getenv("DH_FEEL0")) { BikeParams& bp = prun.bike.P; useEngineProfile(bp); if (haveSurfTab && std::getenv("DH_REAL")) useRealForces(bp, surfTab); bp.hop = 32.f; bp.grip = 8.f; bp.blockReverse = true; bp.reverseAccel = 0.f; bp.reverseMax = 0.f;   /* el juego no deja ir hacia atrás: bloquea */ }   // ajuste «para jugar a mano»: controlador de dirección del motor (leído de RAM) y salto de 2.45·13 = 32 u/s (FUN_00136330); agarre y marcha atrás = HIPÓTESIS. DH_FEEL0=1 usa los valores del arnés
+        if (!std::getenv("DH_FEEL0")) { BikeParams& bp = prun.bike.P; useEngineProfile(bp); if (haveSurfTab && std::getenv("DH_REAL")) useRealForces(bp, surfTab); bp.hop = 32.f; bp.grip = 8.f; bp.blockReverse = !std::getenv("DH_NOBLOCKREV"); bp.reverseAccel = 0.f; bp.reverseMax = 0.f;   /* el juego no deja ir hacia atrás: bloquea */ }   // ajuste «para jugar a mano»: controlador de dirección del motor (leído de RAM) y salto de 2.45·13 = 32 u/s (FUN_00136330); agarre y marcha atrás = HIPÓTESIS. DH_FEEL0=1 usa los valores del arnés
         race.loadLen = std::getenv("DH_LOADHOLD") ? (float)std::atof(std::getenv("DH_LOADHOLD")) : (shot ? 0.f : 1.5f);   // pantalla de carga: duración mínima provisional (no sale del ELF); 0 en capturas DH_SHOT
         aiRiders.clear();   // rivales fantasma en las plazas vecinas de la rejilla (a ≤ 40 u de la del jugador), sobre la línea de carrera; DH_AI=N (por defecto 5), DH_NOAI=1 los quita
         if (!aiRacers.empty() && overlay.size() >= 9 && haveStart) {
@@ -420,7 +421,7 @@ int main(int argc, char** argv) {
     };
     if (std::getenv("DH_RIDE")) { ride = true; startRide(); }
     if (std::getenv("DH_PLAY")) startPlay();
-    sfx::Mixer mixer; std::unique_ptr<sfx::Library> sfxLib; std::string sfxBank; int surfGroup = 0; bool sfxPedal = false;   // efectos (DH_SFX=OFF los desactiva, DH_SFX_VOL = volumen maestro 0..1, 0.7): bancos SND/*.BNK de la imagen
+    sfx::Mixer mixer; std::unique_ptr<sfx::Library> sfxLib; std::string sfxBank; int surfGroup = 0; bool sfxPedal = false; snd989::Engine grainEng; bool useGrain = false; uint32_t rollH = 0; std::string rollName;   // DH_SND989=1: rodadura por el motor de granos 989snd (EXPERIMENTAL, sin oír)   // efectos (DH_SFX=OFF los desactiva, DH_SFX_VOL = volumen maestro 0..1, 0.7): bancos SND/*.BNK de la imagen
     audio::Music music;   // música (src/music.hpp): DH_MUSIC=OFF la desactiva, DH_MUSIC=<fichero de VAG/> la fuerza, DH_MUSIC_VOL = volumen 0..1 (0.5). Por defecto la elige el nivel, como el motor: capas <tema>{HIGH,MED,LOW,DRUM}-L/R.VAG en los nueve niveles del circuito (DH_MUSIC_LAYER elige la capa, HIGH por defecto), <tema>TDH.VPK en los ocho «tour de downhill» y <tema>MX.VPK en el resto. Solo en modo juego, sin DH_SHOT.
     if (std::getenv("DH_PLAY") && !shot && assetRd) {
         std::string want = std::getenv("DH_MUSIC") ? std::getenv("DH_MUSIC") : "";
@@ -456,6 +457,7 @@ int main(int argc, char** argv) {
             sfxLib = std::make_unique<sfx::Library>(assetRd, std::getenv("DH_SFX_FLAT") != nullptr, std::getenv("DH_SFX_NOPITCH") == nullptr);   // afinación por tono = 989snd tone_pitch (fórmula de Downhill Revived, sound_grains.h); DH_SFX_NOPITCH=1 la quita
             if (!sfxLib->hasBank(sfxBank) || !mixer.open(std::getenv("DH_SFX_VOL") ? (float)std::atof(std::getenv("DH_SFX_VOL")) : 0.7f)) { std::fprintf(stderr, "aviso: sin efectos de sonido (%s)\n", sfxBank.c_str()); sfxLib.reset(); }
             else std::fprintf(stderr, "efectos: banco %s (volumen/panorama por tono: %s, afinación: %s)\n", sfxBank.c_str(), std::getenv("DH_SFX_FLAT") ? "no" : "sí", std::getenv("DH_SFX_NOPITCH") ? "no" : "sí");
+            if (sfxLib && !(std::getenv("DH_SND989") && std::string(std::getenv("DH_SND989")) == "0")) { useGrain = true; grainEng.setBank(sfxBank, sfxLib->sharedBank(sfxBank)); mixer.setExtra([this_eng = &grainEng](int16_t* o, size_t n) { this_eng->render(o, n); }); std::fprintf(stderr, "efectos: motor de granos 989snd activo para la rodadura (DH_SND989=0 lo apaga; EXPERIMENTAL, sin oír)\n"); }
         }
     }
     int frame = 0;
@@ -599,7 +601,12 @@ int main(int argc, char** argv) {
                 static bool wasG = true; static float lastVy = 0; static unsigned lastResp = 0; const float sp = bk.speed();
                 // rodadura como FUN_001C9378 (PAL 0x1CD208): mph = |v|*0.6818182; ganancia = (mph-5)/(35-5) y volumen = (mph-5)/(52-5), topes D_0029E500/E504 = 35/52 (escritos en 0x1CB3D0)
                 const float mph = sp * 0.6818182f, gRamp = std::fmax(0.f, std::fmin(1.f, (mph - 5.f) / 30.f));
-                if (legacy) mixer.loop(1, bk.grounded ? sfxLib->get(sfxBank, rideNm) : nullptr, std::fmin(1.f, sp / 50.f) * (sp > 2.f ? 0.8f : 0.f), std::fmin(1.8f, std::fmax(0.5f, 0.6f + sp / 100.f)));
+                if (useGrain) {   // motor de granos: PEDAL/COAST como programa de sonido; volumen = rampa de ganancia (1024 = pleno), pitch bend = rampa a 52 mph (0..32767)
+                    const std::string want = bk.grounded ? rideNm : std::string();
+                    if (want != rollName || (want.empty() != (rollH == 0))) { if (rollH) grainEng.stop(rollH); rollH = want.empty() ? 0 : grainEng.play(sfxBank, want, (int)(gRamp * 1024.f), -1, 0, 0); rollName = want; }
+                    if (rollH) grainEng.setParams(rollH, 1 | 16, (int)(gRamp * 1024.f), -1, 0, (int)(std::fmax(0.f, std::fmin(1.f, (mph - 5.f) / 47.f)) * 32767.f));
+                    mixer.loop(1, nullptr, 0.f, 1.f);
+                } else if (legacy) mixer.loop(1, bk.grounded ? sfxLib->get(sfxBank, rideNm) : nullptr, std::fmin(1.f, sp / 50.f) * (sp > 2.f ? 0.8f : 0.f), std::fmin(1.8f, std::fmax(0.5f, 0.6f + sp / 100.f)));
                 else { const sfx::ClipPtr rc = bk.grounded && !rideNm.empty() ? sfxLib->get(sfxBank, rideNm) : nullptr;   // el último argumento del juego (rampa a 52 mph, 0..32767) es el PITCH BEND (989snd tone_pitch: +/-pbHigh semitonos a fondo)
                     const float bend = std::fmax(0.f, std::fmin(1.f, (mph - 5.f) / 47.f)); mixer.loop(1, rc, gRamp, rc ? std::exp2(bend * rc->bendSemis / 12.f) : 1.f); }
                 mixer.loop(2, !bk.grounded ? sfxLib->get(sfxBank, "B_JUMPWIND_L") : nullptr, std::fmin(1.f, sp / 80.f) * 0.7f, 1.f);
@@ -610,8 +617,14 @@ int main(int argc, char** argv) {
                 if (bk.grounded && sp > 2.f) framesRoll++; if (!bk.grounded && sp > 0.f) framesAir++; maxVoices = std::max(maxVoices, mixer.activeVoices());
                 if (std::getenv("DH_SFX_DEBUG") && frame % 120 == 0) std::fprintf(stderr, "sfx: voces=%zu v=%.0f u/s suelo=%d puertas=%zu estado=%s t=%.1f | sup=%#06x clase=%u mat=%s\n", mixer.activeVoices(), sp, (int)bk.grounded, prun.gs.counter, raceStateName(race.state), race.raceTime, bk.surface, (unsigned)(bk.surface & 0x1F), mat.c_str());
             }
-            if (maxTicks > 0 && tickCount >= maxTicks) { std::fprintf(stderr, "sfx resumen: ticks=%ld t=%.1f s puertas=%zu/%zu reinicios=%u vel máx=%.0f | eventos: checkpoint=%lu aterrizaje=%lu choque=%lu | fotogramas: rodadura=%lu aire=%lu | voces máx=%zu\n", tickCount, race.raceTime, prun.gs.counter, gts.size(), prun.respawns, 1.0973f * race.maxSpeed, evCheck, evLand, evCrash, framesRoll, framesAir, maxVoices); run = false; }
-            static float lastSteer = 0; { uint8_t lb = packKeys(ky, false); lastSteer = unpackInput(lb).steer; if (padOn && std::fabs(padSteerVis) > std::fabs(lastSteer)) lastSteer = padSteerVis; } leanVis += (-lastSteer * std::fmin(0.45f, bk.speed() * 0.012f) * (bk.grounded ? 1.f : 0.f) - leanVis) * std::fmin(1.f, 6.f * ddt);   // inclinación visual al girar (sólo dibujo)
+            if (maxTicks > 0 && tickCount >= maxTicks) { std::fprintf(stderr, "sfx resumen: ticks=%ld t=%.1f s puertas=%zu/%zu reinicios=%u vel máx=%.0f | eventos: checkpoint=%lu aterrizaje=%lu choque=%lu | fotogramas: rodadura=%lu aire=%lu | voces máx=%zu | granos: voces=%zu manejadores=%zu\n", tickCount, race.raceTime, prun.gs.counter, gts.size(), prun.respawns, 1.0973f * race.maxSpeed, evCheck, evLand, evCrash, framesRoll, framesAir, maxVoices, grainEng.activeVoices(), grainEng.activeHandlers()); run = false; }
+            static float lastSteer = 0; { uint8_t lb = packKeys(ky, false); lastSteer = unpackInput(lb).steer; if (padOn && std::fabs(padSteerVis) > std::fabs(lastSteer)) lastSteer = padSteerVis; } static const bool rollOld = std::getenv("DH_ROLL_OLD") != nullptr;
+            {   // balanceo visual (docs/formats/revived-crossref.md, «balanceo»): el juego lleva el «arriba» de la moto hacia la normal del suelo filtrada (FUN_00137300: x270 = x270*0.9825 + normal*0.0175 por tick de 50 Hz; FUN_001377A8 cierra ~60 % del error por tick) con la inclinación al girar como mezcla pequeña; HIPÓTESIS en la inclinación y en el tope. DH_ROLL_OLD=1 = el balanceo antiguo (solo giro, 0,45 rad).
+              static V3 n270{0.f, 1.f, 0.f}; static float gRoll = 0.f;
+              if (bk.grounded && bk.groundN.y > 0.3f) { const float k = std::pow(0.9825f, 50.f * ddt); n270 = unit(n270 * k + bk.groundN * (1.f - k)); }
+              V3 dd2 = n270 - ax.f * dot(n270, ax.f); float tgt = 0.f; if (!rollOld && dot(dd2, dd2) > 1e-4f) { dd2 = unit(dd2); tgt = std::fmax(-0.6f, std::fmin(0.6f, std::atan2(dot(dd2, ax.r), dot(dd2, ax.u)))); }
+              gRoll += (tgt - gRoll) * std::fmin(1.f, 20.f * ddt); gRollVis = gRoll; }
+            leanVis += (-lastSteer * (rollOld ? std::fmin(0.45f, bk.speed() * 0.012f) : std::fmin(0.06f, bk.speed() * 0.0006f)) * (bk.grounded ? 1.f : 0.f) - leanVis) * std::fmin(1.f, 6.f * ddt);   // inclinación visual al girar (sólo dibujo)
             float want = hs > 4.f ? std::atan2(vv.x, -vv.z) : bk.heading(), df = want - camHead; while (df > 3.14159f) df -= 6.28318f; while (df < -3.14159f) df += 6.28318f;
             camHead += df * std::fmin(1.f, 3.f * ddt);
             // Cámara del juego (savestates, docs/formats/gs-dump.md): |cámara - piloto| = 11,81 = √(11²+4,3²) en ALPINEMX y 10,66 = √(10²+3,7²) en ALPINE, con el offset medido en el marco de la CÁMARA
@@ -819,7 +832,7 @@ int main(int argc, char** argv) {
                     for (int k = 0; k < 4; k++) { const float a = (k == 0 || k == 3) ? -1.f : 1.f, b = (k < 2) ? -1.f : 1.f; const V3 q = o + rt * (a * hw) + fw * (b * hl); glTexCoord2f(a < 0 ? 0.f : 1.f, b < 0 ? 0.f : 1.f); glVertex3f(q.x, q.y, q.z); }
                     glEnd(); glDisable(GL_POLYGON_OFFSET_FILL); glDepthMask(GL_TRUE); glColor4f(1.f, 1.f, 1.f, 1.f);
                 };
-                const Bike& bk = prun.bike; Axes ax = bk.axes(); V3 r = rotateAbout(ax.r, ax.f, leanVis), u = rotateAbout(ax.u, ax.f, leanVis); float bs = 0.28f * U;
+                const Bike& bk = prun.bike; Axes ax = bk.axes(); V3 r = rotateAbout(ax.r, ax.f, leanVis + gRollVis), u = rotateAbout(ax.u, ax.f, leanVis + gRollVis); float bs = 0.28f * U;
                 V3 t = bk.pos + ax.u * (-2.05f - minY * bs);   // la rueda más baja a ras de la superficie de contacto (rueda -1.2-0.75 / -1.4-0.75 bajo el centro: promedio, hipótesis)
                 GLfloat m[16] = {r.x, r.y, r.z, 0, u.x, u.y, u.z, 0, -ax.f.x, -ax.f.y, -ax.f.z, 0, t.x, t.y, t.z, 1};
                 shadowBlob(bk.pos + ax.u * (-2.05f), ax.u, ax.f, U * 1.f);
