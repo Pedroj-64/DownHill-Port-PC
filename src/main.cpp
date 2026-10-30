@@ -98,6 +98,13 @@ int main(int argc, char** argv) {
         if (!std::getenv("DH_NOPEDS") && lvlDirName == "LVL") {   // peatones (src/peds.hpp): puntos PED + el NGP/PTR/TEX/RTX del nivel (modelos de personaje)
             std::vector<uint8_t> pd; if (isoSrc.read("PTS/" + lvl + ".PED", pd)) { vfs["native:level.PED"] = std::move(pd);
                 for (const char* ex : {"NGP", "PTR", "TEX", "RTX"}) { std::vector<uint8_t> rb; if (isoSrc.read("LVL/" + lvl + "." + ex, rb)) vfs[std::string("native:level.") + ex] = std::move(rb); } } }
+        if (const char* rr = std::getenv("DH_RIDER_R")) {   // piloto de alta resolución de R/<letra><código> (docs/formats/rider-skins.md): p. ej. DH_RIDER_R=MNOS (Mai, por defecto), MSW (Mai, Swatch). La malla empieza en 0x33C8 en todos los bloques R/ revisados
+            bool okR = true; for (const char* ex : {"NGP", "PTR", "TEX", "RTX"}) { std::vector<uint8_t> rb; if (isoSrc.read(std::string("R/") + rr + "." + ex, rb)) vfs[std::string("native:rider.") + ex] = std::move(rb); else okR = false; }
+            if (okR) {   // inicio de la malla: primera carga UNPACK V4-32 (>= 16 vértices) seguida, tras sus datos, de UNPACK V3-8 con la misma cuenta (tools/ui_riders.py); varía entre pilotos (0x33C8 en la mayoría, 0x35F8 en Rexel...)
+                const std::vector<uint8_t>& nb = vfs["native:rider.NGP"]; size_t start = 0;
+                for (size_t i = 0; i + 4 <= nb.size() && !start; i += 4) { uint32_t v; std::memcpy(&v, &nb[i], 4); if (((v >> 24) & 0x7f) != 0x6c || ((v >> 16) & 0xff) < 16) continue;
+                    const size_t n = (v >> 16) & 0xff, j = i + 4 + n * 16; if (j + 4 > nb.size()) continue; uint32_t w; std::memcpy(&w, &nb[j], 4); if (((w >> 24) & 0x7f) == 0x6a && ((w >> 16) & 0xff) == n) start = i; }
+                char sb[32]; std::snprintf(sb, sizeof sb, "0x%zx", start); setenv("DH_RIDER_NGP", "native:rider.NGP", 1); setenv("DH_RIDER_CHAIN", sb, 1); } else std::fprintf(stderr, "DH_RIDER_R=%s: faltan archivos R/%s.NGP/PTR/TEX/RTX en la imagen\n", rr, rr); }
         if (std::getenv("DH_PLAY") && !std::getenv("DH_NORIDER") && !std::getenv("DH_RIDER") && !std::getenv("DH_RIDER_NGP")) {   // piloto nativo por defecto al jugar (pose APROXIMADA, hipótesis: docs/formats/rider-live.md); DH_NORIDER=1 lo quita
             bool okr = true; for (const char* ex : {"NGP", "PTR", "TEX", "RTX"}) { std::vector<uint8_t> rb; if (isoSrc.read("LVL/" + lvl + "." + ex, rb)) vfs[std::string("native:level.") + ex] = std::move(rb); else okr = false; }
             if (okr) { setenv("DH_RIDER_NGP", "native:level.NGP", 1); setenv("DH_RIDER_POSE", "approx", 0); } }
