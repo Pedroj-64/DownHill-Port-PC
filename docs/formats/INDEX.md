@@ -41,3 +41,4 @@ Coverage inferred from file names only (documents were not opened).
 | Audio: VAGp, VPK, pistas / Audio: VAGp, VPK, tracks | [audio.md](audio.md) |
 | Volcados GS, oráculo visual, peatones / GS dumps, visual oracle, pedestrians | [gs-dump.md](gs-dump.md) |
 | Códigos de trucos / Cheat codes | [cheat-codes.md](cheat-codes.md) |
+| Nombres de nivel y tipos de carrera / Level names and race types | [level-names.md](level-names.md) |
