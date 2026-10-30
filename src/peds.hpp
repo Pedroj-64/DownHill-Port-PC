@@ -86,6 +86,14 @@ inline bool loadRacers(gfx::Renderer& gr, const std::vector<uint8_t>& ngp, const
     return !out.empty();
 }
 
+// FUN_00127c60 (medido con un savestate: DAT_00329658/5C = Z del jugador): un grupo se instancia si la altura del jugador cae en [min Z, max Z) de su caja +200 u; X e Y no cuentan.
+// shortcut: la caja del juego incluye los puntos del grupo que no son peatones (aquí ya descartados), así que la nuestra puede ser algo más estrecha; con 1 jugador basta.
+inline bool groupActive(const std::array<float, 6>& b, float y) { return y >= b[1] - 200.f && y < b[4] + 200.f; }
+
+// Ovación medida con pedtrace.py en 2 carreras (165 peatones, state+8 >= 2 = vitorea, FUN_001277e0): tipo 2 = vitorea con un piloto a <= 200 u, tipo 6 = solo con uno a ~40 u, tipo 0 casi nunca (9 de 140).
+// shortcut: el disparador de los pocos tipo 0 que vitorean no se ve en esos datos (se omite), y los umbrales salen de pocas decenas de transiciones; d2 = distancia^2 al jugador, no al piloto más cercano.
+inline bool cheers(uint8_t type, float d2) { return (type == 2 && d2 < 200.f * 200.f) || (type == 6 && d2 < 40.f * 40.f); }
+
 struct Set {
     struct Model { gfx::MeshId mesh, meshUp; int type; float height; };   // meshUp = la misma malla con los brazos en alto (ovación); -1 si no hay esqueleto
     std::vector<Model> models; std::vector<Point> pts; std::map<int, std::vector<size_t>> byType; std::map<uint32_t, std::array<float, 6>> gbox;   // caja (min xyz, max xyz) de cada grupo
@@ -137,14 +145,14 @@ struct Set {
         for (size_t i = 0; i < pts.size(); i++) {
             if (!byType.count(pts[i].type)) continue;
             const float dx = pts[i].x - cx, dy = pts[i].y - cy, dz = pts[i].z - cz, d2 = dx * dx + dy * dy + dz * dz;
-            const auto gb = gbox.find(pts[i].sub); if (!std::getenv("DH_PED_NOGROUPS") && gb != gbox.end()) { const auto& b = gb->second; if (cx < b[0] - 200.f || cx > b[3] + 200.f || cy < b[1] - 200.f || cy > b[4] + 200.f || cz < b[2] - 200.f || cz > b[5] + 200.f) continue; }   // grupo activo = jugador dentro de su caja + 200 u
+            const auto gb = gbox.find(pts[i].sub); if (!std::getenv("DH_PED_NOGROUPS") && gb != gbox.end()) { const auto& b = gb->second; if (!groupActive(b, cy)) continue; }   // grupo activo solo por altura (FUN_00127c60)
             if (d2 < radius * radius) cand.push_back({d2, i});
         }
         std::sort(cand.begin(), cand.end()); if (cand.size() > budget) cand.resize(budget);
         std::vector<Inst> out;
         for (const auto& c : cand) {
             const Point& p = pts[c.second]; const auto& pool = byType.at(p.type);
-            Inst in{pool[(c.second * 2654435761u >> 7) % pool.size()], p.x, p.y, p.z, p.x, p.z, ((static_cast<long>(time * 1.1f) + static_cast<long>(c.second * 7)) % 4) == 0};   // ~1 de cada 4 vitorea, rotando
+            Inst in{pool[(c.second * 2654435761u >> 7) % pool.size()], p.x, p.y, p.z, p.x, p.z, cheers(p.type, c.first)};
             float best = 1e30f, tx = p.x, tz = p.z;
             for (size_t k = 0; k + 2 < line.size(); k += 3) { const float dx = line[k] - p.x, dz = line[k + 2] - p.z, d = dx * dx + dz * dz; if (d < best) { best = d; tx = line[k]; tz = line[k + 2]; } }
             in.tx = tx; in.tz = tz;
