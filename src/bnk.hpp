@@ -32,6 +32,7 @@ struct Tone {
     int8_t centerNote = 0, centerFine = 0;  // w[2] bytes 2 y 3 (afinado; ver la cabecera)
     int16_t pan = 0;                        // w[3] mitad baja: grados 0..360 (0 = centro; < 0 = registro)
     uint16_t adsr1 = 0, adsr2 = 0;          // w[4] mitad alta, w[5] mitad baja (registros ADSR de la SPU)
+    int8_t pbLow = 0, pbHigh = 0;           // w[4] bytes 0 y 1: rango del pitch bend en semitonos (bend -32768..32767; 989snd tone_pitch)
     int16_t tflags = 0;                     // w[5] mitad alta (bit 3 = voz de ruido)
     uint32_t sampleOffset = 0; int sample = -1;
     bool isTone() const { return type == 1 || type == 9; }   // solo estos granos referencian una muestra
@@ -74,7 +75,7 @@ public:
                 t.type = t.w[0]; t.delay = (int32_t)t.w[1];
                 t.priority = (int8_t)(t.w[2] & 0xff); t.vol = (int8_t)((t.w[2] >> 8) & 0xff);
                 t.centerNote = (int8_t)((t.w[2] >> 16) & 0xff); t.centerFine = (int8_t)((t.w[2] >> 24) & 0xff);
-                t.pan = (int16_t)(t.w[3] & 0xffff); t.adsr1 = (uint16_t)(t.w[4] >> 16); t.adsr2 = (uint16_t)(t.w[5] & 0xffff); t.tflags = (int16_t)(t.w[5] >> 16);
+                t.pan = (int16_t)(t.w[3] & 0xffff); t.pbLow = (int8_t)(t.w[4] & 0xff); t.pbHigh = (int8_t)((t.w[4] >> 8) & 0xff); t.adsr1 = (uint16_t)(t.w[4] >> 16); t.adsr2 = (uint16_t)(t.w[5] & 0xffff); t.tflags = (int16_t)(t.w[5] >> 16);
                 t.sampleOffset = t.w[6];   // solo es el desplazamiento de una muestra si el grano es GRAIN_TONE/TONE2
                 if (t.isTone()) { auto it = byOffset.find(t.sampleOffset); if (it == byOffset.end()) return false; t.sample = it->second; }
                 s.tones.push_back(t);

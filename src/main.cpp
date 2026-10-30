@@ -41,21 +41,7 @@ static std::vector<uint8_t> g_inLog; static bool g_inLogSaved = false;   // regi
 #include "peds.hpp"
 #include "ghosts.hpp"
 #include "dust.hpp"
-
-// HIPÓTESIS (docs/formats/audio.md, «superficie → material»): la clase física de la superficie (los 5
-// bits bajos del u16 de colisión, que indexan la tabla de propiedades DAT_0077a3d8) se traduce a un
-// material del banco. NO está demostrada: el juego real elige el efecto con una tabla POR NIVEL en
-// RAM (DAT_003b7e00, {color ARGB, tipo i16, banderas u16}) que no viaja en el fichero del nivel, y el
-// nombre del material (B_<MAT>_*) lo resuelve el IOP por índice, no por cadena. El motor se activa con
-// DH_SURF_MAT=1 (por defecto se mantiene el material fijo de siempre para no cambiar el sonido a ciegas).
-static const char* surfMaterialHyp(uint16_t surface) {
-    switch (surface & 0x1F) {   // clase física: 13/14/15 solo en glaciares (agarre 90/50) y 16/17 con agarre bajo -> nieve/hielo
-        case 2:  return "H2O";    // col. 7 (deslizamiento) mínima: la más «mojada»
-        case 3:  return "GRAS";   // está en todos los niveles menos los desérticos
-        case 13: case 14: case 15: case 16: case 17: return "SNOW";
-        default: return "DIRT";   // 4 y 29/30 (los más frecuentes) y el resto
-    }
-}
+#include "surfsound.hpp"
 
 // Ángulo vertical de la cámara del juego (rad). Medido 2026-10-24: proyectando los puntos de contacto del piloto de un savestate (cámara de RAM 0x3A8D10..) sobre la
 // captura del propio juego coinciden con ~1,4 rad (80°); barrido de correlación estructural sobre 4 savestates con máximo en 1,35-1,5 (tools/visual_diff.py). Antes 1,1 (sin evidencia).
@@ -363,6 +349,7 @@ int main(int argc, char** argv) {
     { std::vector<uint8_t> sraw; std::string sp0 = mdl ? std::string(argv[1]).substr(0, std::string(argv[1]).size() - 4) + ".start.pts" : std::string();   // primera plaza de la rejilla (tools/markers.py), espacio NGP -> Y arriba
       if (!sp0.empty() && readFile(sp0, sraw) && sraw.size() >= 12) { float f[3]; std::memcpy(f, sraw.data(), 12); startPt = {f[0], f[2], -f[1]}; haveStart = true; for (size_t i = 0; i + 12 <= sraw.size(); i += 12) { std::memcpy(f, sraw.data() + i, 12); startSlots.push_back({f[0], f[2], -f[1]}); } } }
     if (!haveStart && overlay.size() >= 9) { startPt = {overlay[0], overlay[1], overlay[2]}; haveStart = true; }   // MOABTDH(2) no trae rejilla 8060-8068: salir del primer punto de la línea PTS (antes: la posición de la cámara, a ~5400 u de la pista)
+    if (assetRd) { std::vector<uint8_t> rst; const std::string a1 = argv[1]; const size_t sl = a1.find_last_of("/\\"); std::string st = a1.substr(sl == std::string::npos ? 0 : sl + 1); st = st.substr(0, st.find('.')); if (assetRd("RST/" + st + ".RST", rst)) dustE.loadFx(rst); }   // color del polvo = tabla de efectos del nivel (RST+0x10D4)
     float surfTab[32][8] = {}; bool haveSurfTab = false;   // tabla de clases de superficie del nivel (RST+0xCA4): rodadura por clase del motor
     { std::vector<uint8_t> tr; std::string tp = mdl ? std::string(argv[1]).substr(0, std::string(argv[1]).size() - 4) + ".surftab" : std::string();
       if (!tp.empty() && readFile(tp, tr) && tr.size() == sizeof surfTab) { std::memcpy(surfTab, tr.data(), sizeof surfTab); haveSurfTab = true; } }
@@ -426,7 +413,7 @@ int main(int argc, char** argv) {
     };
     if (std::getenv("DH_RIDE")) { ride = true; startRide(); }
     if (std::getenv("DH_PLAY")) startPlay();
-    sfx::Mixer mixer; std::unique_ptr<sfx::Library> sfxLib; std::string sfxBank;   // efectos (DH_SFX=OFF los desactiva, DH_SFX_VOL = volumen maestro 0..1, 0.7): bancos SND/*.BNK de la imagen
+    sfx::Mixer mixer; std::unique_ptr<sfx::Library> sfxLib; std::string sfxBank; int surfGroup = 0; bool sfxPedal = false;   // efectos (DH_SFX=OFF los desactiva, DH_SFX_VOL = volumen maestro 0..1, 0.7): bancos SND/*.BNK de la imagen
     audio::Music music;   // música (src/music.hpp): DH_MUSIC=OFF la desactiva, DH_MUSIC=<fichero de VAG/> la fuerza, DH_MUSIC_VOL = volumen 0..1 (0.5). Por defecto la elige el nivel, como el motor: capas <tema>{HIGH,MED,LOW,DRUM}-L/R.VAG en los nueve niveles del circuito (DH_MUSIC_LAYER elige la capa, HIGH por defecto), <tema>TDH.VPK en los ocho «tour de downhill» y <tema>MX.VPK en el resto. Solo en modo juego, sin DH_SHOT.
     if (std::getenv("DH_PLAY") && !shot && assetRd) {
         std::string want = std::getenv("DH_MUSIC") ? std::getenv("DH_MUSIC") : "";
@@ -458,10 +445,10 @@ int main(int argc, char** argv) {
     if (std::getenv("DH_PLAY") && !shot && assetRd) {   // efectos de sonido (bancos SND/*.BNK de la imagen): puerta, aterrizaje, choque, rodadura y viento
         std::string off = std::getenv("DH_SFX") ? std::getenv("DH_SFX") : ""; for (char& ch : off) ch = (char)std::toupper((unsigned char)ch);
         if (off != "OFF" && off != "NONE") {
-            const std::string a1 = argv[1]; const size_t sl = a1.find_last_of("/\\"); const std::string stem0 = a1.substr(sl == std::string::npos ? 0 : sl + 1); sfxBank = sfx::levelBank(stem0.substr(0, stem0.find('.')));
-            sfxLib = std::make_unique<sfx::Library>(assetRd, std::getenv("DH_SFX_FLAT") != nullptr, std::getenv("DH_SFX_PITCH") != nullptr);
+            const std::string a1 = argv[1]; const size_t sl = a1.find_last_of("/\\"); const std::string stem0 = a1.substr(sl == std::string::npos ? 0 : sl + 1); sfxBank = sfx::levelBank(stem0.substr(0, stem0.find('.'))); surfGroup = surfsound::levelGroup(stem0.substr(0, stem0.find('.')));
+            sfxLib = std::make_unique<sfx::Library>(assetRd, std::getenv("DH_SFX_FLAT") != nullptr, std::getenv("DH_SFX_NOPITCH") == nullptr);   // afinación por tono = 989snd tone_pitch (fórmula de Downhill Revived, sound_grains.h); DH_SFX_NOPITCH=1 la quita
             if (!sfxLib->hasBank(sfxBank) || !mixer.open(std::getenv("DH_SFX_VOL") ? (float)std::atof(std::getenv("DH_SFX_VOL")) : 0.7f)) { std::fprintf(stderr, "aviso: sin efectos de sonido (%s)\n", sfxBank.c_str()); sfxLib.reset(); }
-            else std::fprintf(stderr, "efectos: banco %s (volumen/panorama por tono: %s, afinación: %s)\n", sfxBank.c_str(), std::getenv("DH_SFX_FLAT") ? "no" : "sí", std::getenv("DH_SFX_PITCH") ? "sí" : "no");
+            else std::fprintf(stderr, "efectos: banco %s (volumen/panorama por tono: %s, afinación: %s)\n", sfxBank.c_str(), std::getenv("DH_SFX_FLAT") ? "no" : "sí", std::getenv("DH_SFX_NOPITCH") ? "no" : "sí");
         }
     }
     int frame = 0;
@@ -574,7 +561,7 @@ int main(int argc, char** argv) {
                     if (std::getenv("DH_DEBUG") && inTick % 60 == 0) std::fprintf(stderr, "auto t=%.1f pos=(%.1f %.1f %.1f) v=%.1f punto=%zu/%zu lineaY=%.1f dist=%.1f df=%.2f suelo=%d sup=%04x fwd=(%.2f %.2f %.2f) vel=(%.1f %.1f %.1f) n=(%.2f %.2f %.2f) FR=%d%d\n", inTick / 60.0, b.pos.x, b.pos.y, b.pos.z, b.speed(), apK, n, overlay[3*apK+1], std::sqrt(bd), df, (int)b.grounded, (unsigned)b.surface, b.fwd.x, b.fwd.y, b.fwd.z, b.rb.vel.x, b.rb.vel.y, b.rb.vel.z, b.groundN.x, b.groundN.y, b.groundN.z, (int)b.wheelF, (int)b.wheelR);
                 }
                 if (std::getenv("DH_INPUT_LOG")) inLog.push_back(bits);
-                inTick++;
+                inTick++; sfxPedal = in.throttle > 0.f || in.sprint;   // pedaleo = rider+0x7A78 != 0 || sprint (+0x7A69), como elige el juego entre PEDAL y COAST
                 if (replay.size() >= 12) {
                     size_t ns = replay.size() / 6, i = std::min(replayAt, ns - 1), j = std::min(i + 1, ns - 1); if (j == i && i > 0) j = i - 1; Bike& b0 = prun.bike;
                     b0.pos = {replay[6*i], replay[6*i+1], replay[6*i+2]}; b0.fwd = {replay[6*i+3], replay[6*i+4], replay[6*i+5]}; b0.grounded = true;
@@ -591,15 +578,23 @@ int main(int argc, char** argv) {
             if (ev > 0) { evCheck++; std::printf("puerta %zu/%zu cruzada a los %.1f s\n", prun.gs.counter, gts.size(), prun.t); if (sfxLib) mixer.play(sfxLib->get("PCKP_S", "P_CHECKPOINT"), 0.9f); }
             if (race.state >= RaceState::Finished && !finishedMsg) { finishedMsg = true; std::printf("META %s (%zu/%zu puertas, reinicios %u, máx %.0f km/h)\n", formatTime(race.res.time).c_str(), race.res.gates, race.res.totalGates, race.res.respawns, 1.0973f * race.res.maxSpeed); }
             Bike& bk = prun.bike; Axes ax = bk.axes(); V3 vv = bk.vel(); float hs = std::sqrt(vv.x * vv.x + vv.z * vv.z);
-            { static const bool noDust = std::getenv("DH_NODUST") != nullptr; if (!noDust && race.state == RaceState::Riding) dust::emit(dustE, bk.pos - ax.f * 1.6f - ax.u * 1.2f, vv, bk.speed(), bk.grounded, ddt, bk.surface & 0x1Fu); else if (race.state != RaceState::Riding) dustE.puffs.clear(); dust::update(dustE, ddt); }
+            { static const bool noDust = std::getenv("DH_NODUST") != nullptr; if (!noDust && race.state == RaceState::Riding) dust::emit(dustE, bk.pos - ax.f * 1.6f - ax.u * 1.2f, vv, bk.speed(), bk.grounded, ddt, bk.surface & 0x1Fu, (bk.surface >> 5) & 0x3Fu); else if (race.state != RaceState::Riding) dustE.puffs.clear(); dust::update(dustE, ddt); }
             for (auto& r : aiRiders) { if (race.state == RaceState::Riding) ghosts::step(r, aiLine, ddt); else if (race.state == RaceState::Countdown) r.v = 0.f; }   // rivales fantasma
-            if (sfxLib) {   // material del suelo: por defecto el primero disponible del banco (comportamiento de siempre); con DH_SURF_MAT=1, la clase de superficie -> material (hipótesis)
+            if (sfxLib) {   // material del suelo: kind = grupo del nivel*32 + bits 11-15 del u16 de superficie (src/surfsound.hpp, validado contra la PAL); DH_SURF_LEGACY=1 vuelve al material fijo de antes
                 static const char* mats[] = {"DIRT", "GRAS", "SNOW", "ROCK"}; static std::string matDef; if (matDef.empty()) { matDef = "DIRT"; for (const char* m : mats) if (sfxLib->has(sfxBank, std::string("B_") + m + "_TERRAIN")) { matDef = m; break; } }
-                static const bool useSurfMat = std::getenv("DH_SURF_MAT") != nullptr;   // tabla clase->material en pruebas: docs/formats/audio.md
-                std::string mat = matDef;
-                if (useSurfMat) { const char* m = surfMaterialHyp(bk.surface); if (sfxLib->has(sfxBank, std::string("B_") + m + "_TERRAIN")) mat = m; }
+                static const bool legacy = std::getenv("DH_SURF_LEGACY") != nullptr;
+                const int kind = surfsound::kind(surfGroup, bk.surface);
+                std::string mat = matDef, rideNm = "B_" + matDef + "_TERRAIN";
+                if (!legacy) {
+                    const char* lm = surfsound::landMat(kind); if (lm && sfxLib->has(sfxBank, std::string("B_") + lm + "_LAND_SM")) mat = lm;
+                    rideNm = surfsound::rideName(kind, sfxPedal); if (!sfxLib->has(sfxBank, rideNm)) rideNm.clear();
+                }
                 static bool wasG = true; static float lastVy = 0; static unsigned lastResp = 0; const float sp = bk.speed();
-                mixer.loop(1, bk.grounded ? sfxLib->get(sfxBank, "B_" + mat + "_TERRAIN") : nullptr, std::fmin(1.f, sp / 50.f) * (sp > 2.f ? 0.8f : 0.f), std::fmin(1.8f, std::fmax(0.5f, 0.6f + sp / 100.f)));
+                // rodadura como FUN_001C9378 (PAL 0x1CD208): mph = |v|*0.6818182; ganancia = (mph-5)/(35-5) y volumen = (mph-5)/(52-5), topes D_0029E500/E504 = 35/52 (escritos en 0x1CB3D0)
+                const float mph = sp * 0.6818182f, gRamp = std::fmax(0.f, std::fmin(1.f, (mph - 5.f) / 30.f));
+                if (legacy) mixer.loop(1, bk.grounded ? sfxLib->get(sfxBank, rideNm) : nullptr, std::fmin(1.f, sp / 50.f) * (sp > 2.f ? 0.8f : 0.f), std::fmin(1.8f, std::fmax(0.5f, 0.6f + sp / 100.f)));
+                else { const sfx::ClipPtr rc = bk.grounded && !rideNm.empty() ? sfxLib->get(sfxBank, rideNm) : nullptr;   // el último argumento del juego (rampa a 52 mph, 0..32767) es el PITCH BEND (989snd tone_pitch: +/-pbHigh semitonos a fondo)
+                    const float bend = std::fmax(0.f, std::fmin(1.f, (mph - 5.f) / 47.f)); mixer.loop(1, rc, gRamp, rc ? std::exp2(bend * rc->bendSemis / 12.f) : 1.f); }
                 mixer.loop(2, !bk.grounded ? sfxLib->get(sfxBank, "B_JUMPWIND_L") : nullptr, std::fmin(1.f, sp / 80.f) * 0.7f, 1.f);
                 if (!bk.grounded) lastVy = bk.rb.vel.y;
                 if (!wasG && bk.grounded) { const float imp = std::fmax(0.f, -lastVy); if (imp > 12.f) { evLand++; mixer.play(sfxLib->get(sfxBank, "B_" + mat + (imp > 40.f ? "_LAND_BG" : "_LAND_SM")), std::fmin(1.f, std::fmax(0.3f, imp / 60.f))); } }

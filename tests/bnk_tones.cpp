@@ -33,8 +33,8 @@ int main(int argc, char** argv) {
             for (size_t k = 0; k < s.tones.size(); k++) {
                 const bnk::Tone& t = s.tones[k];
                 if (!t.isTone()) { std::printf("    g%zu control tipo=%#04x espera=%d\n", k, t.type, t.delay); continue; }
-                std::printf("    g%zu TONO vol=%3d prio=%3d nota=%4d afina=%4d pan=%4d adsr1=%04x adsr2=%04x band=%04x espera=%d muestra=%d\n",
-                            k, t.vol, t.priority, t.centerNote, t.centerFine, t.pan, t.adsr1, t.adsr2, (uint16_t)t.tflags, t.delay, t.sample);
+                std::printf("    g%zu TONO vol=%3d prio=%3d nota=%4d afina=%4d pan=%4d pbL=%d pbH=%d adsr1=%04x adsr2=%04x band=%04x espera=%d muestra=%d\n",
+                            k, t.vol, t.priority, t.centerNote, t.centerFine, t.pan, t.pbLow, t.pbHigh, t.adsr1, t.adsr2, (uint16_t)t.tflags, t.delay, t.sample);
             }
         }
     }

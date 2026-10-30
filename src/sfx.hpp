@@ -31,7 +31,7 @@ inline std::pair<float, float> panGains(int16_t pan) {
 // HIPÓTESIS: la nota base de los efectos es 60 (snd_GetSoundOriginalPitch devuelve 0x1E00 para los bloques SFX). Solo se usa con DH_SFX_PITCH.
 inline float tonePitchRatio(const bnk::Tone& t) {
     const int cn = t.centerNote; const bool ps1 = cn >= 0; const int note = ps1 ? cn : -cn;
-    double p = std::pow(2.0, ((60 - note) + (0.0 - (double)t.centerFine) / 128.0) / 12.0);
+    double p = std::pow(2.0, ((60 - note) + ((double)t.centerFine) / 128.0) / 12.0);
     if (ps1) p *= 44100.0 / 48000.0;
     return (float)p;
 }
@@ -44,7 +44,8 @@ inline std::vector<int16_t> resample(const std::vector<int16_t>& p, float ratio)
     return o;
 }
 
-struct Clip { std::vector<int16_t> pcm; std::vector<int16_t> pcmR; bool loop = false; bool stereo() const { return !pcmR.empty(); } };
+struct Clip { std::vector<int16_t> pcm; std::vector<int16_t> pcmR; bool loop = false; float bendSemis = 0.f;   // semitonos del pitch bend a fondo (+32767) del tono más fuerte: tono = 2^(bend/32767*bendSemis/12)
+     bool stereo() const { return !pcmR.empty(); } };
 using ClipPtr = std::shared_ptr<const Clip>;
 
 class Library {
@@ -69,7 +70,7 @@ private:
     }
     // Clip del sonido: suma de las muestras de sus granos GRAIN_TONE, con el volumen por tono (normalizado al mayor) y el panorama por tono.
     ClipPtr build_(const bnk::Bank& b, size_t si) const {
-        auto c = std::make_shared<Clip>(); struct Layer { std::vector<int16_t> p; float w, gl, gr; }; std::vector<Layer> layers; std::set<std::pair<int, int>> done;
+        auto c = std::make_shared<Clip>(); struct Layer { std::vector<int16_t> p; float w, gl, gr; }; std::vector<Layer> layers; std::set<std::pair<int, int>> done; float bendW = -1.f;
         for (const bnk::Tone& t : b.sounds[si].tones) {
             if (!t.isTone() || t.sample < 0) continue;   // los granos de control no llevan muestra
             // Los bancos repiten la MISMA muestra con panoramas opuestos (90/270, 45/315): se cuentan como capas distintas
@@ -80,7 +81,8 @@ private:
             if (b.samples[(size_t)t.sample].loop()) c->loop = true;
             float w = 1.f, gl = 1.f, gr = 1.f;
             if (!flat_) { w = t.vol >= 0 ? (float)t.vol : 127.f; const auto lr = panGains(t.pan); gl = lr.first; gr = lr.second; }
-            if (pitch_) p = resample(p, tonePitchRatio(t));
+            if (pitch_) p = resample(p, tonePitchRatio(t) * (48000.f / 44100.f));   // tonePitchRatio es relativo a 48000 Hz (SPU2 0x1000); el mezclador sale a 44100
+            if (t.pbHigh != 0 && (float)w >= bendW) { bendW = w; c->bendSemis = (float)t.pbHigh; }
             layers.push_back({std::move(p), w, gl, gr});
         }
         if (layers.empty()) return nullptr;

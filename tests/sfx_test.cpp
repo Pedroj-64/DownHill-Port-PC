@@ -83,7 +83,8 @@ int main() {
     // --- afinación por tono (989snd PS1Note2Pitch con nota base 60) ---
     { bnk::Tone t; t.centerNote = 60; t.centerFine = 0; CHECK(std::fabs(sfx::tonePitchRatio(t) - 44100.f / 48000.f) < 1e-5f);
       t.centerNote = -60; CHECK(std::fabs(sfx::tonePitchRatio(t) - 1.f) < 1e-5f);   // negativa = muestra nativa del PS2
-      t.centerNote = 72; CHECK(std::fabs(sfx::tonePitchRatio(t) - 0.5f * 44100.f / 48000.f) < 1e-4f); }
+      t.centerNote = -60; t.centerFine = 64; CHECK(std::fabs(sfx::tonePitchRatio(t) - std::pow(2.f, 0.5f / 12.f)) < 1e-5f);   // el afinado SUMA (989snd tone_pitch: total += center_fine), no resta
+      t.centerFine = 0; t.centerNote = 72; CHECK(std::fabs(sfx::tonePitchRatio(t) - 0.5f * 44100.f / 48000.f) < 1e-4f); }
     // --- remuestreo lineal a la relación de afinación ---
     { std::vector<int16_t> p = {0, 100, 200, 300, 400, 500, 600, 700};
       auto r = sfx::resample(p, 2.f); CHECK(r.size() == 4 && r[0] == 0 && r[1] == 200 && r[2] == 400 && r[3] == 600);
